@@ -102,9 +102,10 @@ async function findWarehouseReferences(warehouseId: string): Promise<string[]> {
   if (adjustments) blockers.push(`${adjustments} adjustment${adjustments === 1 ? "" : "s"}`);
   if (expenses) blockers.push(`${expenses} expense${expenses === 1 ? "" : "s"}`);
   if (purchases) blockers.push(`${purchases} purchase${purchases === 1 ? "" : "s"}`);
-  const [quotations, sales] = await Promise.all([db.quotation.count({ where: { warehouseId } }), db.sale.count({ where: { warehouseId } })]);
+  const [quotations, sales, saleReturns] = await Promise.all([db.quotation.count({ where: { warehouseId } }), db.sale.count({ where: { warehouseId } }), db.saleReturn.count({ where: { warehouseId } })]);
   if (quotations) blockers.push(`${quotations} quotation${quotations === 1 ? "" : "s"}`);
   if (sales) blockers.push(`${sales} sale${sales === 1 ? "" : "s"}`);
+  if (saleReturns) blockers.push(`${saleReturns} sales return${saleReturns === 1 ? "" : "s"}`);
   return blockers;
 }
 

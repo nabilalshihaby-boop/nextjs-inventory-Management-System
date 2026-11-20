@@ -11,14 +11,17 @@ import RowMenu from "@/components/ui/RowMenu";
 import { deleteSale } from "@/app/(dashboard)/sales/actions";
 import { formatMoney } from "@/lib/money";
 import { fromUnits, toUnits } from "@/lib/transfers";
-import { PAYMENTS_SOON, SALE_PDF_SOON, SALE_RETURN_SOON, SALE_STATUSES, SALE_STATUS_LABEL, SALE_STATUS_TONE, type SaleCurrency, type SaleRow, type SaleStatusValue } from "@/lib/sales";
+import { PAYMENT_STATUS_LABEL, PAYMENT_STATUS_TONE } from "@/lib/purchases";
+import { SALE_PDF_SOON, SALE_STATUSES, SALE_STATUS_LABEL, SALE_STATUS_TONE, type SaleCurrency, type SaleRow, type SaleStatusValue } from "@/lib/sales";
 
 // Port of design/Sales.html: TableToolbar (search, Filter, date, Create Sale), DataTable (Reference /
 // Customer / Warehouse / Status / Grand Total / Paid / Payment Status / Payment Type / Created On) with
 // Grand Total + Paid footer totals, the row menu and Pagination. Filter opens Status + Customer
-// filters. Every sale is Unpaid (Paid 0) until customer payments exist, so Payment Type is "—".
-// Edit/Delete apply to Pending sales only. Deferred (disabled with a reason): Download PDF,
-// Show Payments, Create Sale Return.
+// filters. Paid = Σ customer-payment allocations; Payment Type lists their methods; Payment Status
+// reflects payments and returns (Due = Grand Total − Paid − returns). Show Payments opens the
+// customer payments list filtered to the sale. Create Sale Return opens the return form for
+// a Completed sale with something returnable and unpaid. Edit/Delete apply to Pending sales only.
+// Deferred (disabled with a reason): Download PDF.
 
 export default function SalesTable({ rows, customers, currency }: { rows: SaleRow[]; customers: { id: string; name: string }[]; currency: SaleCurrency | null }) {
   const router = useRouter();
@@ -167,12 +170,22 @@ export default function SalesTable({ rows, customers, currency }: { rows: SaleRo
                     <td className="num" data-col="total">{formatMoney(r.grandTotal, r.currency)}</td>
                     <td className="num" data-col="paid" title={`Due ${formatMoney(r.due, r.currency)}`}>{formatMoney(r.paid, r.currency)}</td>
                     <td>
-                      <span className="sp-badge sp-badge--danger" data-payment="UNPAID">
+                      <span className={`sp-badge sp-badge--${PAYMENT_STATUS_TONE[r.paymentStatus]}`} data-payment={r.paymentStatus} title={r.returned !== "0.00" ? `Returned ${formatMoney(r.returned, r.currency)} · Due ${formatMoney(r.due, r.currency)}` : undefined}>
                         <i />
-                        Unpaid
+                        {PAYMENT_STATUS_LABEL[r.paymentStatus]}
                       </span>
                     </td>
-                    <td title={PAYMENTS_SOON}>—</td>
+                    <td data-col="payment-type">
+                      {r.paymentTypes.length ? (
+                        r.paymentTypes.map((t) => (
+                          <span key={t} className="sp-badge sp-badge--primary" style={{ marginRight: 4 }}>
+                            {t}
+                          </span>
+                        ))
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                     <td>
                       <span className="sp-badge sp-badge--info">{r.createdOn}</span>
                     </td>
@@ -182,8 +195,8 @@ export default function SalesTable({ rows, customers, currency }: { rows: SaleRo
                         items={[
                           { label: "View Sale", icon: "eye", href: `/sales/${encodeURIComponent(r.id)}` },
                           { label: "Download PDF", icon: "file-down", disabled: SALE_PDF_SOON },
-                          { label: "Show Payments", icon: "dollar-sign", disabled: PAYMENTS_SOON },
-                          { label: "Create Sale Return", icon: "undo-2", disabled: SALE_RETURN_SOON },
+                          r.paid !== "0.00" ? { label: "Show Payments", icon: "dollar-sign", href: `/customer-payments?q=${encodeURIComponent(r.reference)}` } : { label: "Show Payments", icon: "dollar-sign", disabled: "No payments recorded for this sale yet" },
+                          r.returnBlocked ? { label: "Create Sale Return", icon: "undo-2", disabled: r.returnBlocked } : { label: "Create Sale Return", icon: "undo-2", href: `/sales/returns/create?sale=${encodeURIComponent(r.id)}` },
                           editable ? { label: "Edit Sale", icon: "pencil", href: `/sales/${encodeURIComponent(r.id)}/edit` } : { label: "Edit Sale", icon: "pencil", disabled: "Completed sales can't be edited" },
                           "-",
                           editable ? { label: "Delete Sale", icon: "trash-2", danger: true, onClick: () => setDel(r) } : { label: "Delete Sale", icon: "trash-2", danger: true, disabled: "Completed sales can't be deleted" },

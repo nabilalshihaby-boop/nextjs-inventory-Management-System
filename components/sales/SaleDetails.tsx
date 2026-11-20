@@ -7,14 +7,17 @@ import toast from "react-hot-toast";
 import Icon, { type IconName } from "@/components/layout/Icon";
 import Modal, { ConfirmDeleteModal } from "@/components/ui/Modal";
 import { completeSale, deleteSale } from "@/app/(dashboard)/sales/actions";
-import { PAYMENTS_SOON, SALE_PDF_SOON, SALE_RETURN_SOON, SALE_STATUS_LABEL, SALE_STATUS_TONE, type SaleStatusValue } from "@/lib/sales";
+import { PAYMENT_STATUS_LABEL, PAYMENT_STATUS_TONE, type PaymentStatusValue } from "@/lib/purchases";
+import { SALE_PDF_SOON, SALE_STATUS_LABEL, SALE_STATUS_TONE, type SaleStatusValue } from "@/lib/sales";
 
 // Port of design/Sale Details.html: PageHeader (+ Back), card with "Sale Details : <ref>", Customer
 // Info / Company Info / Invoice Info bands (Reference, Status, Warehouse, Payment Status), Order
 // Summary table and the totals summary. Added for the real lifecycle: Pending → "Mark as Completed"
 // (confirmed; the server deducts stock exactly once or refuses), Edit and Delete while Pending.
-// Completed sales are read-only. Deferred (disabled with a reason): Show Payments, Create Sale
-// Return, Download PDF. Paid is 0 and Due = Grand Total until customer payments exist.
+// Completed sales are read-only; "Create Sale Return" opens the return form for a Completed sale
+// with something returnable and unpaid, and its returns are listed. Deferred (disabled with a
+// reason): Download PDF. Record Payment / Show Payments link to Customer Payments; its payments are
+// listed. Paid = Σ customer-payment allocations; Due = Grand Total − Paid − completed returns.
 
 type Details = {
   id: string;
@@ -28,7 +31,13 @@ type Details = {
   quotation: { id: string; reference: string } | null;
   notes: string;
   paid: string;
+  returned: string;
   due: string;
+  paymentStatus: PaymentStatusValue;
+  returnBlocked: string | null;
+  paymentBlocked: string | null;
+  payments: { id: string; reference: string; date: string; method: string; account: string; amount: string }[];
+  returns: { id: string; reference: string; date: string; total: string }[];
   orderTax: string;
   discount: string;
   shipping: string;
@@ -111,8 +120,30 @@ export default function SaleDetails({ sale: s, customer, company }: { sale: Deta
               Mark as Completed
             </button>
           )}
-          {soon("Show Payments", "dollar-sign", PAYMENTS_SOON)}
-          {soon("Create Sale Return", "undo-2", SALE_RETURN_SOON)}
+          {s.paymentBlocked ? (
+            soon("Record Payment", "wallet", s.paymentBlocked)
+          ) : (
+            <Link href={`/customer-payments/record?sale=${encodeURIComponent(s.id)}`} className="sp-btn sp-btn--primary">
+              <Icon name="wallet" size={18} />
+              Record Payment
+            </Link>
+          )}
+          {s.payments.length ? (
+            <Link href={`/customer-payments?q=${encodeURIComponent(s.reference)}`} className="sp-btn sp-btn--secondary">
+              <Icon name="dollar-sign" size={18} />
+              Show Payments
+            </Link>
+          ) : (
+            soon("Show Payments", "dollar-sign", "No payments recorded for this sale yet")
+          )}
+          {s.returnBlocked ? (
+            soon("Create Sale Return", "undo-2", s.returnBlocked)
+          ) : (
+            <Link href={`/sales/returns/create?sale=${encodeURIComponent(s.id)}`} className="sp-btn sp-btn--secondary">
+              <Icon name="undo-2" size={18} />
+              Create Sale Return
+            </Link>
+          )}
           {soon("Download PDF", "file-down", SALE_PDF_SOON)}
           {open && (
             <button type="button" className="sp-btn sp-btn--secondary" style={{ color: "var(--danger-500)" }} onClick={() => setDel(true)} disabled={pending}>
@@ -164,9 +195,9 @@ export default function SaleDetails({ sale: s, customer, company }: { sale: Deta
               </span>
               <span>
                 Payment Status :{" "}
-                <span className="sp-badge sp-badge--danger" data-payment="UNPAID">
+                <span className={`sp-badge sp-badge--${PAYMENT_STATUS_TONE[s.paymentStatus]}`} data-payment={s.paymentStatus}>
                   <i />
-                  Unpaid
+                  {PAYMENT_STATUS_LABEL[s.paymentStatus]}
                 </span>
               </span>
               <span>
@@ -175,6 +206,11 @@ export default function SaleDetails({ sale: s, customer, company }: { sale: Deta
               <span>
                 Paid : <b style={{ fontWeight: 600 }}>{s.paid}</b> · Due : <b style={{ fontWeight: 600 }}>{s.due}</b>
               </span>
+              {s.returns.length > 0 && (
+                <span>
+                  Returned : <b style={{ fontWeight: 600 }}>{s.returned}</b>
+                </span>
+              )}
               {s.quotation && (
                 <span>
                   Quotation :{" "}
@@ -239,6 +275,72 @@ export default function SaleDetails({ sale: s, customer, company }: { sale: Deta
             <span data-testid="details-grand">{s.grandTotal}</span>
           </div>
         </div>
+
+        {s.returns.length > 0 && (
+          <>
+            <div className="sp-band" style={{ margin: "32px 0 16px" }}>
+              Sales Returns
+            </div>
+            <div className="sp-table-card" style={{ boxShadow: "none" }}>
+              <table className="sp-table" data-testid="sale-returns">
+                <thead>
+                  <tr>
+                    <th>Reference</th>
+                    <th>Date</th>
+                    <th className="num">Grand Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {s.returns.map((r) => (
+                    <tr key={r.id}>
+                      <td>
+                        <Link href={`/sales/returns/${encodeURIComponent(r.id)}`} className="sp-code">
+                          {r.reference}
+                        </Link>
+                      </td>
+                      <td>{r.date}</td>
+                      <td className="num">{r.total}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {s.payments.length > 0 && (
+          <>
+            <div className="sp-band" style={{ margin: "32px 0 16px" }}>
+              Customer Payments
+            </div>
+            <div className="sp-table-card" style={{ boxShadow: "none" }}>
+              <table className="sp-table" data-testid="sale-payments">
+                <thead>
+                  <tr>
+                    <th>Reference</th>
+                    <th>Date</th>
+                    <th>Method</th>
+                    <th>Deposited To</th>
+                    <th className="num">Applied</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {s.payments.map((r) => (
+                    <tr key={r.id}>
+                      <td>
+                        <span className="sp-code">{r.reference}</span>
+                      </td>
+                      <td>{r.date}</td>
+                      <td>{r.method}</td>
+                      <td>{r.account}</td>
+                      <td className="num">{r.amount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
 
         {s.notes && (
           <div style={{ marginTop: 24 }} data-testid="sale-notes">

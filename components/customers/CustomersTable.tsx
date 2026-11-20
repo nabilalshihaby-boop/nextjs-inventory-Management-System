@@ -13,11 +13,11 @@ import type { CustomerRow } from "@/lib/customers";
 // Port of design/Customers.html: TableToolbar (search + Import Customers + Create Customer),
 // DataTable (Customer = name + email / Phone Number / Created On / Action), Pagination and
 // ConfirmDeleteModal. Search/paging run over the server-loaded list. Rows don't link anywhere
-// (customer payments/statements aren't built yet).
+// Account Statement (OWNER/ADMIN) links to /customers/statement.
 // Deferred: Import Customers (CSV import not implemented) — shown disabled, "Coming soon".
 const IMPORT_SOON = "Import Customers is coming soon. CSV import isn't available yet.";
 
-export default function CustomersTable({ rows, canManage }: { rows: CustomerRow[]; canManage: boolean }) {
+export default function CustomersTable({ rows, canManage, canViewStatement }: { rows: CustomerRow[]; canManage: boolean; canViewStatement: boolean }) {
   const router = useRouter();
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
@@ -28,7 +28,8 @@ export default function CustomersTable({ rows, canManage }: { rows: CustomerRow[
   const needle = q.trim().toLowerCase();
   const filtered = needle ? rows.filter((r) => [r.name, r.email, r.phoneNumber, r.countryName, r.city].join(" ").toLowerCase().includes(needle)) : rows;
   const p = paginate(filtered, page, pageSize);
-  const cols = canManage ? 4 : 3;
+  const showActions = canManage || canViewStatement;
+  const cols = showActions ? 4 : 3;
 
   function confirmDelete() {
     const row = del;
@@ -96,7 +97,7 @@ export default function CustomersTable({ rows, canManage }: { rows: CustomerRow[
                 <th>Customer</th>
                 <th>Phone Number</th>
                 <th>Created On</th>
-                {canManage && <th className="num">Action</th>}
+                {showActions && <th className="num">Action</th>}
               </tr>
             </thead>
             <tbody>
@@ -115,9 +116,22 @@ export default function CustomersTable({ rows, canManage }: { rows: CustomerRow[
                   <td>
                     <span className="sp-badge sp-badge--info">{r.createdOn}</span>
                   </td>
-                  {canManage && (
+                  {showActions && (
                     <td className="num">
                       <span style={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
+                        {canViewStatement && (
+                          <Link
+                            href={`/customers/statement?customer=${encodeURIComponent(r.id)}`}
+                            className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
+                            aria-label={`Account Statement for ${r.name}`}
+                            title="Account Statement"
+                            style={{ color: "var(--primary-600)" }}
+                          >
+                            <Icon name="file-text" size={16} />
+                          </Link>
+                        )}
+                        {canManage && (
+                        <>
                         <Link
                           href={`/customers/${encodeURIComponent(r.id)}/edit`}
                           className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
@@ -135,6 +149,8 @@ export default function CustomersTable({ rows, canManage }: { rows: CustomerRow[
                         >
                           <Icon name="trash-2" size={16} />
                         </button>
+                        </>
+                        )}
                       </span>
                     </td>
                   )}

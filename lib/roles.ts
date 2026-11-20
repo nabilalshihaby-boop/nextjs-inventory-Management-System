@@ -93,8 +93,23 @@ export function canManageSales(role: string | undefined): boolean {
   return role === "OWNER" || role === "ADMIN";
 }
 
+/** Sales returns: same audience as Sales — OWNER and ADMIN view and create; USER has no access. */
+export function canManageSaleReturns(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/** Customer payments: OWNER and ADMIN view and record them; USER has no access. */
+export function canManageCustomerPayments(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
 /** Supplier account statement (purchases, returns, payments, balances): OWNER and ADMIN only. */
 export function canViewSupplierStatement(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/** Customer account statement (sales, returns, payments, balances): OWNER and ADMIN only. */
+export function canViewCustomerStatement(role: string | undefined): boolean {
   return role === "OWNER" || role === "ADMIN";
 }
 

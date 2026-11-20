@@ -3,17 +3,35 @@ import { db } from "@/lib/db";
 import { formatDateOnly, formatDateTime } from "@/lib/format";
 import { getQuotationFormData, type QuotationFormData } from "@/lib/quotation-data";
 import { getDefaultCurrency, getSystemSettings } from "@/lib/settings";
-import { fromUnits, toUnits } from "@/lib/transfers";
-import type { SaleDraft, SaleRow, SaleStatusValue } from "@/lib/sales";
+import { paymentStatus } from "@/lib/purchases";
+import { saleDue } from "@/lib/sale-returns";
+import { toUnits } from "@/lib/transfers";
+import { returnBlockedReason, type SaleDraft, type SaleRow, type SaleStatusValue } from "@/lib/sales";
 
 /** Same real options as quotations: customers, warehouses, products (price/tax/sale unit), stock, currency. */
 export type SaleFormData = QuotationFormData;
 export const getSaleFormData = getQuotationFormData;
 
-const due = (grand: string, paid: string) => {
-  const d = toUnits(grand, 2) - toUnits(paid, 2);
-  return fromUnits(d < BigInt(0) ? BigInt(0) : d, 2);
-};
+/** Per sale: Σ returned grand totals, and whether every sold quantity has already been returned. */
+export async function saleReturnState(saleIds: string[]): Promise<Map<string, { returned: string; fullyReturned: boolean }>> {
+  if (!saleIds.length) return new Map();
+  const [sums, sold, back] = await Promise.all([
+    db.saleReturn.groupBy({ by: ["saleId"], where: { saleId: { in: saleIds } }, _sum: { grandTotal: true } }),
+    db.saleItem.groupBy({ by: ["saleId"], where: { saleId: { in: saleIds } }, _sum: { quantity: true } }),
+    db.saleReturnItem.findMany({ where: { saleReturn: { saleId: { in: saleIds } } }, select: { quantity: true, saleReturn: { select: { saleId: true } } } }),
+  ]);
+  // Exact thousandths (BigInt) — no floating point.
+  const zero = BigInt(0);
+  const backBy = new Map<string, bigint>();
+  for (const b of back) backBy.set(b.saleReturn.saleId, (backBy.get(b.saleReturn.saleId) ?? zero) + toUnits(b.quantity.toFixed(3), 3));
+  const soldBy = new Map(sold.map((s) => [s.saleId, s._sum.quantity ? toUnits(s._sum.quantity.toFixed(3), 3) : zero]));
+  const out = new Map<string, { returned: string; fullyReturned: boolean }>();
+  for (const id of saleIds) {
+    const sum = sums.find((x) => x.saleId === id)?._sum.grandTotal;
+    out.set(id, { returned: sum ? sum.toFixed(2) : "0.00", fullyReturned: (soldBy.get(id) ?? zero) > zero && (backBy.get(id) ?? zero) >= (soldBy.get(id) ?? zero) });
+  }
+  return out;
+}
 
 /** A sale's stored values for the edit form (null if missing). */
 export async function getSaleDraft(id: string): Promise<{ status: SaleStatusValue; reference: string; draft: SaleDraft } | null> {
@@ -71,7 +89,17 @@ export async function getSaleRows(): Promise<SaleRow[]> {
     getSystemSettings(),
     getDefaultCurrency(),
   ]);
-  return rows.map((r) => ({
+  const [state, allocs] = await Promise.all([
+    saleReturnState(rows.map((r) => r.id)),
+    db.customerPaymentAllocation.findMany({ where: { saleId: { in: rows.map((r) => r.id) } }, select: { saleId: true, payment: { select: { paymentMethod: true } } } }),
+  ]);
+  const types = new Map<string, Set<string>>();
+  for (const a of allocs) (types.get(a.saleId) ?? types.set(a.saleId, new Set()).get(a.saleId)!).add(a.payment.paymentMethod);
+  return rows.map((r) => {
+    const st = state.get(r.id) ?? { returned: "0.00", fullyReturned: false };
+    const grand = r.grandTotal.toFixed(2), paid = r.paidAmount.toFixed(2);
+    const due = saleDue(grand, paid, st.returned);
+    return {
     id: r.id,
     reference: r.reference,
     customerId: r.customerId,
@@ -81,11 +109,16 @@ export async function getSaleRows(): Promise<SaleRow[]> {
     date: r.saleDate.toISOString().slice(0, 10),
     dateLabel: formatDateOnly(r.saleDate, settings?.dateFormat),
     grandTotal: r.grandTotal.toFixed(2),
-    paid: r.paidAmount.toFixed(2),
-    due: due(r.grandTotal.toFixed(2), r.paidAmount.toFixed(2)),
+    paid,
+    returned: st.returned,
+    due,
+    paymentStatus: paymentStatus(paid, grand, st.returned),
+    paymentTypes: [...(types.get(r.id) ?? [])].sort(),
+    returnBlocked: returnBlockedReason(r.status, due, st.fullyReturned),
     quotationRef: r.quotation?.reference ?? null,
     createdOn: formatDateTime(r.createdAt, settings?.dateFormat),
     currency: { code: r.currency.code, symbol: r.currency.symbol, right: !!settings?.currencyIconRight },
     inDefaultCurrency: !!def && r.currencyId === def.id,
-  }));
+    };
+  });
 }

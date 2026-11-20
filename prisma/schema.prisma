@@ -56,6 +56,8 @@ model Currency {
   supplierPayments SupplierPayment[]
   quotations       Quotation[]
   sales            Sale[]
+  saleReturns      SaleReturn[]
+  customerPayments CustomerPayment[]
 
   @@map("currencies")
 }
@@ -84,6 +86,7 @@ model Warehouse {
   purchaseReturns PurchaseReturn[]
   quotations      Quotation[]
   sales           Sale[]
+  saleReturns     SaleReturn[]
 
   @@map("warehouses")
 }
@@ -158,20 +161,22 @@ model Supplier {
 /// Sales, quotations, customer payments and statements will reference customers; deletion must be
 /// refused while they do (see app/(dashboard)/customers/actions.ts).
 model Customer {
-  id          String      @id @default(cuid())
-  name        String      @unique @db.VarChar(120)
-  email       String      @db.VarChar(191)
-  phoneNumber String      @db.VarChar(32)
+  id               String            @id @default(cuid())
+  name             String            @unique @db.VarChar(120)
+  email            String            @db.VarChar(191)
+  phoneNumber      String            @db.VarChar(32)
   /// ISO 3166-1 alpha-2 code (see lib/countries.ts).
-  countryCode String      @db.Char(2)
-  city        String      @db.VarChar(120)
-  address     String      @db.VarChar(500)
+  countryCode      String            @db.Char(2)
+  city             String            @db.VarChar(120)
+  address          String            @db.VarChar(500)
   /// Optional; a past (or today's) date.
-  dateOfBirth DateTime?   @db.Date
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  quotations  Quotation[]
-  sales       Sale[]
+  dateOfBirth      DateTime?         @db.Date
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  quotations       Quotation[]
+  sales            Sale[]
+  saleReturns      SaleReturn[]
+  customerPayments CustomerPayment[]
 
   @@map("customers")
 }
@@ -229,6 +234,7 @@ model Product {
   purchaseReturnItems PurchaseReturnItem[]
   quotationItems      QuotationItem[]
   saleItems           SaleItem[]
+  saleReturnItems     SaleReturnItem[]
 
   @@index([categoryId])
   @@index([brandId])
@@ -678,6 +684,7 @@ model CashBankAccount {
   transfersIn      CashBankTransaction[] @relation("CashBankDestination")
   expenses         Expense[]
   supplierPayments SupplierPayment[]
+  customerPayments CustomerPayment[]
 
   @@map("cash_bank_accounts")
 }
@@ -710,6 +717,9 @@ model CashBankTransaction {
   activeForExpense     Expense?                @relation("ExpenseActiveTransaction")
   supplierPaymentId    String?                 @unique
   supplierPayment      SupplierPayment?        @relation("SupplierPaymentLedger", fields: [supplierPaymentId], references: [id], onDelete: Restrict)
+  /// Set (at creation only) on the one DEPOSIT produced by a customer payment.
+  customerPaymentId    String?                 @unique
+  customerPayment      CustomerPayment?        @relation("CustomerPaymentLedger", fields: [customerPaymentId], references: [id], onDelete: Restrict)
   createdAt            DateTime                @default(now())
 
   @@index([expenseId])
@@ -862,40 +872,42 @@ enum SaleStatus {
 }
 
 model Sale {
-  id             String     @id @default(cuid())
+  id                 String                      @id @default(cuid())
   /// MySQL AUTO_INCREMENT: concurrency-safe and never reused (gaps are possible).
-  number         Int        @unique @default(autoincrement())
+  number             Int                         @unique @default(autoincrement())
   /// "SA_000001" — generated server-side from `number`.
-  reference      String     @unique @db.VarChar(20)
-  saleDate       DateTime   @db.Date
-  customerId     String
-  customer       Customer   @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  warehouseId    String
-  warehouse      Warehouse  @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
-  status         SaleStatus
+  reference          String                      @unique @db.VarChar(20)
+  saleDate           DateTime                    @db.Date
+  customerId         String
+  customer           Customer                    @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  warehouseId        String
+  warehouse          Warehouse                   @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  status             SaleStatus
   /// Default currency at creation (or the source quotation's currency).
-  currencyId     String
-  currency       Currency   @relation(fields: [currencyId], references: [id], onDelete: Restrict)
-  subtotal       Decimal    @db.Decimal(14, 2)
-  orderTaxRate   Decimal    @default(0) @db.Decimal(5, 2)
-  orderTaxAmount Decimal    @default(0) @db.Decimal(14, 2)
-  discount       Decimal    @default(0) @db.Decimal(14, 2)
-  shipping       Decimal    @default(0) @db.Decimal(14, 2)
+  currencyId         String
+  currency           Currency                    @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  subtotal           Decimal                     @db.Decimal(14, 2)
+  orderTaxRate       Decimal                     @default(0) @db.Decimal(5, 2)
+  orderTaxAmount     Decimal                     @default(0) @db.Decimal(14, 2)
+  discount           Decimal                     @default(0) @db.Decimal(14, 2)
+  shipping           Decimal                     @default(0) @db.Decimal(14, 2)
   /// subtotal + orderTaxAmount − discount + shipping.
-  grandTotal     Decimal    @db.Decimal(14, 2)
+  grandTotal         Decimal                     @db.Decimal(14, 2)
   /// Customer payments are not built yet: always 0 (Due = grandTotal − paidAmount).
-  paidAmount     Decimal    @default(0) @db.Decimal(14, 2)
-  notes          String?    @db.Text
+  paidAmount         Decimal                     @default(0) @db.Decimal(14, 2)
+  notes              String?                     @db.Text
   /// Set when created from an Accepted quotation; unique → a quotation converts at most once.
-  quotationId    String?    @unique
-  quotation      Quotation? @relation(fields: [quotationId], references: [id], onDelete: Restrict)
+  quotationId        String?                     @unique
+  quotation          Quotation?                  @relation(fields: [quotationId], references: [id], onDelete: Restrict)
   /// When stock was deducted (status became COMPLETED) and by whom.
-  completedAt    DateTime?
-  completedById  String?    @db.VarChar(191)
-  createdById    String?    @db.VarChar(191)
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-  items          SaleItem[]
+  completedAt        DateTime?
+  completedById      String?                     @db.VarChar(191)
+  createdById        String?                     @db.VarChar(191)
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+  items              SaleItem[]
+  returns            SaleReturn[]
+  paymentAllocations CustomerPaymentAllocation[]
 
   @@index([customerId])
   @@index([warehouseId])
@@ -906,9 +918,82 @@ model Sale {
 
 /// One sold product — this sale's own snapshot (never written back to Product).
 model SaleItem {
-  id             String       @id @default(cuid())
+  id             String           @id @default(cuid())
   saleId         String
-  sale           Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  sale           Sale             @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product          @relation(fields: [productId], references: [id], onDelete: Restrict)
+  productCode    String           @db.VarChar(64)
+  productName    String           @db.VarChar(191)
+  unitName       String           @db.VarChar(64)
+  quantity       Decimal          @db.Decimal(14, 3)
+  unitPrice      Decimal          @db.Decimal(14, 2)
+  taxType        TaxType
+  taxRate        Decimal          @db.Decimal(5, 2)
+  discountType   DiscountType
+  discountValue  Decimal          @db.Decimal(14, 2)
+  discountAmount Decimal          @db.Decimal(14, 2)
+  taxAmount      Decimal          @db.Decimal(14, 2)
+  netUnitPrice   Decimal          @db.Decimal(14, 2)
+  subtotal       Decimal          @db.Decimal(14, 2)
+  returnItems    SaleReturnItem[]
+
+  @@unique([saleId, productId])
+  @@index([productId])
+  @@map("sale_items")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Sales Returns (design/Sales Returns.html, Create Sale Return.html, Edit Sale Return.html).
+// Always linked to one COMPLETED sale. Creating one adds the returned quantities back to the sale's
+// warehouse in the same transaction (the return lines are the stock movement record) and reduces the
+// sale's Due by its grand total. Amounts are exact shares of the sale's stored snapshot; shipping is
+// never returned. No cash/bank, ledger, refund or payment rows. Immutable (no edit/delete).
+enum SaleReturnStatus {
+  COMPLETED
+}
+
+model SaleReturn {
+  id             String           @id @default(cuid())
+  /// MySQL AUTO_INCREMENT: concurrency-safe and never reused (gaps are possible).
+  number         Int              @unique @default(autoincrement())
+  /// "SR_000001" — generated server-side from `number`.
+  reference      String           @unique @db.VarChar(20)
+  returnDate     DateTime         @db.Date
+  saleId         String
+  sale           Sale             @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  /// Copied from the sale (never from the browser).
+  customerId     String
+  customer       Customer         @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  warehouseId    String
+  warehouse      Warehouse        @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  currencyId     String
+  currency       Currency         @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  status         SaleReturnStatus @default(COMPLETED)
+  subtotal       Decimal          @db.Decimal(14, 2)
+  orderTaxAmount Decimal          @db.Decimal(14, 2)
+  discount       Decimal          @db.Decimal(14, 2)
+  /// Shipping is not returned (always 0; kept for the design's summary).
+  shipping       Decimal          @default(0) @db.Decimal(14, 2)
+  grandTotal     Decimal          @db.Decimal(14, 2)
+  notes          String?          @db.Text
+  createdById    String?          @db.VarChar(191)
+  createdAt      DateTime         @default(now())
+  items          SaleReturnItem[]
+
+  @@index([saleId])
+  @@index([customerId])
+  @@index([warehouseId])
+  @@map("sale_returns")
+}
+
+/// One returned sale line — a snapshot of the original sale line's price/tax/discount/identity.
+model SaleReturnItem {
+  id             String       @id @default(cuid())
+  returnId       String
+  saleReturn     SaleReturn   @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  saleItemId     String
+  saleItem       SaleItem     @relation(fields: [saleItemId], references: [id], onDelete: Restrict)
   productId      String
   product        Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
   productCode    String       @db.VarChar(64)
@@ -916,16 +1001,66 @@ model SaleItem {
   unitName       String       @db.VarChar(64)
   quantity       Decimal      @db.Decimal(14, 3)
   unitPrice      Decimal      @db.Decimal(14, 2)
+  netUnitPrice   Decimal      @db.Decimal(14, 2)
   taxType        TaxType
   taxRate        Decimal      @db.Decimal(5, 2)
   discountType   DiscountType
   discountValue  Decimal      @db.Decimal(14, 2)
   discountAmount Decimal      @db.Decimal(14, 2)
   taxAmount      Decimal      @db.Decimal(14, 2)
-  netUnitPrice   Decimal      @db.Decimal(14, 2)
   subtotal       Decimal      @db.Decimal(14, 2)
 
-  @@unique([saleId, productId])
+  @@unique([returnId, saleItemId])
+  @@index([saleItemId])
   @@index([productId])
-  @@map("sale_items")
+  @@map("sale_return_items")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Customer Payments (design/Customer Payments.html). A real receipt against COMPLETED sales: one
+// immutable payment + immutable allocation rows + exactly ONE append-only Cash/Bank DEPOSIT, all in
+// one transaction; each allocated Sale.paidAmount is incremented there too.
+// Sale Due = max(0, Grand Total − completed sales-return totals − Paid). No unallocated receipts,
+// customer credit or refunds yet. Immutable: no edit/delete (future reversals use compensating rows).
+model CustomerPayment {
+  id                String                      @id @default(cuid())
+  /// MySQL AUTO_INCREMENT: concurrency-safe and never reused (gaps are possible).
+  number            Int                         @unique @default(autoincrement())
+  /// "CP_000001" — generated server-side from `number`.
+  reference         String                      @unique @db.VarChar(20)
+  paymentDate       DateTime                    @db.Date
+  customerId        String
+  customer          Customer                    @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  cashBankAccountId String
+  cashBankAccount   CashBankAccount             @relation(fields: [cashBankAccountId], references: [id], onDelete: Restrict)
+  /// The receiving account's currency (= every allocated sale's currency).
+  currencyId        String
+  currency          Currency                    @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  /// Σ allocations.
+  amount            Decimal                     @db.Decimal(14, 2)
+  paymentMethod     String                      @db.VarChar(32)
+  /// The design's optional "Payment Reference" (e.g. a cheque or bank transfer number).
+  externalReference String?                     @db.VarChar(64)
+  notes             String?                     @db.Text
+  createdById       String?                     @db.VarChar(191)
+  createdAt         DateTime                    @default(now())
+  allocations       CustomerPaymentAllocation[]
+  ledgerEntry       CashBankTransaction?        @relation("CustomerPaymentLedger")
+
+  @@index([customerId])
+  @@index([cashBankAccountId])
+  @@map("customer_payments")
+}
+
+model CustomerPaymentAllocation {
+  id        String          @id @default(cuid())
+  paymentId String
+  payment   CustomerPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  saleId    String
+  sale      Sale            @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  amount    Decimal         @db.Decimal(14, 2)
+
+  @@unique([paymentId, saleId])
+  @@index([saleId])
+  @@map("customer_payment_allocations")
 }

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { transactionDateSchema } from "@/lib/cash-bank";
+import type { PaymentStatusValue } from "@/lib/purchases";
 import { MAX_QUOTATION_ITEMS, calcQuotation, quotationItemSchema, type QuotationCurrency, type QuotationOption, type QuotationProduct, type QuotationStockLevel } from "@/lib/quotations";
 
 // Shared Sale rules (client + server). The sale lines use the SAME line schema and the SAME exact
@@ -11,9 +12,22 @@ export type SaleStatusValue = (typeof SALE_STATUSES)[number];
 export const SALE_STATUS_LABEL: Record<SaleStatusValue, string> = { COMPLETED: "Completed", PENDING: "Pending" };
 export const SALE_STATUS_TONE: Record<SaleStatusValue, string> = { COMPLETED: "success", PENDING: "warning" };
 
-/** Customer payments aren't built: every sale is Unpaid (Paid 0, Due = Grand Total). */
+/** Customer payments aren't built: Paid is 0, Due = Grand Total − completed sales returns. */
 export const PAYMENTS_SOON = "Customer payments — coming soon";
-export const SALE_RETURN_SOON = "Sales Returns — coming soon";
+/** Why "Record Payment" isn't available for a sale (null = it can be paid now). */
+export function paymentBlockedReason(status: SaleStatusValue, due: string): string | null {
+  if (status !== "COMPLETED") return "Only completed sales can be paid";
+  if (!/[1-9]/.test(due)) return "Nothing is left to pay on this sale";
+  return null;
+}
+
+/** Why "Create Sale Return" isn't available for a sale (null = it can be returned now). */
+export function returnBlockedReason(status: SaleStatusValue, due: string, fullyReturned: boolean): string | null {
+  if (status !== "COMPLETED") return "Only completed sales can be returned";
+  if (fullyReturned) return "Every item of this sale has already been returned";
+  if (!/[1-9]/.test(due)) return "Nothing is left unpaid on this sale (customer refunds/credit aren't available yet)";
+  return null;
+}
 export const SALE_PDF_SOON = "Download PDF — coming soon";
 
 /** "SA_000001" — generated server-side from the AUTO_INCREMENT number (never reused). */
@@ -88,7 +102,15 @@ export type SaleRow = {
   dateLabel: string;
   grandTotal: string;
   paid: string;
+  /** Σ completed sales-return grand totals. */
+  returned: string;
+  /** max(0, Grand Total − Paid − returned). */
   due: string;
+  paymentStatus: PaymentStatusValue;
+  /** Distinct methods of the customer payments allocated to this sale (Payment Type). */
+  paymentTypes: string[];
+  /** null when a sales return can be created now, otherwise the reason. */
+  returnBlocked: string | null;
   quotationRef: string | null;
   createdOn: string;
   currency: SaleCurrency;

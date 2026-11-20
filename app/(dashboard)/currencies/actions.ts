@@ -102,6 +102,10 @@ export async function deleteCurrency(id: unknown): Promise<CurrencyResult> {
   if (quotations) return { ok: false, message: `This currency is used by ${quotations} quotation${quotations === 1 ? "" : "s"} and can't be deleted.` };
   const sales = await db.sale.count({ where: { currencyId: existing.id } });
   if (sales) return { ok: false, message: `This currency is used by ${sales} sale${sales === 1 ? "" : "s"} and can't be deleted.` };
+  const saleReturns = await db.saleReturn.count({ where: { currencyId: existing.id } });
+  if (saleReturns) return { ok: false, message: `This currency is used by ${saleReturns} sales return${saleReturns === 1 ? "" : "s"} and can't be deleted.` };
+  const customerPayments = await db.customerPayment.count({ where: { currencyId: existing.id } });
+  if (customerPayments) return { ok: false, message: `This currency is used by ${customerPayments} customer payment${customerPayments === 1 ? "" : "s"} and can't be deleted.` };
 
   try {
     await db.currency.delete({ where: { id: existing.id } });

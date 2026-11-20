@@ -92,9 +92,11 @@ export async function updateCustomer(id: unknown, input: unknown): Promise<Custo
  */
 async function findCustomerReferences(customerId: string): Promise<string[]> {
   const blockers: string[] = [];
-  const [quotations, sales] = await Promise.all([db.quotation.count({ where: { customerId } }), db.sale.count({ where: { customerId } })]);
+  const [quotations, sales, saleReturns, payments] = await Promise.all([db.quotation.count({ where: { customerId } }), db.sale.count({ where: { customerId } }), db.saleReturn.count({ where: { customerId } }), db.customerPayment.count({ where: { customerId } })]);
   if (quotations) blockers.push(`${quotations} quotation${quotations === 1 ? "" : "s"}`);
   if (sales) blockers.push(`${sales} sale${sales === 1 ? "" : "s"}`);
+  if (saleReturns) blockers.push(`${saleReturns} sales return${saleReturns === 1 ? "" : "s"}`);
+  if (payments) blockers.push(`${payments} customer payment${payments === 1 ? "" : "s"}`);
   return blockers;
 }
 

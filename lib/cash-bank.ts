@@ -28,7 +28,7 @@ export const PAYMENT_METHODS = ["Cash", "Bank Transfer", "Card", "Cheque"] as co
 export const DEPOSIT_SOURCES = ["Other Income", "Opening Adjustment", "Other"] as const;
 export const WITHDRAWAL_PURPOSES = ["Petty Cash", "Other"] as const;
 export const DEFERRED_DEPOSIT_SOURCES = [
-  { label: "Customer Collection", reason: "Available after Sales and Customer Payments are built" },
+  { label: "Customer Collection", reason: "Recorded from Customer Payments" },
   { label: "POS Sales", reason: "Available after Sales are built" },
 ] as const;
 export const DEFERRED_WITHDRAWAL_PURPOSES = [

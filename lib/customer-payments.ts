@@ -1,0 +1,87 @@
+import { z } from "zod";
+import { PAYMENT_METHODS, positiveMoneySchema, transactionDateSchema } from "@/lib/cash-bank";
+import { toUnits } from "@/lib/transfers";
+
+// Shared Customer Payment rules (client + server). The browser sends only ids, the allocation
+// amounts, the claimed total (checked against the exact sum), the method, date and text fields;
+// dues, paid, returns, balances, currency, sale ownership and references are read on the server.
+
+/** "CP_000001" — generated server-side from the AUTO_INCREMENT number (never reused). */
+export const formatCustomerPaymentReference = (n: number) => `CP_${String(n).padStart(6, "0")}`;
+/** Ledger deposit source written for customer payments (never selectable as a manual deposit). */
+export const CUSTOMER_PAYMENT_PURPOSE = "Customer Collection";
+export const UNALLOCATED_SOON = "Customer credit/advance payments will be available later.";
+export const PAYMENT_IMMUTABLE = "Customer payments can't be edited or deleted (a future reversal will use a compensating entry)";
+
+const id = (msg: string) => z.string({ error: msg }).trim().min(1, msg).max(64, msg);
+const MONEY_RE = /^\d{1,12}(\.\d{1,2})?$/;
+
+export const customerPaymentInputSchema = z
+  .object({
+    customerId: id("Choose a customer"),
+    paymentDate: transactionDateSchema,
+    paymentMethod: z.enum(PAYMENT_METHODS, { error: "Choose a payment method" }),
+    cashBankAccountId: id("Choose the account the payment is deposited to"),
+    /** The total the user saw; must equal Σ allocations exactly (protects against stale/forged totals). */
+    amount: positiveMoneySchema("Amount"),
+    externalReference: z.string().trim().max(64, "Reference is too long").optional().default(""),
+    notes: z.string().trim().max(2000, "Notes are too long").optional().default(""),
+    allocations: z
+      .array(z.object({ saleId: id("Choose a valid sale"), amount: positiveMoneySchema("Allocated amount") }).strict(), { error: "Select at least one sale to pay" })
+      .min(1, "Select at least one sale to pay")
+      .max(100, "Up to 100 sales per payment"),
+  })
+  .strict()
+  .superRefine((v, ctx) => {
+    const seen = new Set<string>();
+    for (const a of v.allocations) {
+      if (seen.has(a.saleId)) {
+        ctx.addIssue({ code: "custom", path: ["allocations"], message: "Each sale can be allocated only once" });
+        return;
+      }
+      seen.add(a.saleId);
+    }
+    const sum = v.allocations.reduce((s, a) => s + (MONEY_RE.test(a.amount) ? toUnits(a.amount, 2) : BigInt(0)), BigInt(0));
+    if (MONEY_RE.test(v.amount) && sum !== toUnits(v.amount, 2)) {
+      ctx.addIssue({ code: "custom", path: ["amount"], message: "The payment amount must equal the sum of the allocations" });
+    }
+  });
+
+export type CustomerPaymentInput = z.infer<typeof customerPaymentInputSchema>;
+export type CustomerPaymentField = "customerId" | "paymentDate" | "paymentMethod" | "cashBankAccountId" | "amount" | "externalReference" | "notes" | "allocations";
+
+// ---- view models ----
+export type PayableSale = {
+  id: string;
+  customerId: string;
+  reference: string;
+  date: string; // YYYY-MM-DD (payment can't be earlier)
+  dateLabel: string;
+  status: string; // always "Completed" (only completed sales are payable)
+  currencyId: string;
+  grandTotal: string;
+  paid: string;
+  returned: string;
+  due: string;
+};
+export type ReceivingAccount = { id: string; name: string; balance: string; currencyId: string; currencyCode: string };
+export type PaymentCurrency = { id: string; code: string; symbol: string; right: boolean };
+export type CustomerPaymentRow = {
+  id: string;
+  reference: string;
+  date: string; // YYYY-MM-DD
+  dateLabel: string;
+  customerId: string;
+  customer: string;
+  method: string;
+  account: string;
+  amount: string;
+  appliedTo: { reference: string; saleId: string; amount: string }[];
+  externalReference: string;
+  notes: string;
+  ledgerReference: string;
+  createdBy: string;
+  createdOn: string;
+  currency: { code: string; symbol: string; right: boolean };
+  inDefaultCurrency: boolean;
+};

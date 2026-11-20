@@ -18,8 +18,8 @@ type Tone = "teal" | "green" | "blue" | "amber" | "violet" | "rose" | "cyan" | "
 const TILES: { tone: Tone; icon: IconName; label: string; href: string }[] = [
   { tone: "teal", icon: "shopping-cart", label: "Sales", href: "/sales" },
   { tone: "green", icon: "package-plus", label: "Purchases", href: "/purchases" },
-  { tone: "blue", icon: "arrow-right", label: "Sales Returns", href: "/sales-returns" },
-  { tone: "amber", icon: "arrow-left", label: "Purchases Returns", href: "/purchases-returns" },
+  { tone: "blue", icon: "arrow-right", label: "Sales Returns", href: "/sales/returns" },
+  { tone: "amber", icon: "arrow-left", label: "Purchases Returns", href: "/purchases/returns" },
   { tone: "violet", icon: "dollar-sign", label: "Today Total Sales", href: "/sales" },
   { tone: "rose", icon: "banknote", label: "Today Total Received(Sales)", href: "/sales" },
   { tone: "cyan", icon: "shopping-cart", label: "Today Total Purchases", href: "/purchases" },

@@ -57,20 +57,10 @@ export const NAV: NavItem[] = [
     roles: STAFF, // prices, customer invoices and stock deductions: hidden from USER
     children: [
       { id: "s1", label: "Sales", href: "/sales" },
-      { id: "s2", label: "Sales Returns", href: "/sales-returns", disabled: "Sales Returns — coming soon" },
+      { id: "s2", label: "Sales Returns", href: "/sales/returns" },
     ],
   },
   { id: "tr", label: "Transfers", icon: "arrow-left-right", href: "/transfers" },
-  {
-    id: "ex",
-    label: "Expenses",
-    icon: "wallet",
-    roles: STAFF, // finance data: hidden from USER (like Finance)
-    children: [
-      { id: "e1", label: "Expenses", href: "/expenses" },
-      { id: "e2", label: "Expense Categories", href: "/expenses/categories" },
-    ],
-  },
   {
     id: "fin",
     label: "Finance",
@@ -79,6 +69,10 @@ export const NAV: NavItem[] = [
     children: [
       { id: "f1", label: "Cash & Bank Accounts", href: "/finance/accounts" },
       { id: "f2", label: "Cash & Bank Transactions", href: "/finance/transactions" },
+      { id: "pe4", label: "Supplier Payments", href: "/supplier-payments", roles: STAFF },
+      { id: "pe5", label: "Customer Payments", href: "/customer-payments", roles: STAFF },
+      { id: "e1", label: "Expenses", href: "/expenses" },
+      { id: "e2", label: "Expense Categories", href: "/expenses/categories" },
       { id: "f3", label: "Profit & Loss", href: "/profit-loss" },
       { id: "f4", label: "Cash Flow", href: "/cash-flow" },
       { id: "f5", label: "Receivables & Payables Aging", href: "/receivables-payables-aging" },
@@ -92,8 +86,6 @@ export const NAV: NavItem[] = [
       { id: "pe1", label: "Suppliers", href: "/suppliers" },
       { id: "pe2", label: "Customers", href: "/customers" },
       { id: "pe3", label: "Users", href: "/users", roles: OWNER_ONLY },
-      { id: "pe4", label: "Supplier Payments", href: "/supplier-payments", roles: STAFF },
-      { id: "pe5", label: "Customer Payments", href: "/customer-payments", disabled: "Customer Payments — coming soon" },
     ],
   },
   { id: "ro", label: "Roles/Permissions", icon: "shield-check", href: "/roles", title: "Roles" },
@@ -143,6 +135,8 @@ const EXTRA_TITLES: { href: string; title: string }[] = [
   { href: "/preferences", title: "Appearance & Cache" },
   { href: "/suppliers/statement", title: "Supplier Statement" },
   { href: "/reports/supplier-statement", title: "Supplier Statement Report" },
+  { href: "/customers/statement", title: "Customer Statement" },
+  { href: "/reports/customer-statement", title: "Customer Statement Report" },
 ];
 
 /**

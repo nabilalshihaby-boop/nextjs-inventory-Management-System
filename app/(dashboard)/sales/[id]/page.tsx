@@ -8,6 +8,10 @@ import { formatDateOnly, formatDateTime } from "@/lib/format";
 import { formatMoney, formatQuantity } from "@/lib/money";
 import { canManageSales } from "@/lib/roles";
 import { getSystemSettings } from "@/lib/settings";
+import { paymentStatus } from "@/lib/purchases";
+import { saleDue } from "@/lib/sale-returns";
+import { paymentBlockedReason, returnBlockedReason } from "@/lib/sales";
+import { saleReturnState } from "@/lib/sale-data";
 import SaleDetails from "@/components/sales/SaleDetails";
 
 export const metadata: Metadata = { title: "Sale Details" };
@@ -34,7 +38,14 @@ export default async function SaleDetailsPage({ params }: PageProps<"/sales/[id]
   const country = new Map<string, string>(getCountryOptions().map((c) => [c.code, c.name]));
   const userIds = [s.createdById, s.completedById].filter((x): x is string => !!x);
   const users = new Map((userIds.length ? await db.user.findMany({ where: { id: { in: userIds } }, select: { id: true, firstName: true, lastName: true } }) : []).map((u) => [u.id, `${u.firstName} ${u.lastName}`]));
-  const due = s.grandTotal.minus(s.paidAmount);
+  const [returns, state, payments] = await Promise.all([
+    db.saleReturn.findMany({ where: { saleId: s.id }, orderBy: { number: "asc" }, select: { id: true, reference: true, returnDate: true, grandTotal: true } }),
+    saleReturnState([s.id]),
+    db.customerPaymentAllocation.findMany({ where: { saleId: s.id }, orderBy: { payment: { number: "asc" } }, select: { amount: true, payment: { select: { id: true, reference: true, paymentDate: true, paymentMethod: true, cashBankAccount: { select: { name: true } } } } } }),
+  ]);
+  const st = state.get(s.id) ?? { returned: "0.00", fullyReturned: false };
+  const grand = s.grandTotal.toFixed(2), paid = s.paidAmount.toFixed(2);
+  const due = saleDue(grand, paid, st.returned);
 
   return (
     <SaleDetails
@@ -50,7 +61,13 @@ export default async function SaleDetailsPage({ params }: PageProps<"/sales/[id]
         quotation: s.quotation,
         notes: s.notes ?? "",
         paid: m(s.paidAmount),
-        due: m(due.isNegative() ? s.paidAmount.minus(s.paidAmount) : due),
+        returned: formatMoney(st.returned, cur),
+        due: formatMoney(due, cur),
+        paymentStatus: paymentStatus(paid, grand, st.returned),
+        returnBlocked: returnBlockedReason(s.status, due, st.fullyReturned),
+        paymentBlocked: paymentBlockedReason(s.status, due),
+        payments: payments.map((a) => ({ id: a.payment.id, reference: a.payment.reference, date: formatDateOnly(a.payment.paymentDate, settings?.dateFormat), method: a.payment.paymentMethod, account: a.payment.cashBankAccount.name, amount: m(a.amount) })),
+        returns: returns.map((r) => ({ id: r.id, reference: r.reference, date: formatDateOnly(r.returnDate, settings?.dateFormat), total: m(r.grandTotal) })),
         orderTax: `${m(s.orderTaxAmount)} (${s.orderTaxRate.toFixed(2)}%)`,
         discount: m(s.discount),
         shipping: m(s.shipping),

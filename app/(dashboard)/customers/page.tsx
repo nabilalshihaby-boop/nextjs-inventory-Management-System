@@ -5,7 +5,7 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { getCountryOptions } from "@/lib/countries";
 import { formatDateTime } from "@/lib/format";
-import { canManageCustomers } from "@/lib/roles";
+import { canManageCustomers, canViewCustomerStatement } from "@/lib/roles";
 import { getSystemSettings } from "@/lib/settings";
 import type { CustomerRow } from "@/lib/customers";
 import CustomersTable from "@/components/customers/CustomersTable";
@@ -34,5 +34,5 @@ export default async function CustomersPage() {
     createdOn: formatDateTime(c.createdAt, settings?.dateFormat),
   }));
 
-  return <CustomersTable rows={rows} canManage={canManageCustomers(session.user.role)} />;
+  return <CustomersTable rows={rows} canManage={canManageCustomers(session.user.role)} canViewStatement={canViewCustomerStatement(session.user.role)} />;
 }
