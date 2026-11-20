@@ -216,3 +216,17 @@ svg.sp-icon{background:none;-webkit-mask:none;mask:none}
 .si-eye{position:absolute;right:6px;top:4px}
 @media(max-width:767px){.si{grid-template-columns:minmax(0,1fr);min-height:100vh}.si-brand{padding:28px 24px;gap:20px}.si-brand h2{font-size:34px}.si-brand p{font-size:16px;line-height:24px;margin-top:12px}.si-form{padding:28px 20px}}
 @media(min-width:768px) and (max-width:1279px){.si-brand{padding:40px 32px}.si-brand h2{font-size:40px}.si-form{padding:32px}}
+
+/* Theme Settings page (app/(dashboard)/settings/theme) - copied verbatim from the inline <style> in design/Theme Settings.html. */
+.th-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;align-items:start}
+@media(max-width:1180px){.th-grid{grid-template-columns:minmax(0,1fr)}}
+.th-sticky{position:sticky;top:92px}
+.th-color{display:flex;gap:8px;align-items:center}
+.th-color input[type=color]{flex:none;width:42px;height:42px;padding:3px;border:1px solid var(--border-strong);border-radius:var(--radius-md);background:var(--bg-surface);cursor:pointer}
+.th-seg{display:flex;gap:8px;flex-wrap:wrap}
+
+/* Products form (app/(dashboard)/products): the design's 2fr / 1fr layout stacks on narrow screens. */
+@media(max-width:1023px){.bp-product-layout{grid-template-columns:minmax(0,1fr)!important;gap:32px!important}}
+
+/* Inventory Transfers (design/Create Transfer.html): product-search suggestions. */
+.sp-sug{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:30;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);padding:6px;max-height:320px;overflow-y:auto}

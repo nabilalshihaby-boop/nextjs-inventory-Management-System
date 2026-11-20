@@ -15,22 +15,393 @@ datasource db {
 }
 
 enum Role {
+  OWNER
   ADMIN
   USER
 }
 
 model User {
-  id           String   @id @default(cuid())
+  id           String          @id @default(cuid())
   firstName    String
   lastName     String
-  email        String   @unique
+  email        String          @unique
   /// bcrypt hash only — never store a plaintext password.
   passwordHash String
   phoneNumber  String
-  image        String?  @db.Text
-  role         Role     @default(USER)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  image        String?         @db.Text
+  role         Role            @default(USER)
+  /// Bumped whenever all existing sessions must end (password reset/change). Every session read
+  /// compares it with the value stored in the encrypted JWT (auth.ts). Never sent to the browser.
+  sessionVersion Int           @default(0)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  preference   UserPreference?
 
   @@map("users")
+}
+
+/// Currencies managed on /currencies. `code` is ISO-style: exactly 3 uppercase letters, unique
+/// regardless of case (stored uppercase; the column collation is case-insensitive as well).
+model Currency {
+  id        String           @id @default(cuid())
+  name      String           @db.VarChar(100)
+  code      String           @unique @db.Char(3)
+  symbol    String           @db.VarChar(10)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  defaultIn SystemSettings[] @relation("DefaultCurrency")
+
+  @@map("currencies")
+}
+
+/// Warehouses managed on /warehouse. `name` is unique (case-insensitive column collation).
+/// Future stock, sales, purchase and transfer records will reference warehouses; deletion must
+/// be refused while such references exist (see app/(dashboard)/warehouse/actions.ts).
+model Warehouse {
+  id           String              @id @default(cuid())
+  name         String              @unique @db.VarChar(120)
+  email        String              @db.VarChar(191)
+  phoneNumber  String              @db.VarChar(32)
+  /// ISO 3166-1 alpha-2 code (see lib/countries.ts).
+  countryCode  String              @db.Char(2)
+  city         String              @db.VarChar(120)
+  zipCode      String?             @db.VarChar(20)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  stocks       ProductStock[]
+  stockEntries ProductStockEntry[]
+  transfersOut StockTransfer[]     @relation("TransferFrom")
+  transfersIn  StockTransfer[]     @relation("TransferTo")
+  adjustments  StockAdjustment[]
+
+  @@map("warehouses")
+}
+
+/// Product categories managed on /products/categories. `name` is unique (case-insensitive
+/// column collation). Products will reference categories; deletion is refused while they do.
+model ProductCategory {
+  id        String    @id @default(cuid())
+  name      String    @unique @db.VarChar(120)
+  /// Relative path under /uploads/product-categories (local-development storage), or null.
+  image     String?   @db.VarChar(255)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+
+  @@map("product_categories")
+}
+
+/// Brands managed on /products/brands. `name` is unique (case-insensitive column collation).
+/// Products will reference brands; deletion is refused while they do.
+model Brand {
+  id        String    @id @default(cuid())
+  name      String    @unique @db.VarChar(120)
+  /// Relative path under /uploads/brands (local-development storage), or null.
+  image     String?   @db.VarChar(255)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+
+  @@map("brands")
+}
+
+/// Product units managed on /products/units. `name` is unique (case-insensitive column collation).
+/// Products will reference units; deletion is refused while they do.
+model ProductUnit {
+  id                 String    @id @default(cuid())
+  name               String    @unique @db.VarChar(120)
+  /// Relative path under /uploads/units (local-development storage), or null.
+  image              String?   @db.VarChar(255)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  productsAsUnit     Product[] @relation("ProductUnit")
+  productsAsSale     Product[] @relation("SaleUnit")
+  productsAsPurchase Product[] @relation("PurchaseUnit")
+
+  @@map("product_units")
+}
+
+/// Suppliers (master data) managed on /suppliers. `name` is unique (case-insensitive collation).
+/// Purchases and supplier payments will reference suppliers; deletion is refused while they do
+/// (see app/(dashboard)/suppliers/actions.ts).
+model Supplier {
+  id           String              @id @default(cuid())
+  name         String              @unique @db.VarChar(120)
+  email        String              @db.VarChar(191)
+  phoneNumber  String              @db.VarChar(32)
+  /// ISO 3166-1 alpha-2 code (see lib/countries.ts).
+  countryCode  String              @db.Char(2)
+  city         String              @db.VarChar(120)
+  address      String              @db.VarChar(255)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  stockEntries ProductStockEntry[]
+
+  @@map("suppliers")
+}
+
+/// Customers (master data) managed on /customers. `name` is unique (case-insensitive collation).
+/// Sales, quotations, customer payments and statements will reference customers; deletion must be
+/// refused while they do (see app/(dashboard)/customers/actions.ts).
+model Customer {
+  id          String    @id @default(cuid())
+  name        String    @unique @db.VarChar(120)
+  email       String    @db.VarChar(191)
+  phoneNumber String    @db.VarChar(32)
+  /// ISO 3166-1 alpha-2 code (see lib/countries.ts).
+  countryCode String    @db.Char(2)
+  city        String    @db.VarChar(120)
+  address     String    @db.VarChar(500)
+  /// Optional; a past (or today's) date.
+  dateOfBirth DateTime? @db.Date
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("customers")
+}
+
+enum BarcodeSymbology {
+  CODE128
+  CODE39
+}
+
+enum TaxType {
+  EXCLUSIVE
+  INCLUSIVE
+}
+
+enum StockEntryStatus {
+  RECEIVED
+  PENDING
+  ORDERED
+}
+
+/// Products managed on /products. Money uses DECIMAL(14,2) and quantities DECIMAL(14,3) — never
+/// floating point. All master-data relations are RESTRICT so referenced records can't be deleted.
+model Product {
+  id                 String              @id @default(cuid())
+  name               String              @db.VarChar(191)
+  /// Normalized (trimmed, uppercase) and unique.
+  code               String              @unique @db.VarChar(64)
+  categoryId         String
+  category           ProductCategory     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  brandId            String
+  brand              Brand               @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  barcodeSymbology   BarcodeSymbology
+  cost               Decimal             @db.Decimal(14, 2)
+  price              Decimal             @db.Decimal(14, 2)
+  productUnitId      String
+  productUnit        ProductUnit         @relation("ProductUnit", fields: [productUnitId], references: [id], onDelete: Restrict)
+  saleUnitId         String
+  saleUnit           ProductUnit         @relation("SaleUnit", fields: [saleUnitId], references: [id], onDelete: Restrict)
+  purchaseUnitId     String
+  purchaseUnit       ProductUnit         @relation("PurchaseUnit", fields: [purchaseUnitId], references: [id], onDelete: Restrict)
+  stockAlert         Decimal             @default(0) @db.Decimal(14, 3)
+  /// Percentage 0–100.
+  orderTax           Decimal             @default(0) @db.Decimal(5, 2)
+  taxType            TaxType             @default(EXCLUSIVE)
+  quantityLimitation Decimal?            @db.Decimal(14, 3)
+  notes              String?             @db.Text
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  images             ProductImage[]
+  stocks             ProductStock[]
+  stockEntries       ProductStockEntry[]
+  transferItems      StockTransferItem[]
+  adjustmentItems    StockAdjustmentItem[]
+
+  @@index([categoryId])
+  @@index([brandId])
+  @@map("products")
+}
+
+/// Product image: relative path under /uploads/products (local-development storage).
+model ProductImage {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  path      String   @db.VarChar(255)
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([productId])
+  @@map("product_images")
+}
+
+/// Current on-hand quantity per product and warehouse ("In Stock"). Only RECEIVED stock entries
+/// (and, later, stock adjustments / purchases / sales) change it.
+model ProductStock {
+  id          String    @id @default(cuid())
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  quantity    Decimal   @default(0) @db.Decimal(14, 3)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([productId, warehouseId])
+  @@index([warehouseId])
+  @@map("product_stocks")
+}
+
+/// Opening stock recorded when a product is created (one per product). PENDING / ORDERED entries
+/// do not change ProductStock; later stock changes belong to a Stock Adjustments module.
+model ProductStockEntry {
+  id          String           @id @default(cuid())
+  productId   String
+  product     Product          @relation(fields: [productId], references: [id], onDelete: Restrict)
+  warehouseId String
+  warehouse   Warehouse        @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  supplierId  String
+  supplier    Supplier         @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  quantity    Decimal          @db.Decimal(14, 3)
+  status      StockEntryStatus
+  /// The user who recorded it (audit; not a foreign key so users can be managed independently).
+  createdById String?          @db.VarChar(191)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([productId])
+  @@index([warehouseId])
+  @@index([supplierId])
+  @@map("product_stock_entries")
+}
+
+enum TransferStatus {
+  PENDING
+  SENT
+  COMPLETED
+}
+
+/// Inventory transfer between two warehouses (/transfers). Stock effects (applied atomically in
+/// app/(dashboard)/transfers/actions.ts): PENDING none; SENT deducts the source; COMPLETED deducts
+/// the source (unless already SENT) and adds to the destination. SENT/COMPLETED rows are inventory
+/// history and are never deleted; COMPLETED rows are immutable.
+model StockTransfer {
+  id              String              @id @default(cuid())
+  /// Sequential number behind the reference. MySQL AUTO_INCREMENT: concurrency-safe and never
+  /// reused, even after a pending transfer is deleted.
+  number          Int                 @unique @default(autoincrement())
+  /// "TR_000001" — generated server-side from `number`.
+  reference       String              @unique @db.VarChar(20)
+  transferDate    DateTime            @db.Date
+  fromWarehouseId String
+  fromWarehouse   Warehouse           @relation("TransferFrom", fields: [fromWarehouseId], references: [id], onDelete: Restrict)
+  toWarehouseId   String
+  toWarehouse     Warehouse           @relation("TransferTo", fields: [toWarehouseId], references: [id], onDelete: Restrict)
+  status          TransferStatus
+  note            String?             @db.Text
+  /// The user who created it (audit; not a foreign key, like ProductStockEntry.createdById).
+  createdById     String?             @db.VarChar(191)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  items           StockTransferItem[]
+
+  @@index([fromWarehouseId])
+  @@index([toWarehouseId])
+  @@index([status])
+  @@map("stock_transfers")
+}
+
+/// One product line of a transfer. `unitCost` is a snapshot of Product.cost when the line was saved.
+model StockTransferItem {
+  id         String        @id @default(cuid())
+  transferId String
+  transfer   StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  productId  String
+  product    Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantity   Decimal       @db.Decimal(14, 3)
+  unitCost   Decimal       @db.Decimal(14, 2)
+
+  @@unique([transferId, productId])
+  @@index([productId])
+  @@map("stock_transfer_items")
+}
+
+enum AdjustmentType {
+  ADDITION
+  SUBTRACTION
+}
+
+/// Manual stock correction for one warehouse (/adjustments). Each item adds to or subtracts from
+/// ProductStock; create/edit/delete apply (or reverse) the net effect in one transaction, and stock
+/// can never go below zero (app/(dashboard)/adjustments/actions.ts).
+model StockAdjustment {
+  id             String                @id @default(cuid())
+  /// MySQL AUTO_INCREMENT: concurrency-safe and never reused (gaps are possible).
+  number         Int                   @unique @default(autoincrement())
+  /// "AD_000001" — generated server-side from `number`.
+  reference      String                @unique @db.VarChar(20)
+  warehouseId    String
+  warehouse      Warehouse             @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  adjustmentDate DateTime              @db.Date
+  /// The user who created it (audit; not a foreign key, like StockTransfer.createdById).
+  createdById    String?               @db.VarChar(191)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  items          StockAdjustmentItem[]
+
+  @@index([warehouseId])
+  @@map("stock_adjustments")
+}
+
+model StockAdjustmentItem {
+  id           String          @id @default(cuid())
+  adjustmentId String
+  adjustment   StockAdjustment @relation(fields: [adjustmentId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantity     Decimal         @db.Decimal(14, 3)
+  type         AdjustmentType
+
+  @@unique([adjustmentId, productId])
+  @@index([productId])
+  @@map("stock_adjustment_items")
+}
+
+/// A user's personal appearance preference (one per user). Takes precedence over the Owner's
+/// global theme for that user only.
+model UserPreference {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Validated ThemeState JSON (see lib/theme.ts).
+  theme     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_preferences")
+}
+
+/// Global system settings: a singleton row (id is always 1), edited by administrators on /settings.
+/// Default customer / warehouse are added once the Customer and Warehouse models exist.
+model SystemSettings {
+  id                  Int       @id @default(1)
+  /// The default Currency record (required in the form; null only until a currency exists).
+  /// Restrict: the database refuses to delete the currency selected here.
+  defaultCurrencyId   String?
+  defaultCurrency     Currency? @relation("DefaultCurrency", fields: [defaultCurrencyId], references: [id], onDelete: Restrict)
+  defaultEmail        String?   @db.VarChar(191)
+  currencyIconRight   Boolean   @default(false)
+  /// Relative path under /uploads/logos (local-development storage), or null.
+  companyLogo         String?   @db.VarChar(255)
+  companyName         String    @db.VarChar(120)
+  companyPhone        String?   @db.VarChar(32)
+  developedBy         String?   @db.VarChar(120)
+  footerText          String?   @db.VarChar(255)
+  /// ISO 3166-1 alpha-2 code, e.g. "EG".
+  country             String    @db.Char(2)
+  state               String    @db.VarChar(120)
+  city                String?   @db.VarChar(120)
+  postalCode          String?   @db.VarChar(20)
+  dateFormat          String    @db.VarChar(16)
+  address             String?   @db.VarChar(500)
+  showVersionInFooter Boolean   @default(false)
+  /// Owner's global theme override (validated ThemeState JSON, see lib/theme.ts); null = Bluepiller defaults.
+  theme               Json?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@map("system_settings")
 }

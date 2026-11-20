@@ -1,0 +1,180 @@
+"use client";
+
+import Link from "next/link";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import toast from "react-hot-toast";
+import Icon from "@/components/layout/Icon";
+import { ConfirmDeleteModal } from "@/components/ui/Modal";
+import Pagination, { paginate } from "@/components/ui/Pagination";
+import { deleteCustomer } from "@/app/(dashboard)/customers/actions";
+import type { CustomerRow } from "@/lib/customers";
+
+// Port of design/Customers.html: TableToolbar (search + Import Customers + Create Customer),
+// DataTable (Customer = name + email / Phone Number / Created On / Action), Pagination and
+// ConfirmDeleteModal. Search/paging run over the server-loaded list. Rows don't link anywhere
+// (customer payments/statements aren't built yet).
+// Deferred: Import Customers (CSV import not implemented) — shown disabled, "Coming soon".
+const IMPORT_SOON = "Import Customers is coming soon. CSV import isn't available yet.";
+
+export default function CustomersTable({ rows, canManage }: { rows: CustomerRow[]; canManage: boolean }) {
+  const router = useRouter();
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [del, setDel] = useState<CustomerRow | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const needle = q.trim().toLowerCase();
+  const filtered = needle ? rows.filter((r) => [r.name, r.email, r.phoneNumber, r.countryName, r.city].join(" ").toLowerCase().includes(needle)) : rows;
+  const p = paginate(filtered, page, pageSize);
+  const cols = canManage ? 4 : 3;
+
+  function confirmDelete() {
+    const row = del;
+    if (!row) return;
+    startTransition(async () => {
+      try {
+        const r = await deleteCustomer(row.id);
+        setDel(null);
+        if (!r.ok) {
+          toast.error(r.message, { id: "customer" });
+          return;
+        }
+        toast.success(r.message, { id: "customer" });
+        router.refresh();
+      } catch {
+        toast.error("Something went wrong. Please try again.", { id: "customer" });
+      }
+    });
+  }
+
+  return (
+    <>
+      <div className="sp-toolbar">
+        <div className="sp-group">
+          <Icon name="search" size={18} className="sp-input-icon" />
+          <input
+            className="sp-input "
+            placeholder="Search"
+            aria-label="Search customers"
+            value={q}
+            onChange={(e) => {
+              setQ(e.target.value);
+              setPage(1);
+            }}
+          />
+        </div>
+        <div className="sp-grow" />
+        {canManage && (
+          <>
+            {/* aria-disabled (not disabled) keeps it focusable so the explanation can be read/shown. */}
+            <button
+              type="button"
+              className="sp-btn sp-btn--secondary"
+              aria-disabled="true"
+              title={IMPORT_SOON}
+              style={{ opacity: 0.5, cursor: "not-allowed" }}
+              onClick={() => toast(IMPORT_SOON, { id: "customer-soon", icon: "ℹ️" })}
+            >
+              <Icon name="upload" size={18} />
+              Import Customers
+            </button>
+            <Link href="/customers/create" className="sp-btn sp-btn--primary">
+              <Icon name="plus" size={18} />
+              Create Customer
+            </Link>
+          </>
+        )}
+      </div>
+
+      <div className="sp-table-card">
+        <div className="sp-table-scroll">
+          <table className="sp-table">
+            <thead>
+              <tr>
+                <th>Customer</th>
+                <th>Phone Number</th>
+                <th>Created On</th>
+                {canManage && <th className="num">Action</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {p.visible.map((r) => (
+                <tr key={r.id} data-name={r.name}>
+                  <td>
+                    <div style={{ padding: "6px 0" }}>
+                      <div style={{ color: "var(--primary-700)", fontWeight: 600 }}>{r.name}</div>
+                      <div style={{ color: "var(--text-2)" }}>{r.email}</div>
+                      <div style={{ color: "var(--text-3)", fontSize: 12.5 }} data-testid="customer-place">
+                        {r.city}, {r.countryName}
+                      </div>
+                    </div>
+                  </td>
+                  <td>{r.phoneNumber}</td>
+                  <td>
+                    <span className="sp-badge sp-badge--info">{r.createdOn}</span>
+                  </td>
+                  {canManage && (
+                    <td className="num">
+                      <span style={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
+                        <Link
+                          href={`/customers/${encodeURIComponent(r.id)}/edit`}
+                          className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
+                          aria-label={`Edit ${r.name}`}
+                          style={{ color: "var(--primary-600)" }}
+                        >
+                          <Icon name="pencil" size={16} />
+                        </Link>
+                        <button
+                          type="button"
+                          className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
+                          aria-label={`Delete ${r.name}`}
+                          style={{ color: "var(--danger-500)" }}
+                          onClick={() => setDel(r)}
+                        >
+                          <Icon name="trash-2" size={16} />
+                        </button>
+                      </span>
+                    </td>
+                  )}
+                </tr>
+              ))}
+              {p.visible.length === 0 && (
+                <tr>
+                  <td colSpan={cols} style={{ textAlign: "center", color: "var(--text-2)" }}>
+                    {rows.length === 0 ? (
+                      <span>
+                        <b style={{ color: "var(--text-1)" }}>No customers yet</b>
+                        {canManage ? " — use Create Customer to add your first customer." : "."}
+                      </span>
+                    ) : (
+                      "No customers match your search."
+                    )}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <Pagination
+          page={p.current}
+          last={p.last}
+          pageSize={pageSize}
+          from={p.from}
+          to={p.to}
+          total={p.total}
+          onPage={setPage}
+          onPageSize={(n) => {
+            setPageSize(n);
+            setPage(1);
+          }}
+        />
+      </div>
+
+      {del && canManage && (
+        <ConfirmDeleteModal itemType="customer" itemName={del.name} busy={pending} onCancel={() => setDel(null)} onConfirm={confirmDelete} />
+      )}
+    </>
+  );
+}

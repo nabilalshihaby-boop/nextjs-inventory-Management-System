@@ -5,7 +5,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import Icon from "./Icon";
 import { useShell } from "./AppShell";
-import { findActive } from "./nav";
+import { findPageTitle } from "./nav";
 
 export function MenuButton() {
   const { openDrawer } = useShell();
@@ -23,8 +23,7 @@ export function MenuButton() {
 
 /** Page title derived from the route (e.g. /warehouse/create → "Warehouse"). Wrap in <Suspense>. */
 export function PageTitle() {
-  const active = findActive(usePathname());
-  return <span className="sp-crumb">{active ? (active.title ?? active.label) : ""}</span>;
+  return <span className="sp-crumb">{findPageTitle(usePathname())}</span>;
 }
 
 export function SearchBox() {

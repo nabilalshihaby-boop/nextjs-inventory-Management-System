@@ -1,0 +1,72 @@
+import type { Role } from "@/app/generated/prisma/client";
+
+// Human-readable labels for the Role enum (shared by the topbar and the profile page).
+export const ROLE_LABELS: Record<Role, string> = {
+  OWNER: "Owner",
+  ADMIN: "Administrator",
+  USER: "User",
+};
+
+export function roleLabel(role: string) {
+  return ROLE_LABELS[role as Role] ?? role;
+}
+
+/** Currencies: every signed-in role may view; only OWNER and ADMIN may create, edit or delete. */
+export function canManageCurrencies(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/** Warehouses: every signed-in role may view; only OWNER and ADMIN may create, edit or delete. */
+export function canManageWarehouses(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/** Product catalog (categories, …): every signed-in role may view; OWNER and ADMIN may change it. */
+export function canManageCatalog(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/** Suppliers: every signed-in role may view/search; only OWNER and ADMIN may create, edit or delete. */
+export function canManageSuppliers(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/** Customers: every signed-in role may view/search; only OWNER and ADMIN may create, edit or delete. */
+export function canManageCustomers(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/** Products: every signed-in role may view/search; only OWNER and ADMIN may create or edit. */
+export function canManageProducts(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/**
+ * Inventory transfers: every signed-in role may view/search the history; only OWNER and ADMIN may
+ * create, edit/delete pending transfers, send or complete them. Costs are shown to them only.
+ */
+export function canManageTransfers(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/** Stock adjustments: every signed-in role may view/search; only OWNER and ADMIN may create, edit or delete. */
+export function canManageAdjustments(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/**
+ * Users management (/users and everything under it) is OWNER-only. ADMIN and USER are redirected
+ * to /dashboard and never receive user data; every Users Server Action re-checks this.
+ */
+export function canManageUsers(role: string | undefined): boolean {
+  return role === "OWNER";
+}
+
+/**
+ * System Settings (/settings and everything under it, e.g. /settings/theme) are OWNER-only.
+ * ADMIN and USER must never read or change them. Enforced server-side in the settings layout,
+ * every settings page and every settings Server Action — not only in the UI or proxy.
+ */
+export function canManageSystemSettings(role: string | undefined): boolean {
+  return role === "OWNER";
+}

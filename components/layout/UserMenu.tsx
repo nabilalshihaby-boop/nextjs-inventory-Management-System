@@ -15,6 +15,12 @@ export type TopbarUser = {
 export default function UserMenu({ user }: { user: TopbarUser }) {
   const [open, setOpen] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
+  // A new image URL (e.g. after a profile update) gets a fresh chance to load.
+  const [imageSrc, setImageSrc] = useState(user.image);
+  if (user.image !== imageSrc) {
+    setImageSrc(user.image);
+    setImageFailed(false);
+  }
   const [signingOut, setSigningOut] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -97,6 +103,10 @@ export default function UserMenu({ user }: { user: TopbarUser }) {
           >
             <Icon name="key-round" size={16} />
             Change Password
+          </Link>
+          <Link href="/preferences" className="sp-menu-item" role="menuitem" style={{ textDecoration: "none" }} onClick={close}>
+            <Icon name="palette" size={16} />
+            Appearance &amp; Cache
           </Link>
           <div className="sp-menu-sep" role="separator" />
           <button

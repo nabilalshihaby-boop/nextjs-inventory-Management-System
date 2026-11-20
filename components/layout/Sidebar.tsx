@@ -5,18 +5,47 @@ import { usePathname } from "next/navigation";
 import { Fragment, Suspense, useState } from "react";
 import Icon from "./Icon";
 import { useShell } from "./AppShell";
-import { NAV, findActive, findOwnerGroup } from "./nav";
+import { findActive, findOwnerGroup, visibleNav, type NavItem } from "./nav";
 import { siteConfig } from "@/config/site";
 
-export default function Sidebar({ brand = siteConfig.name }: { brand?: string }) {
+// `brand` and `logo` come from System Settings (company name/logo), with Bluepiller as fallback.
+// `isOwner` (from the server session) decides whether OWNER-only items (Users, Settings) appear.
+export default function Sidebar({ brand = siteConfig.name, logo = null, isOwner = false }: { brand?: string; logo?: string | null; isOwner?: boolean }) {
+  const items = visibleNav(isOwner);
   const { collapsed, toggleSidebar } = useShell();
+  const [logoFailed, setLogoFailed] = useState(false);
+  const [logoSrc, setLogoSrc] = useState(logo);
+  if (logo !== logoSrc) {
+    setLogoSrc(logo);
+    setLogoFailed(false);
+  }
+  const showLogo = !!logo && !logoFailed;
 
   return (
     <aside className="bp-sidebar">
       <div className="sp-brand">
-        <span className="sp-brand-text">
-          <b>{brand[0]}</b>
-          <span className="sp-brand-name">{brand.slice(1)}</span>
+        <span className="sp-brand-text" style={showLogo ? { alignItems: "center", gap: 10, minWidth: 0 } : undefined}>
+          {showLogo ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element -- runtime upload under /uploads */}
+              <img
+                src={logo}
+                alt=""
+                width={32}
+                height={32}
+                style={{ width: 32, height: 32, borderRadius: 8, objectFit: "cover", flex: "none" }}
+                onError={() => setLogoFailed(true)}
+              />
+              <span className="sp-brand-name" style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                {brand}
+              </span>
+            </>
+          ) : (
+            <>
+              <b>{brand[0]}</b>
+              <span className="sp-brand-name">{brand.slice(1)}</span>
+            </>
+          )}
         </span>
         <button
           type="button"
@@ -40,19 +69,19 @@ export default function Sidebar({ brand = siteConfig.name }: { brand?: string })
           </button>
         )}
         {/* usePathname may suspend under cacheComponents on dynamic routes */}
-        <Suspense fallback={<NavItems pathname={null} />}>
-          <NavItemsForRoute />
+        <Suspense fallback={<NavItems pathname={null} items={items} />}>
+          <NavItemsForRoute items={items} />
         </Suspense>
       </nav>
     </aside>
   );
 }
 
-function NavItemsForRoute() {
-  return <NavItems pathname={usePathname()} />;
+function NavItemsForRoute({ items }: { items: NavItem[] }) {
+  return <NavItems pathname={usePathname()} items={items} />;
 }
 
-function NavItems({ pathname }: { pathname: string | null }) {
+function NavItems({ pathname, items }: { pathname: string | null; items: NavItem[] }) {
   const { collapsed, closeDrawer } = useShell();
   const activeId = findActive(pathname)?.id;
   const owner = findOwnerGroup(activeId);
@@ -68,7 +97,7 @@ function NavItems({ pathname }: { pathname: string | null }) {
 
   return (
     <>
-      {NAV.map((it) => {
+      {items.map((it) => {
         if (!it.children) {
           const active = it.id === activeId;
           return (
@@ -104,17 +133,33 @@ function NavItems({ pathname }: { pathname: string | null }) {
             </button>
             {expanded && (
               <div className="sp-nav-sub">
-                {it.children.map((c) => (
-                  <Link
-                    key={c.id}
-                    href={c.href}
-                    className="sp-nav-item"
-                    aria-current={c.id === activeId ? "page" : undefined}
-                    onClick={closeDrawer}
-                  >
-                    {c.label}
-                  </Link>
-                ))}
+                {it.children.map((c) =>
+                  c.disabled ? (
+                    // Not built yet: shown in place, but not a link (no navigation, no prefetch, no 404).
+                    <span
+                      key={c.id}
+                      className="sp-nav-item"
+                      role="link"
+                      aria-disabled="true"
+                      tabIndex={0}
+                      title={c.disabled}
+                      aria-label={c.disabled}
+                      style={{ opacity: 0.5, cursor: "not-allowed" }}
+                    >
+                      {c.label}
+                    </span>
+                  ) : (
+                    <Link
+                      key={c.id}
+                      href={c.href}
+                      className="sp-nav-item"
+                      aria-current={c.id === activeId ? "page" : undefined}
+                      onClick={closeDrawer}
+                    >
+                      {c.label}
+                    </Link>
+                  ),
+                )}
               </div>
             )}
           </Fragment>

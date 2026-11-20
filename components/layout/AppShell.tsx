@@ -37,6 +37,13 @@ export default function AppShell({
   children: React.ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  // The global theme's sidebar style (Default / Compact) sets the starting state; when the owner
+  // changes it, follow the new default (users can still toggle it for the current visit).
+  const [prevDefault, setPrevDefault] = useState(defaultCollapsed);
+  if (defaultCollapsed !== prevDefault) {
+    setPrevDefault(defaultCollapsed);
+    setCollapsed(defaultCollapsed);
+  }
   const [drawer, setDrawer] = useState(false);
   const narrow = useSyncExternalStore(
     subscribeNarrow,

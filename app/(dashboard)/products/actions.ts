@@ -1,0 +1,228 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import { auth } from "@/auth";
+import { Prisma } from "@/app/generated/prisma/client";
+import { db } from "@/lib/db";
+import { canManageProducts } from "@/lib/roles";
+import { getDefaultCurrency } from "@/lib/settings";
+import { deleteImage, saveImage, validateImage, type ValidImage } from "@/lib/image-upload";
+import { MAX_PRODUCT_IMAGES, openingStockSchema, productFieldsSchema, type ProductField, type ProductFields } from "@/lib/products";
+
+// Product images: content-validated JPG/PNG/WebP, 2 MB each, at most 5 per product, random names
+// under public/uploads/products, only relative paths stored.
+// LOCAL DEVELOPMENT ONLY: runtime files in public/ aren't served by `next start` and may not
+// persist — production requires persistent object storage (see lib/image-upload.ts).
+const FOLDER = "products";
+
+export type ProductResult =
+  | { ok: true; message: string; id?: string }
+  | { ok: false; message: string; fieldErrors?: Partial<Record<ProductField, string>> };
+
+type Errors = Partial<Record<ProductField, string>>;
+const idSchema = z.string().trim().min(1).max(64);
+const DUPLICATE = "A product with this code already exists";
+const NO_CURRENCY =
+  "No default currency is configured. The Owner must choose one in System Settings (/settings) before products can be saved.";
+
+const str = (fd: FormData, k: string) => {
+  const v = fd.get(k);
+  return typeof v === "string" ? v : "";
+};
+const fail = (fieldErrors: Errors): ProductResult => ({ ok: false, message: Object.values(fieldErrors)[0] ?? "Please check the form", fieldErrors });
+const isUniqueViolation = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
+
+/** OWNER/ADMIN only — re-checked in every mutation; the role never comes from the client. */
+async function authorize() {
+  const session = await auth();
+  if (!session?.user?.id) return { error: { ok: false, message: "Your session has expired. Please sign in again." } as ProductResult };
+  if (!canManageProducts(session.user.role)) return { error: { ok: false, message: "You don't have permission to change products." } as ProductResult };
+  return { userId: session.user.id };
+}
+
+function parseFields(fd: FormData, errors: Errors): ProductFields | null {
+  const parsed = productFieldsSchema.safeParse({
+    name: str(fd, "name"),
+    code: str(fd, "code"),
+    categoryId: str(fd, "categoryId"),
+    brandId: str(fd, "brandId"),
+    barcodeSymbology: str(fd, "barcodeSymbology"),
+    cost: str(fd, "cost"),
+    price: str(fd, "price"),
+    productUnitId: str(fd, "productUnitId"),
+    saleUnitId: str(fd, "saleUnitId"),
+    purchaseUnitId: str(fd, "purchaseUnitId"),
+    stockAlert: str(fd, "stockAlert"),
+    orderTax: str(fd, "orderTax"),
+    taxType: str(fd, "taxType"),
+    quantityLimitation: str(fd, "quantityLimitation"),
+    notes: str(fd, "notes"),
+  });
+  if (parsed.success) return parsed.data;
+  for (const i of parsed.error.issues) errors[i.path[0] as ProductField] ??= i.message;
+  return null;
+}
+
+/** Every related record must exist in MySQL (ids from the client only select, never trusted). */
+async function checkRelations(f: ProductFields, errors: Errors) {
+  const unitIds = [...new Set([f.productUnitId, f.saleUnitId, f.purchaseUnitId])];
+  const [category, brand, units] = await Promise.all([
+    db.productCategory.findUnique({ where: { id: f.categoryId }, select: { id: true } }),
+    db.brand.findUnique({ where: { id: f.brandId }, select: { id: true } }),
+    db.productUnit.findMany({ where: { id: { in: unitIds } }, select: { id: true } }),
+  ]);
+  const found = new Set(units.map((u) => u.id));
+  if (!category) errors.categoryId ??= "Choose a valid product category";
+  if (!brand) errors.brandId ??= "Choose a valid brand";
+  if (!found.has(f.productUnitId)) errors.productUnitId ??= "Choose a valid product unit";
+  if (!found.has(f.saleUnitId)) errors.saleUnitId ??= "Choose a valid sale unit";
+  if (!found.has(f.purchaseUnitId)) errors.purchaseUnitId ??= "Choose a valid purchase unit";
+}
+
+/** New image files from FormData, validated by content. */
+async function readImages(fd: FormData, errors: Errors): Promise<ValidImage[]> {
+  const files = fd.getAll("images").filter((v): v is File => v instanceof File && v.size > 0);
+  const out: ValidImage[] = [];
+  for (const file of files) {
+    const r = await validateImage(file);
+    if ("error" in r) {
+      errors.images ??= `${file.name}: ${r.error}`;
+      continue;
+    }
+    out.push(r);
+  }
+  return out;
+}
+
+const fieldData = (f: ProductFields) => ({
+  name: f.name,
+  code: f.code,
+  categoryId: f.categoryId,
+  brandId: f.brandId,
+  barcodeSymbology: f.barcodeSymbology,
+  cost: f.cost, // decimal strings → Prisma Decimal (no floating point)
+  price: f.price,
+  productUnitId: f.productUnitId,
+  saleUnitId: f.saleUnitId,
+  purchaseUnitId: f.purchaseUnitId,
+  stockAlert: f.stockAlert,
+  orderTax: f.orderTax,
+  taxType: f.taxType,
+  quantityLimitation: f.quantityLimitation === "" ? null : f.quantityLimitation,
+  notes: f.notes === "" ? null : f.notes,
+});
+
+export async function createProduct(formData: FormData): Promise<ProductResult> {
+  const a = await authorize();
+  if ("error" in a) return a.error!;
+  if (!(formData instanceof FormData)) return { ok: false, message: "Invalid request" };
+  if (!(await getDefaultCurrency())) return { ok: false, message: NO_CURRENCY, fieldErrors: { currency: NO_CURRENCY } };
+
+  const errors: Errors = {};
+  const f = parseFields(formData, errors);
+  const stock = openingStockSchema.safeParse({
+    warehouseId: str(formData, "warehouseId"),
+    supplierId: str(formData, "supplierId"),
+    quantity: str(formData, "quantity"),
+    status: str(formData, "status"),
+  });
+  if (!stock.success) for (const i of stock.error.issues) errors[i.path[0] as ProductField] ??= i.message;
+
+  if (f) await checkRelations(f, errors);
+  if (stock.success) {
+    const [warehouse, supplier] = await Promise.all([
+      db.warehouse.findUnique({ where: { id: stock.data.warehouseId }, select: { id: true } }),
+      db.supplier.findUnique({ where: { id: stock.data.supplierId }, select: { id: true } }),
+    ]);
+    if (!warehouse) errors.warehouseId ??= "Choose a valid warehouse";
+    if (!supplier) errors.supplierId ??= "Choose a valid supplier";
+  }
+  if (f && (await db.product.findUnique({ where: { code: f.code }, select: { id: true } }))) errors.code ??= DUPLICATE;
+
+  const images = await readImages(formData, errors);
+  if (images.length > MAX_PRODUCT_IMAGES) errors.images ??= `Up to ${MAX_PRODUCT_IMAGES} images per product`;
+  if (!f || !stock.success || Object.keys(errors).length) return fail(errors);
+
+  const paths: string[] = [];
+  try {
+    for (const img of images) paths.push(await saveImage(FOLDER, img));
+    const product = await db.$transaction(async (tx) => {
+      const p = await tx.product.create({
+        data: { ...fieldData(f), images: { create: paths.map((path, position) => ({ path, position })) } },
+        select: { id: true },
+      });
+      // Opening stock entry (exactly one, recorded with who created it).
+      await tx.productStockEntry.create({
+        data: { productId: p.id, ...stock.data, createdById: a.userId },
+      });
+      // Only RECEIVED stock is on hand; PENDING / ORDERED don't change "In Stock".
+      if (stock.data.status === "RECEIVED") {
+        await tx.productStock.upsert({
+          where: { productId_warehouseId: { productId: p.id, warehouseId: stock.data.warehouseId } },
+          create: { productId: p.id, warehouseId: stock.data.warehouseId, quantity: stock.data.quantity },
+          update: { quantity: { increment: stock.data.quantity } },
+        });
+      }
+      return p;
+    });
+    revalidatePath("/products");
+    return { ok: true, message: "Product created", id: product.id };
+  } catch (e) {
+    for (const p of paths) await deleteImage(FOLDER, p);
+    if (isUniqueViolation(e)) return fail({ code: DUPLICATE });
+    throw e;
+  }
+}
+
+/**
+ * Update product details and images. Stock is never touched here: the opening stock entry is
+ * created once on creation, and later changes belong to a Stock Adjustments module. Any stock
+ * fields a client sends are ignored.
+ */
+export async function updateProduct(id: unknown, formData: FormData): Promise<ProductResult> {
+  const a = await authorize();
+  if ("error" in a) return a.error!;
+  if (!(formData instanceof FormData)) return { ok: false, message: "Invalid request" };
+  const pid = idSchema.safeParse(id);
+  if (!pid.success) return { ok: false, message: "Product not found" };
+  if (!(await getDefaultCurrency())) return { ok: false, message: NO_CURRENCY, fieldErrors: { currency: NO_CURRENCY } };
+
+  const existing = await db.product.findUnique({ where: { id: pid.data }, select: { id: true, images: { select: { id: true, path: true } } } });
+  if (!existing) return { ok: false, message: "Product not found" };
+
+  const errors: Errors = {};
+  const f = parseFields(formData, errors);
+  if (f) {
+    await checkRelations(f, errors);
+    if (await db.product.findFirst({ where: { code: f.code, NOT: { id: existing.id } }, select: { id: true } })) errors.code ??= DUPLICATE;
+  }
+  // Images to keep: only ids that really belong to this product.
+  const keepRequested = new Set(formData.getAll("keepImageIds").filter((v): v is string => typeof v === "string"));
+  const keep = existing.images.filter((i) => keepRequested.has(i.id));
+  const removed = existing.images.filter((i) => !keepRequested.has(i.id));
+  const images = await readImages(formData, errors);
+  if (keep.length + images.length > MAX_PRODUCT_IMAGES) errors.images ??= `Up to ${MAX_PRODUCT_IMAGES} images per product`;
+  if (!f || Object.keys(errors).length) return fail(errors);
+
+  const paths: string[] = [];
+  try {
+    for (const img of images) paths.push(await saveImage(FOLDER, img));
+    await db.$transaction(async (tx) => {
+      await tx.product.update({ where: { id: existing.id }, data: fieldData(f) });
+      if (removed.length) await tx.productImage.deleteMany({ where: { id: { in: removed.map((r) => r.id) }, productId: existing.id } });
+      await Promise.all(keep.map((k, position) => tx.productImage.update({ where: { id: k.id }, data: { position } })));
+      if (paths.length) {
+        await tx.productImage.createMany({ data: paths.map((path, i) => ({ productId: existing.id, path, position: keep.length + i })) });
+      }
+    });
+  } catch (e) {
+    for (const p of paths) await deleteImage(FOLDER, p);
+    if (isUniqueViolation(e)) return fail({ code: DUPLICATE });
+    throw e;
+  }
+  // Removed images are no longer referenced → delete their files.
+  for (const r of removed) await deleteImage(FOLDER, r.path);
+  revalidatePath("/products");
+  return { ok: true, message: "Product updated", id: existing.id };
+}

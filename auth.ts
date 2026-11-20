@@ -3,11 +3,13 @@ import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { bridgeAllows, consumeSessionGrant } from "@/lib/session-upgrade";
 import type { Role } from "@/app/generated/prisma/client";
 
 declare module "next-auth" {
   interface User {
     role?: Role;
+    sessionVersion?: number;
   }
   interface Session {
     user: { id: string; role: Role } & DefaultSession["user"];
@@ -19,6 +21,8 @@ declare module "@auth/core/jwt" {
   interface JWT {
     id?: string;
     role?: Role;
+    /** User.sessionVersion when this session was issued (server-side only; never in the session response). */
+    sv?: number;
   }
 }
 
@@ -27,7 +31,23 @@ const credentialsSchema = z.object({
   password: z.string().min(1),
 });
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+// Display fields copied into the JWT, always read from the database (never from client input).
+async function readSessionUser(id: string) {
+  return db.user.findUnique({
+    where: { id },
+    select: { id: true, firstName: true, lastName: true, email: true, image: true, role: true, sessionVersion: true },
+  });
+}
+
+export const {
+  handlers,
+  auth,
+  signIn,
+  signOut,
+  // Server-only session refresh (used after a profile update). Data passed to it is ignored:
+  // the jwt callback re-reads the user from the database instead.
+  unstable_update: updateSession,
+} = NextAuth({
   session: { strategy: "jwt" },
   pages: { signIn: "/" },
   providers: [
@@ -50,6 +70,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             email: true,
             image: true,
             role: true,
+            sessionVersion: true,
             passwordHash: true,
           },
         });
@@ -65,18 +86,47 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: user.email,
           image: user.image,
           role: user.role,
+          sessionVersion: user.sessionVersion,
         };
       },
     }),
   ],
   callbacks: {
-    jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         token.id = user.id;
         token.role = user.role;
+        token.sv = user.sessionVersion ?? 0;
         // Display data for the UI (topbar user menu). Never anything secret.
         token.name = user.name ?? null;
+        token.email = user.email ?? null;
         token.picture = user.image ?? null;
+      }
+      // Every later session read (proxy, layouts, pages, Server Actions) re-checks the account in
+      // MySQL: the session ends on its very next request if the user was deleted OR their
+      // sessionVersion changed (password reset/change), and role / display changes take effect
+      // immediately. `trigger: "update"` can be reached by a client POST to /api/auth/session
+      // with arbitrary data — that data is never trusted: the token is rebuilt from the database
+      // record, and the only way to adopt a new sessionVersion is a one-time server-side grant
+      // (lib/session-upgrade.ts) created by the password-change action in the same request.
+      else if (token.id) {
+        const fresh = await readSessionUser(token.id);
+        if (!fresh) return null; // account no longer exists → end the session (cookie cleared)
+        if (trigger === "update") {
+          const granted = consumeSessionGrant((session as { grant?: unknown } | undefined)?.grant, fresh.id, token.jti);
+          if (granted !== null && granted === fresh.sessionVersion) token.sv = granted;
+        }
+        // Sessions issued before sessionVersion existed carry no value: they count as version 0.
+        if ((token.sv ?? 0) !== fresh.sessionVersion) {
+          // The one cookie that just changed its own password, read again by Next's same-response
+          // re-render (see lib/session-upgrade.ts). Anything else with an old version ends here.
+          if (!bridgeAllows(token.jti, fresh.id, fresh.sessionVersion)) return null; // password was reset → end it
+          token.sv = fresh.sessionVersion;
+        }
+        token.name = `${fresh.firstName} ${fresh.lastName}`.trim();
+        token.email = fresh.email;
+        token.picture = fresh.image;
+        token.role = fresh.role;
       }
       return token;
     },
@@ -84,6 +134,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (token.id) session.user.id = token.id;
       if (token.role) session.user.role = token.role;
       session.user.name = token.name ?? null;
+      session.user.email = token.email ?? "";
       session.user.image = token.picture ?? null;
       return session;
     },

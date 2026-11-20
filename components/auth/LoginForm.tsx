@@ -44,6 +44,8 @@ export default function LoginForm() {
         setBusy(false);
         return;
       }
+      // Don't keep the password in state/DOM: the router may keep this page mounted (hidden).
+      setF((prev) => ({ ...prev, pw: "" }));
       router.replace("/dashboard");
       router.refresh();
     } catch {

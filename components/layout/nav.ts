@@ -2,10 +2,22 @@
 
 import type { IconName } from "./Icon";
 
-export type NavLeaf = { id: string; label: string; href: string; title?: string };
+export type NavLeaf = {
+  id: string;
+  label: string;
+  href: string;
+  title?: string;
+  /** Shown but not navigable yet (the page isn't built); the text is used as the tooltip. */
+  disabled?: string;
+  /**
+   * Shown to the OWNER only (Users, Settings). UX only — the routes and their Server Actions are
+   * protected server-side regardless of what the sidebar shows.
+   */
+  ownerOnly?: boolean;
+};
 export type NavItem =
   | (NavLeaf & { icon: IconName; children?: undefined })
-  | { id: string; label: string; icon: IconName; children: NavLeaf[]; href?: undefined; title?: undefined };
+  | { id: string; label: string; icon: IconName; children: NavLeaf[]; href?: undefined; title?: undefined; ownerOnly?: undefined };
 
 export const NAV: NavItem[] = [
   { id: "dash", label: "Dashboard", icon: "layout-dashboard", href: "/dashboard" },
@@ -15,9 +27,9 @@ export const NAV: NavItem[] = [
     icon: "package",
     children: [
       { id: "p1", label: "Products", href: "/products" },
-      { id: "p2", label: "Product Categories", href: "/product-categories" },
-      { id: "p3", label: "Brands", href: "/brands" },
-      { id: "p4", label: "Units", href: "/units" },
+      { id: "p2", label: "Product Categories", href: "/products/categories" },
+      { id: "p3", label: "Brands", href: "/products/brands" },
+      { id: "p4", label: "Units", href: "/products/units" },
       { id: "p5", label: "Base Units", href: "/base-units" },
       { id: "p6", label: "Print Barcode", href: "/print-barcode" },
     ],
@@ -71,9 +83,9 @@ export const NAV: NavItem[] = [
     children: [
       { id: "pe1", label: "Suppliers", href: "/suppliers" },
       { id: "pe2", label: "Customers", href: "/customers" },
-      { id: "pe3", label: "Users", href: "/users" },
-      { id: "pe4", label: "Supplier Payments", href: "/supplier-payments" },
-      { id: "pe5", label: "Customer Payments", href: "/customer-payments" },
+      { id: "pe3", label: "Users", href: "/users", ownerOnly: true },
+      { id: "pe4", label: "Supplier Payments", href: "/supplier-payments", disabled: "Supplier Payments — coming soon" },
+      { id: "pe5", label: "Customer Payments", href: "/customer-payments", disabled: "Customer Payments — coming soon" },
     ],
   },
   { id: "ro", label: "Roles/Permissions", icon: "shield-check", href: "/roles", title: "Roles" },
@@ -90,18 +102,49 @@ export const NAV: NavItem[] = [
       { id: "t2", label: "SMS Templates", href: "/sms-templates" },
     ],
   },
-  { id: "se", label: "Settings", icon: "settings", href: "/settings" },
+  { id: "se", label: "Settings", icon: "settings", href: "/settings", ownerOnly: true },
 ];
+
+/** The sidebar items a role may see (OWNER-only entries removed for everyone else). */
+export function visibleNav(isOwner: boolean): NavItem[] {
+  if (isOwner) return NAV;
+  return NAV.filter((it) => !it.ownerOnly).map((it) => (it.children ? { ...it, children: it.children.filter((c) => !c.ownerOnly) } : it));
+}
 
 const LEAVES: NavLeaf[] = NAV.flatMap((it) => (it.children ? it.children : [it]));
 
 const matches = (pathname: string, href: string) =>
   pathname === href || pathname.startsWith(href + "/");
 
-/** The nav leaf for the current route (e.g. /warehouse/create → Warehouse). */
+/**
+ * The nav leaf for the current route (e.g. /warehouse/create → Warehouse). The most specific
+ * (longest) match wins, so /products/categories is "Product Categories", not "Products".
+ */
 export function findActive(pathname: string | null): NavLeaf | undefined {
   if (!pathname) return undefined;
-  return LEAVES.find((l) => matches(pathname, l.href));
+  let best: NavLeaf | undefined;
+  for (const l of LEAVES) if (matches(pathname, l.href) && (!best || l.href.length > best.href.length)) best = l;
+  return best;
+}
+
+// Pages that have a topbar title but no sidebar entry (e.g. reached from the user menu).
+const EXTRA_TITLES: { href: string; title: string }[] = [
+  { href: "/profile", title: "Profile" },
+  { href: "/change-password", title: "Change Password" },
+  { href: "/settings/theme", title: "Theme Settings" },
+  { href: "/preferences", title: "Appearance & Cache" },
+];
+
+/**
+ * Topbar title for the current route. The extra pages are checked first because some are nested
+ * under a sidebar page (/settings/theme would otherwise show the sidebar's "Settings").
+ */
+export function findPageTitle(pathname: string | null): string {
+  if (!pathname) return "";
+  const extra = EXTRA_TITLES.find((p) => matches(pathname, p.href));
+  if (extra) return extra.title;
+  const active = findActive(pathname);
+  return active ? (active.title ?? active.label) : "";
 }
 
 /** Id of the group that owns the active leaf, if any. */
