@@ -9,9 +9,10 @@ import { findActive, findOwnerGroup, visibleNav, type NavItem } from "./nav";
 import { siteConfig } from "@/config/site";
 
 // `brand` and `logo` come from System Settings (company name/logo), with Bluepiller as fallback.
-// `isOwner` (from the server session) decides whether OWNER-only items (Users, Settings) appear.
-export default function Sidebar({ brand = siteConfig.name, logo = null, isOwner = false }: { brand?: string; logo?: string | null; isOwner?: boolean }) {
-  const items = visibleNav(isOwner);
+// `role` (from the server session) decides which role-restricted items appear: Users/Settings for
+// the OWNER, Finance for OWNER/ADMIN. UX only — routes are protected server-side.
+export default function Sidebar({ brand = siteConfig.name, logo = null, role }: { brand?: string; logo?: string | null; role?: string }) {
+  const items = visibleNav(role);
   const { collapsed, toggleSidebar } = useShell();
   const [logoFailed, setLogoFailed] = useState(false);
   const [logoSrc, setLogoSrc] = useState(logo);

@@ -1,0 +1,192 @@
+"use server";
+
+import { randomBytes } from "node:crypto";
+import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import { auth } from "@/auth";
+import { Prisma } from "@/app/generated/prisma/client";
+import { db } from "@/lib/db";
+import { canManagePurchases } from "@/lib/roles";
+import { getDefaultCurrency } from "@/lib/settings";
+import { toUnits } from "@/lib/transfers";
+import { calcOrder } from "@/lib/purchase-calc";
+import { formatPurchaseReference, purchaseInputSchema, type PurchaseField, type PurchaseInput } from "@/lib/purchases";
+
+// Purchases. Integrity rules (server-side):
+// - OWNER/ADMIN only; auth() is re-read in every action and the role never comes from the client.
+// - Supplier, warehouse and products are looked up in MySQL. All money (line discounts, taxes,
+//   subtotals, order tax, grand total) is recomputed here with lib/purchase-calc.ts — client
+//   totals are never trusted. The currency is the System Settings default currency.
+// - RECEIVED adds each line's quantity to ProductStock(product, warehouse) in the SAME transaction
+//   that creates the purchase. PENDING/ORDERED change no stock; "Mark as Received" moves them to
+//   RECEIVED with a conditional update (only from PENDING/ORDERED), so stock is added exactly once.
+// - No payments yet: paidAmount stays 0 (Unpaid). No cash/bank ledger rows are written.
+// - Purchases are immutable in this step (no edit/delete actions).
+
+export type PurchaseResult =
+  | { ok: true; message: string; id?: string }
+  | { ok: false; message: string; fieldErrors?: Partial<Record<PurchaseField, string>>; itemErrors?: Record<string, string> };
+
+const idSchema = z.string().trim().min(1).max(64);
+const MAX_TOTAL = toUnits("999999999999.99", 2);
+const NO_CURRENCY = "No default currency is configured. The Owner must choose one in System Settings before purchases can be recorded.";
+
+async function authorize(): Promise<{ userId: string } | { error: PurchaseResult }> {
+  const s = await auth();
+  if (!s?.user?.id) return { error: { ok: false, message: "Your session has expired. Please sign in again." } };
+  if (!canManagePurchases(s.user.role)) return { error: { ok: false, message: "You don't have permission to change purchases." } };
+  return { userId: s.user.id };
+}
+
+function parse(input: unknown): { ok: true; data: PurchaseInput } | { ok: false; error: PurchaseResult } {
+  const v = purchaseInputSchema.safeParse(input);
+  if (v.success) return { ok: true, data: v.data };
+  const fieldErrors: Partial<Record<PurchaseField, string>> = {};
+  const itemErrors: Record<string, string> = {};
+  const raw = (input && typeof input === "object" ? (input as { items?: unknown }).items : undefined) as { productId?: unknown }[] | undefined;
+  for (const i of v.error.issues) {
+    const [k, index] = i.path;
+    if (k === "items" && typeof index === "number" && Array.isArray(raw) && typeof raw[index]?.productId === "string") itemErrors[raw[index].productId as string] ??= i.message;
+    fieldErrors[(k as PurchaseField) ?? "items"] ??= i.message;
+  }
+  return { ok: false, error: { ok: false, message: Object.values(fieldErrors)[0] ?? "Please check the form", fieldErrors, itemErrors } };
+}
+
+const isKnown = (e: unknown, ...codes: string[]) => e instanceof Prisma.PrismaClientKnownRequestError && codes.includes(e.code);
+const dateOnly = (v: string) => new Date(`${v}T00:00:00.000Z`);
+
+/** Add each line's quantity to ProductStock(product, warehouse) — stable lock order (product id). */
+async function addStock(tx: Prisma.TransactionClient, warehouseId: string, lines: { productId: string; quantity: Prisma.Decimal | string }[]) {
+  for (const l of [...lines].sort((a, b) => a.productId.localeCompare(b.productId))) {
+    await tx.productStock.upsert({
+      where: { productId_warehouseId: { productId: l.productId, warehouseId } },
+      create: { productId: l.productId, warehouseId, quantity: l.quantity },
+      update: { quantity: { increment: l.quantity } },
+    });
+  }
+}
+
+async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (attempt < 4 && isKnown(e, "P2002", "P2034")) continue; // new stock row race / deadlock
+      throw e;
+    }
+  }
+}
+
+function revalidate(id?: string) {
+  revalidatePath("/purchases");
+  if (id) revalidatePath(`/purchases/${id}`);
+  revalidatePath("/products"); // In Stock
+}
+
+export async function createPurchase(input: unknown): Promise<PurchaseResult> {
+  const a = await authorize();
+  if ("error" in a) return a.error;
+  const v = parse(input);
+  if (!v.ok) return v.error;
+  const d = v.data;
+  const currency = await getDefaultCurrency();
+  if (!currency) return { ok: false, message: NO_CURRENCY };
+
+  const [supplier, warehouse, products] = await Promise.all([
+    db.supplier.findUnique({ where: { id: d.supplierId }, select: { id: true } }),
+    db.warehouse.findUnique({ where: { id: d.warehouseId }, select: { id: true } }),
+    db.product.findMany({ where: { id: { in: d.items.map((i) => i.productId) } }, select: { id: true } }),
+  ]);
+  if (!supplier) return { ok: false, message: "Choose a valid supplier", fieldErrors: { supplierId: "Choose a valid supplier" } };
+  if (!warehouse) return { ok: false, message: "Choose a valid warehouse", fieldErrors: { warehouseId: "Choose a valid warehouse" } };
+  const known = new Set(products.map((p) => p.id));
+  const missing = d.items.find((i) => !known.has(i.productId));
+  if (missing) return { ok: false, message: "A product in the order no longer exists", fieldErrors: { items: "A product in the order no longer exists" }, itemErrors: { [missing.productId]: "This product no longer exists" } };
+
+  // Authoritative totals (server-side).
+  const calc = calcOrder(d.items, { orderTaxRate: d.orderTaxRate, discount: d.discount, shipping: d.shipping });
+  const badLine = calc.lines.findIndex((l) => l.error);
+  if (badLine >= 0) {
+    const pid = d.items[badLine].productId;
+    return { ok: false, message: calc.lines[badLine].error!, fieldErrors: { items: calc.lines[badLine].error }, itemErrors: { [pid]: calc.lines[badLine].error! } };
+  }
+  if (calc.error) return { ok: false, message: calc.error, fieldErrors: { discount: calc.error } };
+  if (toUnits(calc.grandTotal, 2) > MAX_TOTAL || toUnits(calc.subtotal, 2) > MAX_TOTAL) return { ok: false, message: "The purchase total is too large", fieldErrors: { items: "The purchase total is too large" } };
+
+  try {
+    const created = await withRetry(() =>
+      db.$transaction(async (tx) => {
+        const p0 = await tx.purchase.create({
+          data: {
+            reference: `TMP_${randomBytes(8).toString("hex")}`, // replaced below, inside this transaction
+            purchaseDate: dateOnly(d.purchaseDate),
+            supplierId: d.supplierId,
+            warehouseId: d.warehouseId,
+            status: d.status,
+            currencyId: currency.id,
+            subtotal: calc.subtotal,
+            orderTaxRate: d.orderTaxRate,
+            orderTaxAmount: calc.orderTaxAmount,
+            discount: d.discount,
+            shipping: d.shipping,
+            grandTotal: calc.grandTotal,
+            paidAmount: "0",
+            notes: d.notes || null,
+            createdById: a.userId,
+            ...(d.status === "RECEIVED" ? { receivedAt: new Date(), receivedById: a.userId } : {}),
+            items: {
+              create: d.items.map((i, n) => ({
+                productId: i.productId,
+                quantity: i.quantity,
+                unitCost: i.unitCost,
+                taxType: i.taxType,
+                taxRate: i.taxRate,
+                discountType: i.discountType,
+                discountValue: i.discountValue,
+                discountAmount: calc.lines[n].discountAmount,
+                taxAmount: calc.lines[n].taxAmount,
+                netUnitCost: calc.lines[n].netUnitCost,
+                subtotal: calc.lines[n].subtotal,
+              })),
+            },
+          },
+          select: { id: true, number: true },
+        });
+        const reference = formatPurchaseReference(p0.number);
+        await tx.purchase.update({ where: { id: p0.id }, data: { reference } });
+        if (d.status === "RECEIVED") await addStock(tx, d.warehouseId, d.items);
+        return { id: p0.id, reference };
+      }),
+    );
+    revalidate(created.id);
+    const note = d.status === "RECEIVED" ? " — stock added to the warehouse" : " — no stock added until it is received";
+    return { ok: true, message: `Purchase ${created.reference} created${note}`, id: created.id };
+  } catch (e) {
+    if (isKnown(e, "P2003")) return { ok: false, message: "A selected supplier, warehouse or product no longer exists. Refresh and try again." };
+    throw e;
+  }
+}
+
+/** PENDING/ORDERED → RECEIVED: adds the stock exactly once (conditional on the current status). */
+export async function markPurchaseReceived(id: unknown): Promise<PurchaseResult> {
+  const a = await authorize();
+  if ("error" in a) return a.error;
+  const pid = idSchema.safeParse(id);
+  if (!pid.success) return { ok: false, message: "Purchase not found" };
+  const p = await db.purchase.findUnique({ where: { id: pid.data }, select: { id: true, reference: true, status: true } });
+  if (!p) return { ok: false, message: "Purchase not found" };
+  if (p.status === "RECEIVED") return { ok: false, message: `Purchase ${p.reference} has already been received.` };
+
+  const done = await withRetry(() =>
+    db.$transaction(async (tx) => {
+      const u = await tx.purchase.updateMany({ where: { id: p.id, status: { in: ["PENDING", "ORDERED"] } }, data: { status: "RECEIVED", receivedAt: new Date(), receivedById: a.userId } });
+      if (u.count !== 1) return false; // someone else received it first — no stock added twice
+      const row = await tx.purchase.findUniqueOrThrow({ where: { id: p.id }, select: { warehouseId: true, items: { select: { productId: true, quantity: true } } } });
+      await addStock(tx, row.warehouseId, row.items);
+      return true;
+    }),
+  );
+  if (!done) return { ok: false, message: `Purchase ${p.reference} has already been received.` };
+  revalidate(p.id);
+  return { ok: true, message: `Purchase ${p.reference} received — stock added to the warehouse` };
+}

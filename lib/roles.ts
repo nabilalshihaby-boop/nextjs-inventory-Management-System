@@ -55,6 +55,70 @@ export function canManageAdjustments(role: string | undefined): boolean {
 }
 
 /**
+ * Finance (Cash & Bank): OWNER and ADMIN may view accounts and transactions; USER may not access
+ * Finance at all (routes redirect and no finance data is sent).
+ */
+export function canViewFinance(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/** Purchases: OWNER and ADMIN view, create and receive; USER has no access (costs, supplier totals). */
+export function canManagePurchases(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/** Purchase returns: same audience as Purchases — OWNER and ADMIN view and create; USER has no access. */
+export function canManagePurchaseReturns(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/** Supplier payments: OWNER and ADMIN view and record them; USER has no access. */
+export function canManageSupplierPayments(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/**
+ * Quotations: OWNER and ADMIN view, create, edit/delete drafts and change permitted statuses;
+ * USER has no access (customer prices and offers).
+ */
+export function canManageQuotations(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/**
+ * Sales: OWNER and ADMIN view, create, edit/delete pending sales, complete them and convert
+ * accepted quotations; USER has no access (prices, customer invoices, stock deductions).
+ */
+export function canManageSales(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/** Supplier account statement (purchases, returns, payments, balances): OWNER and ADMIN only. */
+export function canViewSupplierStatement(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/** Expenses (Finance): OWNER and ADMIN view, create, edit and delete; USER has no access. */
+export function canManageExpenses(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/** Expense categories (Finance): OWNER and ADMIN view and manage them; USER has no access. */
+export function canManageExpenseCategories(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/** Cash & bank accounts: OWNER and ADMIN may create, edit, activate or deactivate them (never delete). */
+export function canManageCashBankAccounts(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/** Cash & bank transactions (manual deposit / withdrawal / internal transfer): OWNER and ADMIN. */
+export function canRecordCashBankTransactions(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/**
  * Users management (/users and everything under it) is OWNER-only. ADMIN and USER are redirected
  * to /dashboard and never receive user data; every Users Server Action re-checks this.
  */

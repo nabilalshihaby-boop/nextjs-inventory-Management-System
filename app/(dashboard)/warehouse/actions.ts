@@ -88,16 +88,23 @@ export async function updateWarehouse(id: unknown, input: unknown): Promise<Ware
 async function findWarehouseReferences(warehouseId: string): Promise<string[]> {
   const blockers: string[] = [];
   // Product stock, opening-stock entries and transfers (either direction). FKs are RESTRICT as well.
-  const [stocks, entries, transfers, adjustments] = await Promise.all([
+  const [stocks, entries, transfers, adjustments, expenses, purchases] = await Promise.all([
     db.productStock.count({ where: { warehouseId } }),
     db.productStockEntry.count({ where: { warehouseId } }),
     db.stockTransfer.count({ where: { OR: [{ fromWarehouseId: warehouseId }, { toWarehouseId: warehouseId }] } }),
     db.stockAdjustment.count({ where: { warehouseId } }),
+    db.expense.count({ where: { warehouseId } }), // including soft-deleted (financial history)
+    db.purchase.count({ where: { warehouseId } }),
   ]);
   if (stocks) blockers.push(`stock for ${stocks} product${stocks === 1 ? "" : "s"}`);
   if (entries) blockers.push(`${entries} stock entr${entries === 1 ? "y" : "ies"}`);
   if (transfers) blockers.push(`${transfers} transfer${transfers === 1 ? "" : "s"}`);
   if (adjustments) blockers.push(`${adjustments} adjustment${adjustments === 1 ? "" : "s"}`);
+  if (expenses) blockers.push(`${expenses} expense${expenses === 1 ? "" : "s"}`);
+  if (purchases) blockers.push(`${purchases} purchase${purchases === 1 ? "" : "s"}`);
+  const [quotations, sales] = await Promise.all([db.quotation.count({ where: { warehouseId } }), db.sale.count({ where: { warehouseId } })]);
+  if (quotations) blockers.push(`${quotations} quotation${quotations === 1 ? "" : "s"}`);
+  if (sales) blockers.push(`${sales} sale${sales === 1 ? "" : "s"}`);
   return blockers;
 }
 

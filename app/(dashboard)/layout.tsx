@@ -43,9 +43,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
           {themeCss(theme)}
         </style>
       )}
-      {/* OWNER-only items (Users, Settings) are hidden for other roles — UX only; the routes
-          themselves stay protected server-side. */}
-      <Sidebar brand={brand.name} logo={brand.logo} isOwner={role === "OWNER"} />
+      {/* Role-restricted items (Users/Settings: OWNER; Finance: OWNER/ADMIN) are hidden for other
+          roles — UX only; the routes themselves stay protected server-side. */}
+      <Sidebar brand={brand.name} logo={brand.logo} role={role} />
       <div className="bp-main">
         <Topbar user={user} />
         <main className="bp-content">{children}</main>

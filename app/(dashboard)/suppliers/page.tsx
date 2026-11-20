@@ -5,7 +5,7 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { getCountryOptions } from "@/lib/countries";
 import { formatDateTime } from "@/lib/format";
-import { canManageSuppliers } from "@/lib/roles";
+import { canManageSuppliers, canViewSupplierStatement } from "@/lib/roles";
 import { getSystemSettings } from "@/lib/settings";
 import SuppliersTable from "@/components/suppliers/SuppliersTable";
 
@@ -33,5 +33,5 @@ export default async function SuppliersPage() {
     createdOn: formatDateTime(s.createdAt, settings?.dateFormat),
   }));
 
-  return <SuppliersTable rows={rows} canManage={canManageSuppliers(session.user.role)} />;
+  return <SuppliersTable rows={rows} canManage={canManageSuppliers(session.user.role)} canViewStatement={canViewSupplierStatement(session.user.role)} />;
 }

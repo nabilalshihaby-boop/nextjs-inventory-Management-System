@@ -7,6 +7,8 @@ import Icon, { type IconName } from "@/components/layout/Icon";
 export type RowMenuItem =
   | { label: string; icon: IconName; href: string; danger?: boolean }
   | { label: string; icon: IconName; onClick: () => void; danger?: boolean }
+  /** Shown but not available yet; the text is the tooltip / accessible explanation. */
+  | { label: string; icon: IconName; disabled: string; danger?: boolean }
   | "-";
 
 // Design RowMenu (.sp-rowmenu + .sp-menu): ellipsis button opening a small action menu.
@@ -41,6 +43,13 @@ export default function RowMenu({ label, items }: { label: string; items: RowMen
           {items.map((it, i) => {
             if (it === "-") return <div key={i} className="sp-menu-sep" role="separator" />;
             const cls = "sp-menu-item" + (it.danger ? " sp-menu-item--danger" : "");
+            if ("disabled" in it)
+              return (
+                <button key={i} type="button" role="menuitem" className={cls} aria-disabled="true" title={it.disabled} aria-label={`${it.label} (${it.disabled})`} style={{ opacity: 0.5, cursor: "not-allowed" }}>
+                  <Icon name={it.icon} size={16} />
+                  {it.label}
+                </button>
+              );
             return "href" in it ? (
               <Link key={i} href={it.href} role="menuitem" className={cls} style={{ textDecoration: "none" }} onClick={() => setOpen(false)}>
                 <Icon name={it.icon} size={16} />

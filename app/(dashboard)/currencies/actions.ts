@@ -93,12 +93,21 @@ export async function deleteCurrency(id: unknown): Promise<CurrencyResult> {
   const settings = await db.systemSettings.findUnique({ where: { id: SETTINGS_ID }, select: { defaultCurrencyId: true } });
   const PROTECTED = "This currency is the default currency in System Settings. Choose another default currency first.";
   if (settings?.defaultCurrencyId === existing.id) return { ok: false, message: PROTECTED };
+  // Cash & bank accounts keep their currency (RESTRICT foreign key as well).
+  const [accounts, purchases, payments] = await Promise.all([db.cashBankAccount.count({ where: { currencyId: existing.id } }), db.purchase.count({ where: { currencyId: existing.id } }), db.supplierPayment.count({ where: { currencyId: existing.id } })]);
+  if (accounts) return { ok: false, message: `This currency is used by ${accounts} cash & bank account${accounts === 1 ? "" : "s"} and can't be deleted.` };
+  if (purchases) return { ok: false, message: `This currency is used by ${purchases} purchase${purchases === 1 ? "" : "s"} and can't be deleted.` };
+  if (payments) return { ok: false, message: `This currency is used by ${payments} supplier payment${payments === 1 ? "" : "s"} and can't be deleted.` };
+  const quotations = await db.quotation.count({ where: { currencyId: existing.id } });
+  if (quotations) return { ok: false, message: `This currency is used by ${quotations} quotation${quotations === 1 ? "" : "s"} and can't be deleted.` };
+  const sales = await db.sale.count({ where: { currencyId: existing.id } });
+  if (sales) return { ok: false, message: `This currency is used by ${sales} sale${sales === 1 ? "" : "s"} and can't be deleted.` };
 
   try {
     await db.currency.delete({ where: { id: existing.id } });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && (e.code === "P2003" || e.code === "P2014")) {
-      return { ok: false, message: PROTECTED };
+      return { ok: false, message: "This currency is still used by other records and can't be deleted." };
     }
     throw e;
   }

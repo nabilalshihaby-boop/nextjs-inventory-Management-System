@@ -10,14 +10,18 @@ export type NavLeaf = {
   /** Shown but not navigable yet (the page isn't built); the text is used as the tooltip. */
   disabled?: string;
   /**
-   * Shown to the OWNER only (Users, Settings). UX only — the routes and their Server Actions are
-   * protected server-side regardless of what the sidebar shows.
+   * Roles that see this entry (default: everyone). UX only — the routes and their Server Actions
+   * are protected server-side regardless of what the sidebar shows.
    */
-  ownerOnly?: boolean;
+  roles?: readonly NavRole[];
 };
+export type NavRole = "OWNER" | "ADMIN" | "USER";
 export type NavItem =
   | (NavLeaf & { icon: IconName; children?: undefined })
-  | { id: string; label: string; icon: IconName; children: NavLeaf[]; href?: undefined; title?: undefined; ownerOnly?: undefined };
+  | { id: string; label: string; icon: IconName; children: NavLeaf[]; href?: undefined; title?: undefined; roles?: readonly NavRole[] };
+
+const OWNER_ONLY = ["OWNER"] as const; // Users, Settings
+const STAFF = ["OWNER", "ADMIN"] as const; // Finance
 
 export const NAV: NavItem[] = [
   { id: "dash", label: "Dashboard", icon: "layout-dashboard", href: "/dashboard" },
@@ -35,23 +39,25 @@ export const NAV: NavItem[] = [
     ],
   },
   { id: "adj", label: "Adjustments", icon: "sliders-horizontal", href: "/adjustments" },
-  { id: "quo", label: "Quotations", icon: "file-text", href: "/quotations" },
+  { id: "quo", label: "Quotations", icon: "file-text", href: "/quotations", roles: STAFF }, // customer offers: hidden from USER
   {
     id: "pur",
     label: "Purchases",
     icon: "receipt",
+    roles: STAFF, // costs and supplier totals: hidden from USER
     children: [
       { id: "pu1", label: "Purchases", href: "/purchases" },
-      { id: "pu2", label: "Purchases Returns", href: "/purchases-returns" },
+      { id: "pu2", label: "Purchases Returns", href: "/purchases/returns" },
     ],
   },
   {
     id: "sales",
     label: "Sales",
     icon: "shopping-cart",
+    roles: STAFF, // prices, customer invoices and stock deductions: hidden from USER
     children: [
       { id: "s1", label: "Sales", href: "/sales" },
-      { id: "s2", label: "Sales Returns", href: "/sales-returns" },
+      { id: "s2", label: "Sales Returns", href: "/sales-returns", disabled: "Sales Returns — coming soon" },
     ],
   },
   { id: "tr", label: "Transfers", icon: "arrow-left-right", href: "/transfers" },
@@ -59,18 +65,20 @@ export const NAV: NavItem[] = [
     id: "ex",
     label: "Expenses",
     icon: "wallet",
+    roles: STAFF, // finance data: hidden from USER (like Finance)
     children: [
       { id: "e1", label: "Expenses", href: "/expenses" },
-      { id: "e2", label: "Expense Categories", href: "/expense-categories" },
+      { id: "e2", label: "Expense Categories", href: "/expenses/categories" },
     ],
   },
   {
     id: "fin",
     label: "Finance",
     icon: "landmark",
+    roles: STAFF,
     children: [
-      { id: "f1", label: "Cash & Bank Accounts", href: "/cash-bank-accounts" },
-      { id: "f2", label: "Cash & Bank Transactions", href: "/cash-bank-transactions" },
+      { id: "f1", label: "Cash & Bank Accounts", href: "/finance/accounts" },
+      { id: "f2", label: "Cash & Bank Transactions", href: "/finance/transactions" },
       { id: "f3", label: "Profit & Loss", href: "/profit-loss" },
       { id: "f4", label: "Cash Flow", href: "/cash-flow" },
       { id: "f5", label: "Receivables & Payables Aging", href: "/receivables-payables-aging" },
@@ -83,8 +91,8 @@ export const NAV: NavItem[] = [
     children: [
       { id: "pe1", label: "Suppliers", href: "/suppliers" },
       { id: "pe2", label: "Customers", href: "/customers" },
-      { id: "pe3", label: "Users", href: "/users", ownerOnly: true },
-      { id: "pe4", label: "Supplier Payments", href: "/supplier-payments", disabled: "Supplier Payments — coming soon" },
+      { id: "pe3", label: "Users", href: "/users", roles: OWNER_ONLY },
+      { id: "pe4", label: "Supplier Payments", href: "/supplier-payments", roles: STAFF },
       { id: "pe5", label: "Customer Payments", href: "/customer-payments", disabled: "Customer Payments — coming soon" },
     ],
   },
@@ -102,13 +110,13 @@ export const NAV: NavItem[] = [
       { id: "t2", label: "SMS Templates", href: "/sms-templates" },
     ],
   },
-  { id: "se", label: "Settings", icon: "settings", href: "/settings", ownerOnly: true },
+  { id: "se", label: "Settings", icon: "settings", href: "/settings", roles: OWNER_ONLY },
 ];
 
-/** The sidebar items a role may see (OWNER-only entries removed for everyone else). */
-export function visibleNav(isOwner: boolean): NavItem[] {
-  if (isOwner) return NAV;
-  return NAV.filter((it) => !it.ownerOnly).map((it) => (it.children ? { ...it, children: it.children.filter((c) => !c.ownerOnly) } : it));
+/** The sidebar items a role may see (entries restricted to other roles removed). */
+export function visibleNav(role: string | undefined): NavItem[] {
+  const allowed = (r?: readonly NavRole[]) => !r || r.includes(role as NavRole);
+  return NAV.filter((it) => allowed(it.roles)).map((it) => (it.children ? { ...it, children: it.children.filter((c) => allowed(c.roles)) } : it));
 }
 
 const LEAVES: NavLeaf[] = NAV.flatMap((it) => (it.children ? it.children : [it]));
@@ -133,6 +141,8 @@ const EXTRA_TITLES: { href: string; title: string }[] = [
   { href: "/change-password", title: "Change Password" },
   { href: "/settings/theme", title: "Theme Settings" },
   { href: "/preferences", title: "Appearance & Cache" },
+  { href: "/suppliers/statement", title: "Supplier Statement" },
+  { href: "/reports/supplier-statement", title: "Supplier Statement Report" },
 ];
 
 /**

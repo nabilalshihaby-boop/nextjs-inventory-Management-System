@@ -230,3 +230,57 @@ svg.sp-icon{background:none;-webkit-mask:none;mask:none}
 
 /* Inventory Transfers (design/Create Transfer.html): product-search suggestions. */
 .sp-sug{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:30;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);padding:6px;max-height:320px;overflow-y:auto}
+
+/* Cash & Bank (design/Cash - Bank Accounts.html, Cash - Bank Transactions.html): KPI value sizes. */
+.bp-fin-kpis .sp-stat-value{font-size:20px}
+.bp-fin-kpis>:nth-child(4) .sp-stat-value{font-size:25px}
+/* Report documents (components/reports/ReportDocument.tsx) — the ONLY printable surface.
+   Screen: a white A4-like document under a Back / Print Report toolbar. Print: only .bp-report is
+   output (shell, toolbars and any other page content hidden), full height, no scroll containers,
+   repeating table headers, print-safe colours, A4 with margins (landscape only when requested). */
+@page{size:A4 portrait;margin:12mm 12mm 14mm}
+@page bp-landscape{size:A4 landscape;margin:10mm 12mm 12mm}
+.bp-report-actions{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 auto 16px;max-width:210mm}
+.bp-report--landscape~.bp-report-actions,.bp-report-actions:has(+.bp-report--landscape){max-width:297mm}
+.bp-report{background:#fff;color:#111827;max-width:210mm;margin:0 auto;padding:14mm 12mm;border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-sm);font:400 12px/1.45 var(--font-body)}
+.bp-report--landscape{max-width:297mm}
+.bp-report *{color:inherit}
+.bp-report-head{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;padding-bottom:12px;border-bottom:2px solid #111827;margin-bottom:14px;break-inside:avoid}
+.bp-report-company{display:flex;gap:12px;align-items:flex-start;min-width:0}
+.bp-report-logo{width:48px;height:48px;object-fit:contain;flex:none}
+.bp-report-company-name{font:700 16px/1.3 var(--font-display,var(--font-body))}
+.bp-report-muted{color:#4b5563!important;font-size:11px}
+.bp-report-titlebox{text-align:right}
+.bp-report-title{font:700 18px/1.25 var(--font-display,var(--font-body));margin:0 0 4px}
+.bp-report-meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px 20px;margin:0 0 14px;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;break-inside:avoid}
+.bp-report-meta dt{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#4b5563!important}
+.bp-report-meta dd{margin:2px 0 0;font-weight:600}
+.bp-report-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:0 0 14px;break-inside:avoid}
+.bp-report-summary>div{border:1px solid #d1d5db;border-radius:6px;padding:8px 10px;display:flex;flex-direction:column;gap:2px}
+.bp-report-summary span{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#4b5563!important}
+.bp-report-summary b{font-size:14px}
+.bp-report-summary small{font-size:10px;color:#4b5563!important}
+.bp-report-summary .is-strong{border-color:#111827;border-width:2px}
+.bp-report-table{width:100%;border-collapse:collapse;font-size:11px}
+.bp-report-table th,.bp-report-table td{border:1px solid #d1d5db;padding:5px 6px;text-align:left;vertical-align:top;overflow-wrap:anywhere}
+.bp-report-table thead th{background:#f3f4f6;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.03em}
+.bp-report-table .num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.bp-report-table tfoot td{font-weight:700;background:#f9fafb;border-top:2px solid #111827}
+.bp-report-table .is-muted td{color:#4b5563!important;font-style:italic}
+.bp-report-empty{padding:16px;border:1px dashed #9ca3af;border-radius:6px;text-align:center;color:#4b5563!important}
+.bp-report-note{margin:10px 0 0;font-size:10px;color:#4b5563!important}
+.bp-report-foot{display:flex;justify-content:space-between;gap:12px;margin-top:18px;padding-top:8px;border-top:1px solid #d1d5db;font-size:10px;color:#4b5563!important;break-inside:avoid}
+@media print{
+  html,body{background:#fff!important}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .bp-app,.bp-main{display:block!important;min-height:0!important}
+  .bp-content{padding:0!important;max-width:none!important;overflow:visible!important}
+  .bp-content:has(.bp-report)>:not(.bp-report){display:none!important}
+  .bp-report-actions,.sp-noprint,.bp-app>:not(.bp-main){display:none!important}
+  .bp-report{max-width:none!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;box-shadow:none!important;font-size:10.5pt;overflow:visible!important}
+  .bp-report--landscape{page:bp-landscape}
+  .bp-report-table{font-size:9pt;page-break-inside:auto}
+  .bp-report-table thead{display:table-header-group}
+  .bp-report-table tfoot{display:table-row-group}
+  .bp-report-table tr{break-inside:avoid;page-break-inside:avoid}
+}

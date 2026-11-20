@@ -21,21 +21,21 @@ enum Role {
 }
 
 model User {
-  id           String          @id @default(cuid())
-  firstName    String
-  lastName     String
-  email        String          @unique
+  id             String          @id @default(cuid())
+  firstName      String
+  lastName       String
+  email          String          @unique
   /// bcrypt hash only — never store a plaintext password.
-  passwordHash String
-  phoneNumber  String
-  image        String?         @db.Text
-  role         Role            @default(USER)
+  passwordHash   String
+  phoneNumber    String
+  image          String?         @db.Text
+  role           Role            @default(USER)
   /// Bumped whenever all existing sessions must end (password reset/change). Every session read
   /// compares it with the value stored in the encrypted JWT (auth.ts). Never sent to the browser.
-  sessionVersion Int           @default(0)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-  preference   UserPreference?
+  sessionVersion Int             @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  preference     UserPreference?
 
   @@map("users")
 }
@@ -43,13 +43,19 @@ model User {
 /// Currencies managed on /currencies. `code` is ISO-style: exactly 3 uppercase letters, unique
 /// regardless of case (stored uppercase; the column collation is case-insensitive as well).
 model Currency {
-  id        String           @id @default(cuid())
-  name      String           @db.VarChar(100)
-  code      String           @unique @db.Char(3)
-  symbol    String           @db.VarChar(10)
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
-  defaultIn SystemSettings[] @relation("DefaultCurrency")
+  id               String            @id @default(cuid())
+  name             String            @db.VarChar(100)
+  code             String            @unique @db.Char(3)
+  symbol           String            @db.VarChar(10)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  defaultIn        SystemSettings[]  @relation("DefaultCurrency")
+  cashBankAccounts CashBankAccount[]
+  purchases        Purchase[]
+  purchaseReturns  PurchaseReturn[]
+  supplierPayments SupplierPayment[]
+  quotations       Quotation[]
+  sales            Sale[]
 
   @@map("currencies")
 }
@@ -58,21 +64,26 @@ model Currency {
 /// Future stock, sales, purchase and transfer records will reference warehouses; deletion must
 /// be refused while such references exist (see app/(dashboard)/warehouse/actions.ts).
 model Warehouse {
-  id           String              @id @default(cuid())
-  name         String              @unique @db.VarChar(120)
-  email        String              @db.VarChar(191)
-  phoneNumber  String              @db.VarChar(32)
+  id              String              @id @default(cuid())
+  name            String              @unique @db.VarChar(120)
+  email           String              @db.VarChar(191)
+  phoneNumber     String              @db.VarChar(32)
   /// ISO 3166-1 alpha-2 code (see lib/countries.ts).
-  countryCode  String              @db.Char(2)
-  city         String              @db.VarChar(120)
-  zipCode      String?             @db.VarChar(20)
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
-  stocks       ProductStock[]
-  stockEntries ProductStockEntry[]
-  transfersOut StockTransfer[]     @relation("TransferFrom")
-  transfersIn  StockTransfer[]     @relation("TransferTo")
-  adjustments  StockAdjustment[]
+  countryCode     String              @db.Char(2)
+  city            String              @db.VarChar(120)
+  zipCode         String?             @db.VarChar(20)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  stocks          ProductStock[]
+  stockEntries    ProductStockEntry[]
+  transfersOut    StockTransfer[]     @relation("TransferFrom")
+  transfersIn     StockTransfer[]     @relation("TransferTo")
+  adjustments     StockAdjustment[]
+  expenses        Expense[]
+  purchases       Purchase[]
+  purchaseReturns PurchaseReturn[]
+  quotations      Quotation[]
+  sales           Sale[]
 
   @@map("warehouses")
 }
@@ -125,17 +136,20 @@ model ProductUnit {
 /// Purchases and supplier payments will reference suppliers; deletion is refused while they do
 /// (see app/(dashboard)/suppliers/actions.ts).
 model Supplier {
-  id           String              @id @default(cuid())
-  name         String              @unique @db.VarChar(120)
-  email        String              @db.VarChar(191)
-  phoneNumber  String              @db.VarChar(32)
+  id               String              @id @default(cuid())
+  name             String              @unique @db.VarChar(120)
+  email            String              @db.VarChar(191)
+  phoneNumber      String              @db.VarChar(32)
   /// ISO 3166-1 alpha-2 code (see lib/countries.ts).
-  countryCode  String              @db.Char(2)
-  city         String              @db.VarChar(120)
-  address      String              @db.VarChar(255)
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
-  stockEntries ProductStockEntry[]
+  countryCode      String              @db.Char(2)
+  city             String              @db.VarChar(120)
+  address          String              @db.VarChar(255)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  stockEntries     ProductStockEntry[]
+  purchases        Purchase[]
+  purchaseReturns  PurchaseReturn[]
+  supplierPayments SupplierPayment[]
 
   @@map("suppliers")
 }
@@ -144,18 +158,20 @@ model Supplier {
 /// Sales, quotations, customer payments and statements will reference customers; deletion must be
 /// refused while they do (see app/(dashboard)/customers/actions.ts).
 model Customer {
-  id          String    @id @default(cuid())
-  name        String    @unique @db.VarChar(120)
-  email       String    @db.VarChar(191)
-  phoneNumber String    @db.VarChar(32)
+  id          String      @id @default(cuid())
+  name        String      @unique @db.VarChar(120)
+  email       String      @db.VarChar(191)
+  phoneNumber String      @db.VarChar(32)
   /// ISO 3166-1 alpha-2 code (see lib/countries.ts).
-  countryCode String    @db.Char(2)
-  city        String    @db.VarChar(120)
-  address     String    @db.VarChar(500)
+  countryCode String      @db.Char(2)
+  city        String      @db.VarChar(120)
+  address     String      @db.VarChar(500)
   /// Optional; a past (or today's) date.
-  dateOfBirth DateTime? @db.Date
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  dateOfBirth DateTime?   @db.Date
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  quotations  Quotation[]
+  sales       Sale[]
 
   @@map("customers")
 }
@@ -179,36 +195,40 @@ enum StockEntryStatus {
 /// Products managed on /products. Money uses DECIMAL(14,2) and quantities DECIMAL(14,3) — never
 /// floating point. All master-data relations are RESTRICT so referenced records can't be deleted.
 model Product {
-  id                 String              @id @default(cuid())
-  name               String              @db.VarChar(191)
+  id                  String                @id @default(cuid())
+  name                String                @db.VarChar(191)
   /// Normalized (trimmed, uppercase) and unique.
-  code               String              @unique @db.VarChar(64)
-  categoryId         String
-  category           ProductCategory     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  brandId            String
-  brand              Brand               @relation(fields: [brandId], references: [id], onDelete: Restrict)
-  barcodeSymbology   BarcodeSymbology
-  cost               Decimal             @db.Decimal(14, 2)
-  price              Decimal             @db.Decimal(14, 2)
-  productUnitId      String
-  productUnit        ProductUnit         @relation("ProductUnit", fields: [productUnitId], references: [id], onDelete: Restrict)
-  saleUnitId         String
-  saleUnit           ProductUnit         @relation("SaleUnit", fields: [saleUnitId], references: [id], onDelete: Restrict)
-  purchaseUnitId     String
-  purchaseUnit       ProductUnit         @relation("PurchaseUnit", fields: [purchaseUnitId], references: [id], onDelete: Restrict)
-  stockAlert         Decimal             @default(0) @db.Decimal(14, 3)
+  code                String                @unique @db.VarChar(64)
+  categoryId          String
+  category            ProductCategory       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  brandId             String
+  brand               Brand                 @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  barcodeSymbology    BarcodeSymbology
+  cost                Decimal               @db.Decimal(14, 2)
+  price               Decimal               @db.Decimal(14, 2)
+  productUnitId       String
+  productUnit         ProductUnit           @relation("ProductUnit", fields: [productUnitId], references: [id], onDelete: Restrict)
+  saleUnitId          String
+  saleUnit            ProductUnit           @relation("SaleUnit", fields: [saleUnitId], references: [id], onDelete: Restrict)
+  purchaseUnitId      String
+  purchaseUnit        ProductUnit           @relation("PurchaseUnit", fields: [purchaseUnitId], references: [id], onDelete: Restrict)
+  stockAlert          Decimal               @default(0) @db.Decimal(14, 3)
   /// Percentage 0–100.
-  orderTax           Decimal             @default(0) @db.Decimal(5, 2)
-  taxType            TaxType             @default(EXCLUSIVE)
-  quantityLimitation Decimal?            @db.Decimal(14, 3)
-  notes              String?             @db.Text
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  images             ProductImage[]
-  stocks             ProductStock[]
-  stockEntries       ProductStockEntry[]
-  transferItems      StockTransferItem[]
-  adjustmentItems    StockAdjustmentItem[]
+  orderTax            Decimal               @default(0) @db.Decimal(5, 2)
+  taxType             TaxType               @default(EXCLUSIVE)
+  quantityLimitation  Decimal?              @db.Decimal(14, 3)
+  notes               String?               @db.Text
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  images              ProductImage[]
+  stocks              ProductStock[]
+  stockEntries        ProductStockEntry[]
+  transferItems       StockTransferItem[]
+  adjustmentItems     StockAdjustmentItem[]
+  purchaseItems       PurchaseItem[]
+  purchaseReturnItems PurchaseReturnItem[]
+  quotationItems      QuotationItem[]
+  saleItems           SaleItem[]
 
   @@index([categoryId])
   @@index([brandId])
@@ -360,6 +380,345 @@ model StockAdjustmentItem {
   @@map("stock_adjustment_items")
 }
 
+/// Expense categories (/expenses/categories). `name` is unique (case-insensitive collation).
+/// Expenses will reference categories; deletion must be refused while they do
+/// (see app/(dashboard)/expenses/categories/actions.ts).
+model ExpenseCategory {
+  id        String    @id @default(cuid())
+  name      String    @unique @db.VarChar(120)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  expenses  Expense[]
+
+  @@map("expense_categories")
+}
+
+/// Expenses (/expenses). Every expense is paid from a cash/bank account: creating one appends a
+/// WITHDRAWAL (purpose "Operating Expense") to the ledger. The ledger stays append-only — editing
+/// appends a reversal DEPOSIT plus a new WITHDRAWAL; deleting appends a reversal and sets
+/// deletedAt (soft delete; the row and its ledger history are kept). See expenses/actions.ts.
+model Expense {
+  id                  String                @id @default(cuid())
+  /// MySQL AUTO_INCREMENT: concurrency-safe and never reused (gaps are possible).
+  number              Int                   @unique @default(autoincrement())
+  /// "EX_000001" — generated server-side from `number`.
+  reference           String                @unique @db.VarChar(20)
+  expenseDate         DateTime              @db.Date
+  title               String                @db.VarChar(191)
+  warehouseId         String
+  warehouse           Warehouse             @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  categoryId          String
+  category            ExpenseCategory       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  cashBankAccountId   String
+  cashBankAccount     CashBankAccount       @relation(fields: [cashBankAccountId], references: [id], onDelete: Restrict)
+  amount              Decimal               @db.Decimal(14, 2)
+  details             String?               @db.Text
+  /// The user who created it (audit; not a foreign key, like other modules).
+  createdById         String?               @db.VarChar(191)
+  /// Soft delete: set when the expense is deleted (and reversed). Hidden from the list.
+  deletedAt           DateTime?
+  /// The ledger WITHDRAWAL currently representing this expense (null once deleted).
+  activeTransactionId String?               @unique
+  activeTransaction   CashBankTransaction?  @relation("ExpenseActiveTransaction", fields: [activeTransactionId], references: [id], onDelete: Restrict)
+  /// Every ledger row this expense ever produced (withdrawals and reversals), oldest first.
+  ledgerEntries       CashBankTransaction[] @relation("ExpenseLedger")
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  @@index([warehouseId])
+  @@index([categoryId])
+  @@index([cashBankAccountId])
+  @@index([deletedAt])
+  @@map("expenses")
+}
+
+enum PurchaseStatus {
+  RECEIVED
+  PENDING
+  ORDERED
+}
+
+enum DiscountType {
+  FIXED
+  PERCENTAGE
+}
+
+/// Purchases (/purchases). Totals are computed on the server (lib/purchase-calc.ts) and stored as
+/// a snapshot. RECEIVED adds the line quantities to ProductStock in the warehouse exactly once
+/// (on creation, or later via "Mark as Received"); PENDING/ORDERED change no stock. Payments come
+/// later (Supplier Payments): paidAmount stays 0 for now, so every purchase is Unpaid.
+model Purchase {
+  id                 String                      @id @default(cuid())
+  /// MySQL AUTO_INCREMENT: concurrency-safe and never reused (gaps are possible).
+  number             Int                         @unique @default(autoincrement())
+  /// "PU_000001" — generated server-side from `number`.
+  reference          String                      @unique @db.VarChar(20)
+  purchaseDate       DateTime                    @db.Date
+  supplierId         String
+  supplier           Supplier                    @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  warehouseId        String
+  warehouse          Warehouse                   @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  status             PurchaseStatus
+  /// The System Settings default currency when the purchase was recorded.
+  currencyId         String
+  currency           Currency                    @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  /// Σ line subtotals.
+  subtotal           Decimal                     @db.Decimal(14, 2)
+  /// Order tax percentage (0–100) and the resulting amount.
+  orderTaxRate       Decimal                     @default(0) @db.Decimal(5, 2)
+  orderTaxAmount     Decimal                     @default(0) @db.Decimal(14, 2)
+  discount           Decimal                     @default(0) @db.Decimal(14, 2)
+  shipping           Decimal                     @default(0) @db.Decimal(14, 2)
+  /// subtotal + orderTaxAmount − discount + shipping.
+  grandTotal         Decimal                     @db.Decimal(14, 2)
+  /// Supplier payments are not built yet: always 0 for now (due = grandTotal − paidAmount).
+  paidAmount         Decimal                     @default(0) @db.Decimal(14, 2)
+  notes              String?                     @db.Text
+  /// When stock was added (status became RECEIVED) and by whom.
+  receivedAt         DateTime?
+  receivedById       String?                     @db.VarChar(191)
+  /// The user who created it (audit; not a foreign key, like other modules).
+  createdById        String?                     @db.VarChar(191)
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+  items              PurchaseItem[]
+  returns            PurchaseReturn[]
+  paymentAllocations SupplierPaymentAllocation[]
+
+  @@index([supplierId])
+  @@index([warehouseId])
+  @@index([status])
+  @@map("purchases")
+}
+
+/// One product line. All amounts are snapshots computed on the server; the purchase line never
+/// changes the Product's own cost, tax or discount settings.
+model PurchaseItem {
+  id             String               @id @default(cuid())
+  purchaseId     String
+  purchase       Purchase             @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product              @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantity       Decimal              @db.Decimal(14, 3)
+  /// Unit cost entered for this purchase (defaults to Product.cost).
+  unitCost       Decimal              @db.Decimal(14, 2)
+  taxType        TaxType
+  /// Line tax percentage (0–100).
+  taxRate        Decimal              @db.Decimal(5, 2)
+  discountType   DiscountType
+  /// FIXED: an amount; PERCENTAGE: a percentage (0–100).
+  discountValue  Decimal              @db.Decimal(14, 2)
+  discountAmount Decimal              @db.Decimal(14, 2)
+  taxAmount      Decimal              @db.Decimal(14, 2)
+  /// subtotal ÷ quantity.
+  netUnitCost    Decimal              @db.Decimal(14, 2)
+  subtotal       Decimal              @db.Decimal(14, 2)
+  returnItems    PurchaseReturnItem[]
+
+  @@unique([purchaseId, productId])
+  @@index([productId])
+  @@map("purchase_items")
+}
+
+enum PurchaseReturnStatus {
+  COMPLETED
+}
+
+/// Purchase returns (/purchases/returns). Always linked to one RECEIVED purchase. Immutable: the
+/// stock deduction happens in the same transaction that creates the return, and every amount is a
+/// server-computed snapshot prorated from the original purchase lines (lib/purchase-return-calc.ts).
+/// The return reduces the purchase's outstanding Due; no Cash/Bank ledger rows are written
+/// (Supplier Payments will settle money later).
+model PurchaseReturn {
+  id             String               @id @default(cuid())
+  /// MySQL AUTO_INCREMENT: concurrency-safe and never reused (gaps are possible).
+  number         Int                  @unique @default(autoincrement())
+  /// "PR_000001" — generated server-side from `number`.
+  reference      String               @unique @db.VarChar(20)
+  returnDate     DateTime             @db.Date
+  purchaseId     String
+  purchase       Purchase             @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  /// Copied from the purchase (never from the browser) so lists and deletion checks are simple.
+  supplierId     String
+  supplier       Supplier             @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  warehouseId    String
+  warehouse      Warehouse            @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  currencyId     String
+  currency       Currency             @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  status         PurchaseReturnStatus @default(COMPLETED)
+  subtotal       Decimal              @db.Decimal(14, 2)
+  orderTaxAmount Decimal              @db.Decimal(14, 2)
+  discount       Decimal              @db.Decimal(14, 2)
+  /// Shipping is not returned (always 0; kept for the design's summary).
+  shipping       Decimal              @default(0) @db.Decimal(14, 2)
+  grandTotal     Decimal              @db.Decimal(14, 2)
+  notes          String?              @db.Text
+  createdById    String?              @db.VarChar(191)
+  createdAt      DateTime             @default(now())
+  items          PurchaseReturnItem[]
+
+  @@index([purchaseId])
+  @@index([supplierId])
+  @@index([warehouseId])
+  @@map("purchase_returns")
+}
+
+/// One returned line: a snapshot of the original purchase line's pricing plus the prorated amounts.
+model PurchaseReturnItem {
+  id             String         @id @default(cuid())
+  returnId       String
+  purchaseReturn PurchaseReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  purchaseItemId String
+  purchaseItem   PurchaseItem   @relation(fields: [purchaseItemId], references: [id], onDelete: Restrict)
+  productId      String
+  product        Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantity       Decimal        @db.Decimal(14, 3)
+  unitCost       Decimal        @db.Decimal(14, 2)
+  netUnitCost    Decimal        @db.Decimal(14, 2)
+  taxType        TaxType
+  taxRate        Decimal        @db.Decimal(5, 2)
+  discountType   DiscountType
+  discountValue  Decimal        @db.Decimal(14, 2)
+  discountAmount Decimal        @db.Decimal(14, 2)
+  taxAmount      Decimal        @db.Decimal(14, 2)
+  subtotal       Decimal        @db.Decimal(14, 2)
+
+  @@unique([returnId, purchaseItemId])
+  @@index([purchaseItemId])
+  @@index([productId])
+  @@map("purchase_return_items")
+}
+
+/// Supplier payments (/supplier-payments). Immutable. Each payment is allocated in full to one or
+/// more of the supplier's purchases (amount = Σ allocations, exactly) and produces exactly ONE
+/// append-only Cash/Bank WITHDRAWAL linked via CashBankTransaction.supplierPaymentId. Every
+/// allocation also increments Purchase.paidAmount in the same transaction (see actions.ts).
+model SupplierPayment {
+  id                String                      @id @default(cuid())
+  /// MySQL AUTO_INCREMENT: concurrency-safe and never reused (gaps are possible).
+  number            Int                         @unique @default(autoincrement())
+  /// "SP_000001" — generated server-side from `number`.
+  reference         String                      @unique @db.VarChar(20)
+  paymentDate       DateTime                    @db.Date
+  supplierId        String
+  supplier          Supplier                    @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  cashBankAccountId String
+  cashBankAccount   CashBankAccount             @relation(fields: [cashBankAccountId], references: [id], onDelete: Restrict)
+  /// The paying account's currency (= every allocated purchase's currency).
+  currencyId        String
+  currency          Currency                    @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  /// Σ allocations.
+  amount            Decimal                     @db.Decimal(14, 2)
+  paymentMethod     String                      @db.VarChar(32)
+  /// The design's optional "Reference / Transaction Number" (e.g. a cheque or bank transfer number).
+  externalReference String?                     @db.VarChar(64)
+  notes             String?                     @db.Text
+  createdById       String?                     @db.VarChar(191)
+  createdAt         DateTime                    @default(now())
+  allocations       SupplierPaymentAllocation[]
+  ledgerEntry       CashBankTransaction?        @relation("SupplierPaymentLedger")
+
+  @@index([supplierId])
+  @@index([cashBankAccountId])
+  @@map("supplier_payments")
+}
+
+/// The part of a supplier payment applied to one purchase (immutable).
+model SupplierPaymentAllocation {
+  id         String          @id @default(cuid())
+  paymentId  String
+  payment    SupplierPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  purchaseId String
+  purchase   Purchase        @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  amount     Decimal         @db.Decimal(14, 2)
+
+  @@unique([paymentId, purchaseId])
+  @@index([purchaseId])
+  @@map("supplier_payment_allocations")
+}
+
+enum CashBankAccountType {
+  CASH
+  BANK
+}
+
+enum CashBankAccountStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum CashBankTransactionType {
+  DEPOSIT
+  WITHDRAWAL
+  TRANSFER
+}
+
+/// Cash registers / cash accounts / bank accounts (/finance/accounts). There is NO stored balance:
+/// the current balance is always openingBalance + deposits − withdrawals − transfers out +
+/// transfers in, computed from CashBankTransaction rows. Accounts are deactivated, never deleted.
+model CashBankAccount {
+  id               String                @id @default(cuid())
+  /// Unique (case-insensitive column collation).
+  name             String                @unique @db.VarChar(120)
+  type             CashBankAccountType
+  /// Bank: account number (required). Cash: optional register/reference code.
+  reference        String?               @db.VarChar(64)
+  /// Required for BANK accounts, null for CASH.
+  bankName         String?               @db.VarChar(120)
+  /// The System Settings default currency at creation time (read-only afterwards).
+  currencyId       String
+  currency         Currency              @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  /// Set once on creation; never edited.
+  openingBalance   Decimal               @db.Decimal(14, 2)
+  status           CashBankAccountStatus @default(ACTIVE)
+  notes            String?               @db.Text
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  transactions     CashBankTransaction[] @relation("CashBankSource")
+  transfersIn      CashBankTransaction[] @relation("CashBankDestination")
+  expenses         Expense[]
+  supplierPayments SupplierPayment[]
+
+  @@map("cash_bank_accounts")
+}
+
+/// Append-only cash/bank ledger (/finance/transactions): no edits, no deletes. DEPOSIT adds to
+/// `account`; WITHDRAWAL subtracts from it; TRANSFER moves `amount` from `account` to
+/// `destinationAccount`. Written only inside a transaction that locks the account rows.
+model CashBankTransaction {
+  id                   String                  @id @default(cuid())
+  /// MySQL AUTO_INCREMENT: concurrency-safe and never reused (gaps are possible).
+  number               Int                     @unique @default(autoincrement())
+  /// "DEP_000001" / "WDR_000002" / "TRF_000003" — generated server-side from `number`.
+  reference            String                  @unique @db.VarChar(20)
+  transactionDate      DateTime                @db.Date
+  type                 CashBankTransactionType
+  accountId            String
+  account              CashBankAccount         @relation("CashBankSource", fields: [accountId], references: [id], onDelete: Restrict)
+  destinationAccountId String?
+  destinationAccount   CashBankAccount?        @relation("CashBankDestination", fields: [destinationAccountId], references: [id], onDelete: Restrict)
+  /// Always positive; the type decides the direction.
+  amount               Decimal                 @db.Decimal(14, 2)
+  paymentMethod        String?                 @db.VarChar(32)
+  purpose              String?                 @db.VarChar(64)
+  notes                String?                 @db.Text
+  /// The user who recorded it (audit; not a foreign key, like StockTransfer.createdById).
+  createdById          String?                 @db.VarChar(191)
+  /// Set (at creation only) when the row was produced by an Expense: its withdrawal or a reversal.
+  expenseId            String?
+  expense              Expense?                @relation("ExpenseLedger", fields: [expenseId], references: [id], onDelete: Restrict)
+  activeForExpense     Expense?                @relation("ExpenseActiveTransaction")
+  supplierPaymentId    String?                 @unique
+  supplierPayment      SupplierPayment?        @relation("SupplierPaymentLedger", fields: [supplierPaymentId], references: [id], onDelete: Restrict)
+  createdAt            DateTime                @default(now())
+
+  @@index([expenseId])
+  @@index([accountId])
+  @@index([destinationAccountId])
+  @@index([transactionDate])
+  @@map("cash_bank_transactions")
+}
+
 /// A user's personal appearance preference (one per user). Takes precedence over the Owner's
 /// global theme for that user only.
 model UserPreference {
@@ -404,4 +763,169 @@ model SystemSettings {
   updatedAt           DateTime  @updatedAt
 
   @@map("system_settings")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Quotations (design/Quotations.html, Create Quotation.html, Quotation Details.html).
+// A commercial offer only: never touches stock, cash/bank, ledger, purchase dues or customer
+// balances. Lifecycle: DRAFT → SENT → ACCEPTED | REJECTED | EXPIRED (server-enforced; only DRAFT
+// is editable/deletable). Totals and every line are server-computed snapshots.
+enum QuotationStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+model Quotation {
+  id                String          @id @default(cuid())
+  /// MySQL AUTO_INCREMENT: concurrency-safe and never reused (gaps are possible, e.g. deleted drafts).
+  number            Int             @unique @default(autoincrement())
+  /// "QU_000001" — generated server-side from `number`.
+  reference         String          @unique @db.VarChar(20)
+  quotationDate     DateTime        @db.Date
+  customerId        String
+  customer          Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  /// The warehouse the offer is made from (design field; display/stock reference only — no stock moves).
+  warehouseId       String
+  warehouse         Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  status            QuotationStatus @default(DRAFT)
+  /// The System Settings default currency when the quotation was created.
+  currencyId        String
+  currency          Currency        @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  /// Σ line subtotals.
+  subtotal          Decimal         @db.Decimal(14, 2)
+  orderTaxRate      Decimal         @default(0) @db.Decimal(5, 2)
+  orderTaxAmount    Decimal         @default(0) @db.Decimal(14, 2)
+  discount          Decimal         @default(0) @db.Decimal(14, 2)
+  shipping          Decimal         @default(0) @db.Decimal(14, 2)
+  /// subtotal + orderTaxAmount − discount + shipping.
+  grandTotal        Decimal         @db.Decimal(14, 2)
+  notes             String?         @db.Text
+  /// Audit (not foreign keys, like other modules).
+  createdById       String?         @db.VarChar(191)
+  statusChangedAt   DateTime?
+  statusChangedById String?         @db.VarChar(191)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  items             QuotationItem[]
+  /// The sale created from this (Accepted) quotation — at most one.
+  sale              Sale?
+
+  @@index([customerId])
+  @@index([warehouseId])
+  @@index([status])
+  @@index([quotationDate])
+  @@map("quotations")
+}
+
+/// One quoted product. Values are this quotation's own snapshot (never written back to Product).
+model QuotationItem {
+  id             String       @id @default(cuid())
+  quotationId    String
+  quotation      Quotation    @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  /// Product identity at the time of quoting.
+  productCode    String       @db.VarChar(64)
+  productName    String       @db.VarChar(191)
+  unitName       String       @db.VarChar(64)
+  quantity       Decimal      @db.Decimal(14, 3)
+  /// Selling price for this quotation (defaults to Product.price).
+  unitPrice      Decimal      @db.Decimal(14, 2)
+  taxType        TaxType
+  taxRate        Decimal      @db.Decimal(5, 2)
+  discountType   DiscountType
+  /// FIXED: an amount; PERCENTAGE: a percentage (0–100).
+  discountValue  Decimal      @db.Decimal(14, 2)
+  discountAmount Decimal      @db.Decimal(14, 2)
+  taxAmount      Decimal      @db.Decimal(14, 2)
+  /// subtotal ÷ quantity.
+  netUnitPrice   Decimal      @db.Decimal(14, 2)
+  subtotal       Decimal      @db.Decimal(14, 2)
+
+  @@unique([quotationId, productId])
+  @@index([productId])
+  @@map("quotation_items")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Sales (design/Sales.html, Create Sale.html, Sale Details.html) — the shared sales engine (future
+// POS reuses it). PENDING: a record only (no stock change). COMPLETED: stock is deducted from the
+// warehouse exactly once, in the same transaction that completes it; completed sales are immutable.
+// No payments yet: paidAmount stays 0 (Due = Grand Total); no cash/bank or ledger rows are written.
+// The sale lines are the stock movement record (like purchases, returns, transfers, adjustments).
+enum SaleStatus {
+  PENDING
+  COMPLETED
+}
+
+model Sale {
+  id             String     @id @default(cuid())
+  /// MySQL AUTO_INCREMENT: concurrency-safe and never reused (gaps are possible).
+  number         Int        @unique @default(autoincrement())
+  /// "SA_000001" — generated server-side from `number`.
+  reference      String     @unique @db.VarChar(20)
+  saleDate       DateTime   @db.Date
+  customerId     String
+  customer       Customer   @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  warehouseId    String
+  warehouse      Warehouse  @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  status         SaleStatus
+  /// Default currency at creation (or the source quotation's currency).
+  currencyId     String
+  currency       Currency   @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  subtotal       Decimal    @db.Decimal(14, 2)
+  orderTaxRate   Decimal    @default(0) @db.Decimal(5, 2)
+  orderTaxAmount Decimal    @default(0) @db.Decimal(14, 2)
+  discount       Decimal    @default(0) @db.Decimal(14, 2)
+  shipping       Decimal    @default(0) @db.Decimal(14, 2)
+  /// subtotal + orderTaxAmount − discount + shipping.
+  grandTotal     Decimal    @db.Decimal(14, 2)
+  /// Customer payments are not built yet: always 0 (Due = grandTotal − paidAmount).
+  paidAmount     Decimal    @default(0) @db.Decimal(14, 2)
+  notes          String?    @db.Text
+  /// Set when created from an Accepted quotation; unique → a quotation converts at most once.
+  quotationId    String?    @unique
+  quotation      Quotation? @relation(fields: [quotationId], references: [id], onDelete: Restrict)
+  /// When stock was deducted (status became COMPLETED) and by whom.
+  completedAt    DateTime?
+  completedById  String?    @db.VarChar(191)
+  createdById    String?    @db.VarChar(191)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  items          SaleItem[]
+
+  @@index([customerId])
+  @@index([warehouseId])
+  @@index([status])
+  @@index([saleDate])
+  @@map("sales")
+}
+
+/// One sold product — this sale's own snapshot (never written back to Product).
+model SaleItem {
+  id             String       @id @default(cuid())
+  saleId         String
+  sale           Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  productCode    String       @db.VarChar(64)
+  productName    String       @db.VarChar(191)
+  unitName       String       @db.VarChar(64)
+  quantity       Decimal      @db.Decimal(14, 3)
+  unitPrice      Decimal      @db.Decimal(14, 2)
+  taxType        TaxType
+  taxRate        Decimal      @db.Decimal(5, 2)
+  discountType   DiscountType
+  discountValue  Decimal      @db.Decimal(14, 2)
+  discountAmount Decimal      @db.Decimal(14, 2)
+  taxAmount      Decimal      @db.Decimal(14, 2)
+  netUnitPrice   Decimal      @db.Decimal(14, 2)
+  subtotal       Decimal      @db.Decimal(14, 2)
+
+  @@unique([saleId, productId])
+  @@index([productId])
+  @@map("sale_items")
 }

@@ -16,11 +16,12 @@ import type { SupplierRow } from "@/lib/suppliers";
 //
 // Deferred design controls (shown, but not functional yet — no links to unbuilt pages):
 // - Import Suppliers: CSV import is not implemented ("Coming soon").
-// - Account Statement: needs Purchases and Supplier Payments, which don't exist yet.
+// Account Statement links to /suppliers/statement for OWNER/ADMIN (it shows purchase and payment
+// amounts); USER sees it disabled with an explanation.
 const IMPORT_SOON = "Import Suppliers is coming soon. CSV import isn't available yet.";
-const STATEMENT_SOON = "Supplier statements become available after Purchases and Payments are implemented.";
+const STATEMENT_DENIED = "Supplier statements are available to Owners and Administrators.";
 
-export default function SuppliersTable({ rows, canManage }: { rows: SupplierRow[]; canManage: boolean }) {
+export default function SuppliersTable({ rows, canManage, canViewStatement }: { rows: SupplierRow[]; canManage: boolean; canViewStatement: boolean }) {
   const router = useRouter();
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
@@ -119,17 +120,29 @@ export default function SuppliersTable({ rows, canManage }: { rows: SupplierRow[
                   </td>
                   <td className="num">
                     <span style={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
-                      <button
-                        type="button"
-                        className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-                        aria-label={`Account Statement for ${r.name} (not available yet)`}
-                        aria-disabled="true"
-                        title={STATEMENT_SOON}
-                        style={{ color: "var(--primary-600)", ...disabledStyle }}
-                        onClick={() => comingSoon(STATEMENT_SOON)}
-                      >
-                        <Icon name="file-text" size={16} />
-                      </button>
+                      {canViewStatement ? (
+                        <Link
+                          href={`/suppliers/statement?supplier=${encodeURIComponent(r.id)}`}
+                          className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
+                          aria-label={`Account Statement for ${r.name}`}
+                          title="Account Statement"
+                          style={{ color: "var(--primary-600)" }}
+                        >
+                          <Icon name="file-text" size={16} />
+                        </Link>
+                      ) : (
+                        <button
+                          type="button"
+                          className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
+                          aria-label={`Account Statement for ${r.name} (not available for your role)`}
+                          aria-disabled="true"
+                          title={STATEMENT_DENIED}
+                          style={{ color: "var(--primary-600)", ...disabledStyle }}
+                          onClick={() => comingSoon(STATEMENT_DENIED)}
+                        >
+                          <Icon name="file-text" size={16} />
+                        </button>
+                      )}
                       {canManage && (
                         <>
                           <Link

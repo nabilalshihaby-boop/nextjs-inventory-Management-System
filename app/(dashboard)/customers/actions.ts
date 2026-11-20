@@ -87,17 +87,14 @@ export async function updateCustomer(id: unknown, input: unknown): Promise<Custo
 }
 
 /**
- * Records that would block deleting a customer. Sales, quotations, customer payments and customer
- * statements don't exist yet, so nothing references customers today. When those modules are
- * added, count their rows here, e.g.
- *   db.sale.count({ where: { customerId } }), db.quotation.count({ where: { customerId } }),
- *   db.customerPayment.count({ where: { customerId } })
- * push a blocker for each non-zero count, and give those relations onDelete: Restrict so the
- * database enforces it as well (the P2003 handling below already covers that case).
+ * Records that would block deleting a customer. Quotations and sales reference customers
+ * (onDelete: Restrict as well). When Customer Payments are added, count their rows here too.
  */
 async function findCustomerReferences(customerId: string): Promise<string[]> {
-  void customerId;
   const blockers: string[] = [];
+  const [quotations, sales] = await Promise.all([db.quotation.count({ where: { customerId } }), db.sale.count({ where: { customerId } })]);
+  if (quotations) blockers.push(`${quotations} quotation${quotations === 1 ? "" : "s"}`);
+  if (sales) blockers.push(`${sales} sale${sales === 1 ? "" : "s"}`);
   return blockers;
 }
 

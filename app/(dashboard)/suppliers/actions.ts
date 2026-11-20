@@ -79,16 +79,16 @@ export async function updateSupplier(id: unknown, input: unknown): Promise<Suppl
 }
 
 /**
- * Records that would block deleting a supplier. Purchases, purchase returns and supplier payments
- * don't exist yet; when they do, count their rows here, e.g.
- *   db.purchase.count({ where: { supplierId } }), db.supplierPayment.count({ where: { supplierId } })
- * and give those relations onDelete: Restrict so the database enforces it as well.
+ * Records that would block deleting a supplier: opening-stock entries and purchases (both FKs are
+ * RESTRICT as well). Purchase returns and supplier payments don't exist yet; when they do, count
+ * their rows here too, e.g. db.supplierPayment.count({ where: { supplierId } }).
  */
 async function findSupplierReferences(supplierId: string): Promise<string[]> {
   const blockers: string[] = [];
-  // Opening-stock entries from the Products module (FK is RESTRICT as well).
-  const entries = await db.productStockEntry.count({ where: { supplierId } });
+  const [entries, purchases, payments] = await Promise.all([db.productStockEntry.count({ where: { supplierId } }), db.purchase.count({ where: { supplierId } }), db.supplierPayment.count({ where: { supplierId } })]);
   if (entries) blockers.push(`${entries} stock entr${entries === 1 ? "y" : "ies"}`);
+  if (purchases) blockers.push(`${purchases} purchase${purchases === 1 ? "" : "s"}`);
+  if (payments) blockers.push(`${payments} supplier payment${payments === 1 ? "" : "s"}`);
   return blockers;
 }
 
