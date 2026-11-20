@@ -1,16 +1,12 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import Icon from "./Icon";
-import { FullscreenButton, MenuButton, PageTitle, SearchBox, UserMenu } from "./TopbarControls";
+import { FullscreenButton, MenuButton, PageTitle, SearchBox } from "./TopbarControls";
+import UserMenu, { type TopbarUser } from "./UserMenu";
 
-// Server component: static structure + links. Interactive pieces come from TopbarControls (client).
-export default function Topbar({
-  userName = "admin",
-  userRole = "Administrator",
-}: {
-  userName?: string;
-  userRole?: string;
-}) {
+// Server component: static structure + links. Interactive pieces come from TopbarControls and
+// UserMenu (client). `user` is the signed-in user, passed down from the dashboard layout.
+export default function Topbar({ user }: { user: TopbarUser }) {
   return (
     <header className="bp-topbar">
       <MenuButton />
@@ -27,7 +23,7 @@ export default function Topbar({
         <Link href="/products" className="sp-btn sp-btn--ghost sp-btn--icon" aria-label="Low stock alerts">
           <Icon name="bell" size={18} />
         </Link>
-        <UserMenu userName={userName} userRole={userRole} />
+        <UserMenu user={user} />
       </div>
     </header>
   );

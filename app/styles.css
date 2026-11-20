@@ -204,3 +204,15 @@ svg.sp-icon{background:none;-webkit-mask:none;mask:none}
 .bp-dashboard .sp-card .sp-table th:first-child,.bp-dashboard .sp-card .sp-table td:first-child{padding-left:24px}
 .bp-dashboard .sp-card .sp-table-scroll{padding-bottom:8px}
 .bp-dashboard .sp-sec{margin-bottom:24px}
+
+/* Sign In page (app/page.tsx) - copied verbatim from the inline <style> in design/Sign In.html. */
+.si{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);min-height:100vh}
+.si-brand{background:var(--primary-700);color:#fff;display:flex;flex-direction:column;justify-content:space-between;padding:56px 64px}
+.si-brand h2{font:800 56px/1.05 var(--font-display);letter-spacing:-.03em;margin:0;max-width:520px}
+.si-brand p{font:400 18px/28px var(--font-body);margin:20px 0 0;max-width:460px;color:var(--primary-100)}
+.si-form{display:flex;align-items:center;justify-content:center;padding:48px;background:var(--bg-surface)}
+.si-box{width:100%;max-width:420px;display:flex;flex-direction:column;gap:24px}
+.si-pw{position:relative}
+.si-eye{position:absolute;right:6px;top:4px}
+@media(max-width:767px){.si{grid-template-columns:minmax(0,1fr);min-height:100vh}.si-brand{padding:28px 24px;gap:20px}.si-brand h2{font-size:34px}.si-brand p{font-size:16px;line-height:24px;margin-top:12px}.si-form{padding:28px 20px}}
+@media(min-width:768px) and (max-width:1279px){.si-brand{padding:40px 32px}.si-brand h2{font-size:40px}.si-form{padding:32px}}
