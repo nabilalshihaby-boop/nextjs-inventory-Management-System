@@ -1,0 +1,41 @@
+<!DOCTYPE html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>Dashboard · Sontic Plus</title>
+<link rel="stylesheet" href="styles.css"><script src="theme.js"></script>
+<style>.sp-dash{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:24px;margin:32px 0}.sp-dash .sp-card-body{padding:24px}.sp-chart{position:relative;height:340px}.sp-card.pad{padding:0}.sp-card .sp-table th:first-child,.sp-card .sp-table td:first-child{padding-left:24px}.sp-card .sp-table-scroll{padding-bottom:8px}.sp-sec{margin-bottom:24px}</style></head>
+<body><div id="r"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="nav.js"></script><script src="customer-data.js"></script><script src="fin.js"></script><script src="_ds_bundle.js"></script>
+<script type="text/babel">const egp=n=>"EGP "+(+n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+const {AppShell,StatCard,Badge,Button}=window.Industry_indust;
+const NAV=window.SP_NAV;
+const TILES=[["teal","shopping-cart","Sales","Sales.html"],["green","package-plus","Purchases","Purchases.html"],["blue","arrow-right","Sales Returns","Sales Returns.html"],["amber","arrow-left","Purchases Returns","Purchases Returns.html"],["violet","dollar-sign","Today Total Sales","Sales.html"],["rose","banknote","Today Total Received(Sales)","Sales.html"],["cyan","shopping-cart","Today Total Purchases","Purchases.html"],["red","circle-minus","Today Total Expense","Expenses.html"]];
+const days=["2026-05-20","2026-05-21","2026-05-22","2026-05-23","2026-05-24","2026-05-25","2026-05-26"];
+const sales=[["SA_11149","EGP 71,800.00"],["SA_11148","EGP 31,920.00"],["SA_11147","EGP 7,980.00"],["SA_11146","EGP 11,970.00"],["SA_11145","EGP 7,980.00"]];
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function Cv({make}){const r=React.useRef(null);React.useEffect(()=>{Chart.defaults.font.family=css("--font-body").replace(/"/g,"");Chart.defaults.color=css("--text-2");const c=new Chart(r.current,make());return()=>c.destroy()},[]);return <div className="sp-chart"><canvas ref={r}/></div>}
+const weekly=()=>({type:"bar",data:{labels:days,datasets:[{label:"Sales",data:[0,7980,11970,0,7980,31920,71800],backgroundColor:css("--tone-teal"),borderRadius:4},{label:"Purchases",data:[12400,0,0,8600,0,15750,0],backgroundColor:css("--tone-green"),borderRadius:4}]},options:{maintainAspectRatio:false,plugins:{legend:{position:"top"},tooltip:{callbacks:{label:c=>c.dataset.label+": "+egp(c.parsed.y)}}},scales:{y:{beginAtZero:true,ticks:{callback:v=>(v/1000)+"k"},title:{display:true,text:"Amount"},grid:{color:css("--border")}},x:{grid:{color:css("--border")}}}}});
+const TOP26=[["intensive hair serum set",94],["collagen powder",58],["lip care set",41],["ultrasonic scrubber",27],["FACE FAT AND DOUBLE CHIN",12]];
+const pie2026=()=>({type:"pie",data:{labels:TOP26.map(x=>x[0]),datasets:[{data:TOP26.map(x=>x[1]),backgroundColor:["--tone-teal","--tone-green","--tone-blue","--tone-amber","--tone-violet"].map(css),borderWidth:0}]},options:{maintainAspectRatio:false,plugins:{legend:{position:"top"},tooltip:{callbacks:{label:c=>c.label+": "+c.parsed+" sold"}}}}});
+const may=CUSTOMERS.map(c=>({n:c.name,v:c.tx.filter(t=>t[2]==="Sale"&&t[0].startsWith("2026-05")).reduce((a,t)=>a+t[4],0)})).filter(x=>x.v>0).sort((a,b)=>b.v-a.v).slice(0,5);
+const top5=()=>({type:"pie",data:{labels:may.map(x=>x.n),datasets:[{data:may.map(x=>x.v),backgroundColor:["--tone-teal","--tone-green","--tone-blue","--tone-amber","--tone-violet"].map(css),borderWidth:0}]},options:{maintainAspectRatio:false,plugins:{legend:{position:"top"},tooltip:{callbacks:{label:c=>c.label+": "+egp(c.parsed)}}}}});
+const MAYP=[["intensive hair serum set",22,54780],["collagen powder",15,25350],["lip care set",12,21480],["ultrasonic scrubber",7,20930],["FACE FAT AND DOUBLE CHIN",2,6980]];
+const Card=({title,center,action,children})=><section className="sp-card"><div className="sp-card-head" style={center?{justifyContent:"center"}:undefined}><h2 className="t-section-title" style={{margin:0}}>{title}</h2>{action}</div>{children}</section>;
+function App(){return <AppShell items={NAV} activeId="dash" title="Dashboard" userName="admin" userRole="Administrator" footer="All Rights Reserved © 2026 Sontic Plus">
+<div className="sp-kpi-grid">{TILES.map(t=><a key={t[2]} href={t[3]} aria-label={t[2]} style={{textDecoration:"none",display:"block"}}><StatCard tone={t[0]} icon={t[1]} value="EGP 0.00" label={t[2]}/></a>)}</div>
+<div style={{margin:"32px 0 0"}}><h2 className="t-section-title" style={{margin:"0 0 16px"}}>Customer Receivables</h2><div className="sp-kpi-grid" style={{gridTemplateColumns:"repeat(3,minmax(0,1fr))"}}>{[["teal","hand-coins",CUST_TOTALS.out-FIN.collected(),"Total Accounts Receivable","Sales − Collections − Returns"],["green","banknote",CUST_TOTALS.paid+FIN.collected(),"Total Customer Collections","Payments received"],["red","circle-minus",CUST_TOTALS.out-FIN.collected(),"Outstanding Customer Balances",CUSTOMERS.length+" customers with open statements"]].map(t=><a key={t[3]} href="Customer Statement.html" aria-label={t[3]} style={{textDecoration:"none",display:"block"}}><StatCard tone={t[0]} icon={t[1]} value={egp(t[2])} label={t[3]} note={t[4]}/></a>)}</div></div>
+<div className="sp-dash">
+<Card title="This Week Sales & Purchases" action={<Button variant="ghost" size="sm" iconOnly icon="menu" aria-label="Chart menu"/>}><div className="sp-card-body"><Cv make={weekly}/></div></Card>
+<Card title="Top Selling Products (2026)" center><div className="sp-card-body"><Cv make={pie2026}/></div></Card>
+<Card title="Top Selling Products (May)"><div className="sp-table-scroll"><table className="sp-table"><thead><tr><th>Product</th><th>Quantity</th><th>Grand Total</th></tr></thead><tbody>{MAYP.map(p=><tr key={p[0]}><td className="primary-cell">{p[0]}</td><td>{p[1]}</td><td>{egp(p[2])}</td></tr>)}</tbody></table></div></Card>
+<Card title="Top 5 Customers (May)" center><div className="sp-card-body"><Cv make={top5}/></div></Card>
+</div>
+<div className="sp-sec"><Card title="Recent Sales"><div className="sp-table-scroll"><table className="sp-table"><thead><tr><th>Reference</th><th>Customer</th><th>Status</th><th>Grand Total</th><th>Paid</th><th>Due</th><th>Payment Status</th></tr></thead><tbody>{sales.map(s=><tr key={s[0]}><td><span className="sp-code">{s[0]}</span></td><td className="primary-cell">direct-customer</td><td><Badge status="Received"/></td><td>{s[1]}</td><td>{s[1]}</td><td>EGP 0.00</td><td><Badge status="Paid"/></td></tr>)}</tbody></table></div></Card></div>
+<Card title="Stock Alert"><div className="sp-table-scroll"><table className="sp-table"><thead><tr><th>Code</th><th>Product</th><th>Warehouse</th><th>Quantity</th><th>Alert Quantity</th></tr></thead><tbody>
+<tr><td><span className="sp-code">002</span></td><td className="primary-cell">ipl laser hair removal</td><td>Office</td><td><span style={{display:"flex",gap:6}}><Badge tone="danger" dot={false}>0</Badge><Badge tone="neutral" dot={false}>piece</Badge></span></td><td><Badge tone="neutral" dot={false}>piece</Badge></td></tr>
+<tr><td><span className="sp-code">001</span></td><td className="primary-cell">FACE FAT AND DOUBLE CHIN</td><td>Office</td><td><span style={{display:"flex",gap:6}}><Badge tone="warning" dot={false}>2</Badge><Badge tone="neutral" dot={false}>piece</Badge></span></td><td><span style={{display:"flex",gap:6}}><Badge tone="danger" dot={false}>3</Badge><Badge tone="neutral" dot={false}>piece</Badge></span></td></tr>
+</tbody></table></div></Card>
+</AppShell>}
+ReactDOM.createRoot(document.getElementById("r")).render(<App/>);
+</script></body></html>

@@ -1,0 +1,22 @@
+<!DOCTYPE html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>Create Role · Sontic Plus</title><link rel="stylesheet" href="styles.css"><script src="theme.js"></script></head><body><div id="r"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="nav.js"></script><script src="_ds_bundle.js"></script>
+<script type="text/babel">const {AppShell,PageHeader,Field,Input,Checkbox,Button}=window.Industry_indust;
+const PERMS=["Manage Adjustments","Manage Transfers","Manage Roles","Manage Brands","Manage Currency","Manage Warehouses","Manage Units","Manage Product Categories","Manage Products","Manage Suppliers","Manage Customers","Manage Users","Manage Expense Categories","Manage Expenses","Manage Setting","Manage Dashboard","Manage Pos Screen","Manage Purchase","Manage Sale","Manage Purchase Return","Manage Sale Return","Manage Email Templates","Manage Reports","Manage Quotations","Manage Sms Templates","Manage Sms Apis","Manage Language"];
+const P=new URLSearchParams(location.search);const editing=P.has("name");
+function App(){const [name,setName]=React.useState(P.get("name")||"");const [sel,setSel]=React.useState([]);const [err,setErr]=React.useState({});
+const all=sel.length===PERMS.length;const ok=name.trim()&&sel.length>0;
+const toggle=p=>e=>setSel(e.target.checked?[...sel,p]:sel.filter(x=>x!==p));
+const save=()=>{const n={};if(!name.trim())n.name="Name is required";if(!sel.length)n.perm="Select at least one permission";setErr(n);if(!Object.keys(n).length)location.href="Roles.html"};
+return <AppShell items={SP_NAV} activeId="ro" title="Roles" userName="admin" userRole="Administrator" footer="All Rights Reserved © 2026 Sontic Plus">
+<PageHeader title={editing?"Edit Role":"Create Role"}><Button variant="secondary" icon="arrow-left" onClick={()=>location.href="Roles.html"}>Back</Button></PageHeader>
+<div className="sp-card sp-form-card" style={{display:"flex",flexDirection:"column",gap:28}}>
+<Field label="Name" required error={err.name}><Input placeholder="Enter Name" value={name} onChange={e=>{setName(e.target.value);setErr({...err,name:""})}}/></Field>
+<div><div style={{display:"flex",alignItems:"center",gap:20,marginBottom:20}}><span className="sp-label">Permissions<i style={{color:"var(--danger-500)",fontStyle:"normal",marginLeft:2}}>*</i></span><Checkbox label="All Permissions" checked={all} onChange={e=>setSel(e.target.checked?[...PERMS]:[])}/></div>
+<div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:"18px 32px"}}>{PERMS.map(p=><Checkbox key={p} label={p} checked={sel.includes(p)} onChange={toggle(p)}/>)}</div>
+{err.perm&&<div className="sp-error" style={{marginTop:12}}>{err.perm}</div>}</div>
+<div style={{display:"flex",gap:12}}><Button disabled={!ok} onClick={save}>Save</Button><Button variant="secondary" onClick={()=>location.href="Roles.html"}>Cancel</Button></div>
+</div></AppShell>}
+ReactDOM.createRoot(document.getElementById("r")).render(<App/>);</script></body></html>

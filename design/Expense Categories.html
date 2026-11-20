@@ -1,0 +1,21 @@
+<!DOCTYPE html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>Expense Categories · Sontic Plus</title><link rel="stylesheet" href="styles.css"><script src="theme.js"></script></head><body><div id="r"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="nav.js"></script><script src="_ds_bundle.js"></script>
+<script type="text/babel">const {AppShell,TableToolbar,DataTable,Pagination,Modal,Field,Input,Button,ConfirmDeleteModal}=window.Industry_indust;
+const Act=({onEdit,onDel})=><span style={{display:"flex",gap:2,justifyContent:"flex-end"}}><Button variant="ghost" size="sm" iconOnly icon="pencil" aria-label="Edit" style={{color:"var(--primary-600)"}} onClick={onEdit}/><Button variant="ghost" size="sm" iconOnly icon="trash-2" aria-label="Delete" style={{color:"var(--danger-500)"}} onClick={onDel}/></span>;
+const N=["USA Raju Payment","Shopping Bag Cost","Office Cost","Marketing FB Live","Transportation","TA/TD","Other Cost","Arabi Salary","Shohan Salary"];
+function App(){const [del,setDel]=React.useState(null);
+const [rows,setRows]=React.useState(N.map((n,i)=>({id:i+1,name:n})));const [q,setQ]=React.useState("");
+const [m,setM]=React.useState(null);const [name,setName]=React.useState("");const [err,setErr]=React.useState("");
+const open=r=>{setM(r||{});setName(r?r.name:"");setErr("")};const close=()=>setM(null);
+const save=()=>{if(!name.trim()){setErr("Name is required");return}setRows(m.id?rows.map(x=>x.id===m.id?{...x,name}:x):[...rows,{id:Date.now(),name}]);close()};
+const v=rows.filter(r=>r.name.toLowerCase().includes(q.toLowerCase()));
+const cols=[{key:"name",header:"Name",primary:true},{key:"act",header:"Action",align:"right",render:(x,r)=><Act onEdit={()=>open(r)} onDel={()=>setDel(r)}/>}];
+return <AppShell items={SP_NAV} activeId="e2" title="Expense Categories" userName="admin" userRole="Administrator" footer="All Rights Reserved © 2026 Sontic Plus">
+<TableToolbar value={q} onSearch={setQ}><Button icon="plus" onClick={()=>open()}>Create Expense Category</Button></TableToolbar>
+<DataTable columns={cols} rows={v}><Pagination page={1} pageSize={10} total={v.length}/></DataTable>
+<Modal open={!!m} size="sm" title={m&&m.id?"Edit Expense Category":"Create Expense Category"} onClose={close} footer={<><Button variant="secondary" onClick={close}>Cancel</Button><Button onClick={save}>Save</Button></>}>
+<Field label="Name" required error={err}><Input placeholder="Enter Name" value={name} onChange={e=>{setName(e.target.value);setErr("")}} autoFocus/></Field></Modal><ConfirmDeleteModal open={!!del} itemType="expense category" itemName={del?del.name:undefined} onCancel={()=>setDel(null)} onConfirm={()=>{setRows(rows.filter(y=>y.id!==del.id));setDel(null)}}/></AppShell>}
+ReactDOM.createRoot(document.getElementById("r")).render(<App/>);</script></body></html>

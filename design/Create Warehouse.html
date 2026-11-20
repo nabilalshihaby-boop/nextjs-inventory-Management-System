@@ -1,0 +1,18 @@
+<!DOCTYPE html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>Create Warehouse · Sontic Plus</title><link rel="stylesheet" href="styles.css"><script src="theme.js"></script></head><body><div id="r"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="nav.js"></script><script src="_ds_bundle.js"></script>
+<script type="text/babel">const {AppShell,PageHeader,FormCard,Field,Input,Button}=window.Industry_indust;
+const P=new URLSearchParams(location.search);const editing=P.has("name");
+function App(){const [f,setF]=React.useState({name:P.get("name")||"",email:P.get("email")||"",phone:P.get("phone")||"",country:P.get("country")||"",city:P.get("city")||"",zip:P.get("zip")||""});const [e,setE]=React.useState({});
+const set=k=>ev=>{setF({...f,[k]:ev.target.value});setE({...e,[k]:""})};
+const ok=["name","email","phone","country","city"].every(k=>f[k].trim());
+const save=()=>{const n={};if(!f.name.trim())n.name="Name is required";if(!/^\S+@\S+\.\S+$/.test(f.email))n.email="Enter a valid email";if(!f.phone.trim())n.phone="Phone number is required";if(!f.country.trim())n.country="Country is required";if(!f.city.trim())n.city="City is required";setE(n);if(!Object.keys(n).length)location.href="Warehouse.html"};
+const F=(k,l,ph,req=true)=><Field label={l} required={req} error={e[k]}><Input placeholder={ph} value={f[k]} onChange={set(k)}/></Field>;
+return <AppShell items={SP_NAV} activeId="wh" title="Warehouse" userName="admin" userRole="Administrator" footer="All Rights Reserved © 2026 Sontic Plus">
+<PageHeader title={editing?"Edit Warehouse":"Create Warehouse"}><Button variant="secondary" icon="arrow-left" onClick={()=>location.href="Warehouse.html"}>Back</Button></PageHeader>
+<FormCard columns={2} saveDisabled={!ok} onSave={save} onCancel={()=>location.href="Warehouse.html"}>
+{F("name","Name","Enter Name")}{F("email","Email","Enter Email")}{F("phone","Phone Number","Enter Phone Number")}{F("country","Country","Enter Country")}{F("city","City","Enter City")}{F("zip","Zip Code","Enter Zip Code",false)}
+</FormCard></AppShell>}
+ReactDOM.createRoot(document.getElementById("r")).render(<App/>);</script></body></html>

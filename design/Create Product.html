@@ -1,0 +1,28 @@
+<!DOCTYPE html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>Create Product · Sontic Plus</title><link rel="stylesheet" href="styles.css"><script src="theme.js"></script></head><body><div id="r"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="nav.js"></script><script src="_ds_bundle.js"></script>
+<script type="text/babel">const {AppShell,PageHeader,FormCard,Field,Input,Select,Textarea,Button}=window.Industry_indust;
+const P=(label,ph,opts=["Option 1"],req=true)=><Field label={label} required={req}><Select placeholder={ph} options={opts}/></Field>;
+function App(){return <AppShell items={SP_NAV} activeId="p1" title="Products" userName="admin" userRole="Administrator" footer="All Rights Reserved © 2026 Sontic Plus">
+<PageHeader title="Create Product"><Button variant="secondary" icon="arrow-left" onClick={()=>location.href="Products.html"}>Back</Button></PageHeader>
+<FormCard columns={1} onCancel={()=>location.href="Products.html"}><div style={{display:"grid",gridTemplateColumns:"minmax(0,2fr) minmax(0,1fr)",gap:48}}>
+<div className="sp-form-grid">
+<Field label="Name" required><Input placeholder="Enter Name"/></Field><Field label="Code" required><Input placeholder="Enter Code"/></Field>
+{P("Product Category","Choose Product Category")}{P("Brand","Choose Brand",["GG"])}
+{P("Barcode Symbology","Choose Barcode Symbology",["Code 128","Code 39"])}<Field label="Product Cost" required><Input addon="EGP" placeholder="Enter Product Cost"/></Field>
+<Field label="Product Price" required><Input addon="EGP" placeholder="Enter Product Price"/></Field>
+<Field label="Product Unit" required><div style={{display:"flex",gap:8}}><div style={{flex:1}}><Select placeholder="Choose Product Unit" options={["piece"]}/></div><Button iconOnly icon="plus" aria-label="Add unit"/></div></Field>
+{P("Sale Unit","Choose Sale Unit",["piece"])}{P("Purchase Unit","Choose Purchase Unit",["piece"])}
+<Field label="Stock Alert"><Input defaultValue="0"/></Field><Field label="Order Tax"><Input addon="%" defaultValue="0"/></Field>
+<Field label="Tax Type" required><Select defaultValue="Exclusive" options={["Exclusive","Inclusive"]}/></Field><Field label="Quantity Limitation"><Input placeholder="Enter Quantity Limitation"/></Field>
+<Field label="Notes" className="sp-span-all"><Textarea placeholder="Enter Notes" rows={4}/></Field></div>
+<div style={{display:"flex",flexDirection:"column",gap:24}}>
+<Field label="Multiple Images"><Input type="file" multiple/></Field>
+<h2 className="t-section-title" style={{margin:"8px 0 0"}}>Add Stock</h2>
+{P("Warehouse","Choose Warehouse",["Office"])}{P("Supplier","Choose Supplier",["Supplier 1"])}
+<Field label="Add Product Quantity" required><Input placeholder="Add Product Quantity"/></Field>
+<Field label="Status" required><Select defaultValue="Received" options={["Received","Pending","Ordered"]}/></Field></div>
+</div></FormCard></AppShell>}
+ReactDOM.createRoot(document.getElementById("r")).render(<App/>);</script></body></html>

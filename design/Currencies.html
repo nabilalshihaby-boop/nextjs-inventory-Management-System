@@ -1,0 +1,20 @@
+<!DOCTYPE html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>Currencies · Sontic Plus</title><link rel="stylesheet" href="styles.css"><script src="theme.js"></script></head><body><div id="r"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="nav.js"></script><script src="_ds_bundle.js"></script>
+<script type="text/babel">const {AppShell,TableToolbar,DataTable,Pagination,Modal,Field,Input,Button,ConfirmDeleteModal}=window.Industry_indust;
+const Act=({onEdit,onDel})=><span style={{display:"flex",gap:2,justifyContent:"flex-end"}}><Button variant="ghost" size="sm" iconOnly icon="pencil" aria-label="Edit" style={{color:"var(--primary-600)"}} onClick={onEdit}/><Button variant="ghost" size="sm" iconOnly icon="trash-2" aria-label="Delete" style={{color:"var(--danger-500)"}} onClick={onDel}/></span>;
+function App(){const [del,setDel]=React.useState(null);
+const [rows,setRows]=React.useState([{id:1,name:"Egyptian Pound",code:"EGP",symbol:"EGP"},{id:2,name:"US Dollar",code:"USD",symbol:"$"}]);const [q,setQ]=React.useState("");
+const [m,setM]=React.useState(null);const [f,setF]=React.useState({name:"",code:"",symbol:""});const [err,setErr]=React.useState({});
+const open=r=>{setM(r||{});setF(r?{name:r.name,code:r.code,symbol:r.symbol}:{name:"",code:"",symbol:""});setErr({})};const set=k=>e=>{setF({...f,[k]:e.target.value});setErr({...err,[k]:""})};const close=()=>setM(null);
+const save=()=>{const n={};if(!f.name.trim())n.name="Name is required";if(!f.code.trim())n.code="Code is required";if(!f.symbol.trim())n.symbol="Symbol is required";setErr(n);if(Object.keys(n).length)return;setRows(m.id?rows.map(x=>x.id===m.id?{...x,...f}:x):[...rows,{id:Date.now(),...f}]);close()};
+const v=rows.filter(r=>(r.name+r.code).toLowerCase().includes(q.toLowerCase()));
+const cols=[{key:"name",header:"Name",primary:true},{key:"code",header:"Code",render:x=><span className="sp-code">{x}</span>},{key:"symbol",header:"Symbol"},{key:"act",header:"Action",align:"right",render:(x,r)=><Act onEdit={()=>open(r)} onDel={()=>setDel(r)}/>}];
+return <AppShell items={SP_NAV} activeId="cu" title="Currencies" userName="admin" userRole="Administrator" footer="All Rights Reserved © 2026 Sontic Plus">
+<TableToolbar value={q} onSearch={setQ}><Button icon="plus" onClick={()=>open()}>Create Currency</Button></TableToolbar>
+<DataTable columns={cols} rows={v}><Pagination page={1} pageSize={10} total={v.length}/></DataTable>
+<Modal open={!!m} size="sm" title={m&&m.id?"Edit Currency":"Create Currency"} onClose={close} footer={<><Button variant="secondary" onClick={close}>Cancel</Button><Button onClick={save}>Save</Button></>}>
+<div style={{display:"flex",flexDirection:"column",gap:20}}><Field label="Name" required error={err.name}><Input placeholder="Enter Name" value={f.name} onChange={set("name")} autoFocus/></Field><Field label="Code" required error={err.code}><Input placeholder="Enter Code" value={f.code} onChange={set("code")}/></Field><Field label="Symbol" required error={err.symbol}><Input placeholder="Enter Symbol" value={f.symbol} onChange={set("symbol")}/></Field></div></Modal><ConfirmDeleteModal open={!!del} itemType="currency" itemName={del?del.name:undefined} onCancel={()=>setDel(null)} onConfirm={()=>{setRows(rows.filter(y=>y.id!==del.id));setDel(null)}}/></AppShell>}
+ReactDOM.createRoot(document.getElementById("r")).render(<App/>);</script></body></html>

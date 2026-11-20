@@ -1,0 +1,87 @@
+<!DOCTYPE html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>Theme Settings · Sontic Plus</title><link rel="stylesheet" href="styles.css"><script src="theme.js"></script><style>a{color:var(--text-link)}a:hover{color:var(--primary-800)}.th-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;align-items:start}@media(max-width:1180px){.th-grid{grid-template-columns:minmax(0,1fr)}}.th-sticky{position:sticky;top:92px}.th-color{display:flex;gap:8px;align-items:center}.th-color input[type=color]{flex:none;width:42px;height:42px;padding:3px;border:1px solid var(--border-strong);border-radius:var(--radius-md);background:var(--bg-surface);cursor:pointer}.th-seg{display:flex;gap:8px;flex-wrap:wrap}</style></head><body><div id="r"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="nav.js"></script><script src="_ds_bundle.js"></script>
+<script type="text/babel">const {AppShell,PageHeader,FormCard,Field,Input,Select,Switch,Button,Icon,Tabs,Modal}=window.Industry_indust;
+const HEX=/^#([0-9a-f]{6})$/i;
+const rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
+const hex=a=>"#"+a.map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,"0")).join("");
+const mix=(a,b,t)=>{const x=rgb(a),y=rgb(b);return hex(x.map((v,i)=>v*t+y[i]*(1-t)))};
+const lum=h=>{const [r,g,b]=rgb(h).map(v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)});return .2126*r+.7152*g+.0722*b};
+const cr=(a,b)=>{const x=lum(a),y=lum(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05)};
+const fit=(h,bg,min=4.5)=>{const to=lum(bg)>.4?"#000000":"#ffffff";let c=h;for(let t=0;t<=1&&cr(c,bg)<min;t+=.04)c=mix(to,h,t);return c};
+const KEYS=[["primary","Primary Color","--primary-600"],["primaryHover","Primary Hover Color","--primary-700"],["accent","Accent Color","--accent-500"],["bgApp","App Background Color","--bg-app"],["surface","Surface / Card Background Color","--bg-surface"],["border","Border Color","--border"],["text1","Main Text Color","--text-1"],["text2","Secondary Text Color","--text-2"]];
+const SEM=[["success","Success Color","--success-500"],["warning","Warning Color","--warning-500"],["danger","Danger Color","--danger-500"],["info","Info Color","--info-500"]];
+const RADII={Small:[2,4,8,12],Medium:[4,8,12,16],Large:[8,12,16,24]};
+const DARK={bgApp:"#0f1a1f",surface:"#16242b",border:"#2a3b44",text1:"#e8f0f3",text2:"#b4c3ca"};
+function readOriginal(){window.SPTheme.apply({});const cv=document.createElement("canvas");cv.width=cv.height=1;const cx=cv.getContext("2d",{willReadFrequently:true});const d=document.createElement("div");document.body.appendChild(d);const o={};[...KEYS,...SEM].forEach(([k,,v])=>{d.style.color="";d.style.color="var("+v+")";const c=getComputedStyle(d).color;cx.clearRect(0,0,1,1);cx.fillStyle="#000";cx.fillStyle=c;cx.fillRect(0,0,1,1);o[k]=hex([...cx.getImageData(0,0,1,1).data].slice(0,3))});d.remove();const sv=window.SPTheme.load();if(sv)window.SPTheme.apply(sv.vars);return {...o,mode:"Light",sidebar:"Default",radius:"Medium"}}
+function varsFor(s,O){const v={},ch=ks=>ks.some(k=>s[k]!==O[k]);
+if(ch(["primary","primaryHover"])){const p=s.primary,h=s.primaryHover,W="#ffffff";Object.assign(v,{"--primary-50":mix(p,W,.07),"--primary-100":mix(p,W,.14),"--primary-200":mix(p,W,.3),"--primary-300":mix(p,W,.5),"--primary-400":mix(p,W,.75),"--primary-500":mix(p,h,.6),"--primary-600":p,"--primary-700":h,"--primary-800":mix(h,"#000000",.78),"--primary-900":mix(h,"#000000",.55),"--tone-teal":fit(p,W)})}
+if(ch(["accent"])){const a=s.accent,W="#ffffff";Object.assign(v,{"--accent-50":mix(a,W,.1),"--accent-100":mix(a,W,.22),"--accent-300":mix(a,W,.55),"--accent-500":a,"--accent-600":mix(a,"#000000",.88),"--accent-700":mix(a,"#000000",.6)})}
+if(ch(["bgApp","surface","border","text1","text2"])){const sub=mix(s.surface,s.bgApp,.4),bs=mix(s.border,s.text2,.85);Object.assign(v,{"--bg-app":s.bgApp,"--bg-surface":s.surface,"--bg-subtle":sub,"--border":s.border,"--border-strong":bs,"--text-1":s.text1,"--text-2":s.text2,"--text-3":mix(s.text2,s.surface,.8),"--neutral-0":s.surface,"--neutral-50":sub,"--neutral-100":s.bgApp,"--neutral-200":s.border,"--neutral-300":bs,"--neutral-400":mix(s.text2,s.surface,.5),"--neutral-500":mix(s.text2,s.surface,.75),"--neutral-600":mix(s.text2,s.surface,.9),"--neutral-700":s.text2,"--neutral-900":s.text1})}
+const tone={success:"green",warning:"amber",danger:"red",info:"blue"};
+SEM.forEach(([k])=>{if(ch([k])){const c=s[k],bg=mix(c,s.surface,.1);Object.assign(v,{["--"+k+"-50"]:bg,["--"+k+"-100"]:mix(c,s.surface,.22),["--"+k+"-500"]:c,["--"+k+"-700"]:fit(c,bg),["--tone-"+tone[k]]:fit(c,"#ffffff")})}});
+if(s.radius!==O.radius){const r=RADII[s.radius];Object.assign(v,{"--radius-sm":r[0]+"px","--radius-md":r[1]+"px","--radius-lg":r[2]+"px","--radius-xl":r[3]+"px"})}
+return v}
+const applyRoot=v=>window.SPTheme.apply(v);
+const sysDark=()=>window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches;
+const modeNeutrals=(m,O)=>(m==="Dark"||(m==="System"&&sysDark()))?DARK:{bgApp:O.bgApp,surface:O.surface,border:O.border,text1:O.text1,text2:O.text2};
+function ColorRow({label,k,s,setC,warn,badge}){const [t,setT]=React.useState(s[k]);React.useEffect(()=>setT(s[k]),[s[k]]);const bad=!HEX.test(t);
+return <Field label={label} error={bad?"Enter a valid hex code, e.g. #0e7490":warn}><div className="th-color"><input type="color" aria-label={label+" picker"} value={HEX.test(s[k])?s[k]:"#000000"} onChange={e=>setC(k,e.target.value)}/><Input value={t} maxLength={7} aria-label={label+" hex"} aria-invalid={bad} onChange={e=>{let x=e.target.value.trim();if(x&&x[0]!=="#")x="#"+x;setT(x);if(HEX.test(x))setC(k,x.toLowerCase())}} onBlur={()=>setT(s[k])}/>{badge}</div></Field>}
+function Preview({s,O,modal}){const v=varsFor(s,O),cmp=s.sidebar==="Compact";
+const kpi=[["teal","1,284","Products","package"],["green","EGP 84.2K","Sales","shopping-cart"],["amber","12","Low stock","triangle-alert"],["red","EGP 3.1K","Overdue","wallet"]];
+return <div className="sp-card" style={{overflow:"hidden"}}><div style={{...v,background:"var(--bg-app)",color:"var(--text-1)",display:"grid",gridTemplateColumns:(cmp?"60px":"150px")+" minmax(0,1fr)",fontFamily:"var(--font-body)",position:"relative"}}>
+<div style={{background:"var(--bg-surface)",borderRight:"1px solid var(--border)",padding:"12px 8px",display:"flex",flexDirection:"column",gap:2}}>
+<div className="sp-brand" style={{padding:"0 6px",height:44,fontSize:16,border:0,justifyContent:cmp?"center":"flex-start"}}>{cmp?<b style={{color:"var(--primary-600)"}}>S+</b>:<span>Sontic <b style={{color:"var(--primary-600)"}}>Plus</b></span>}</div>
+{[["layout-dashboard","Dashboard",1],["package","Products"],["shopping-cart","Sales"],["settings","Settings"]].map(([i,l,a])=><div key={l} className="sp-nav-item" aria-current={a?"page":undefined} style={{height:36,padding:cmp?0:"0 10px",justifyContent:cmp?"center":"flex-start",fontSize:13}}><Icon name={i} size={16}/>{!cmp&&l}</div>)}</div>
+<div style={{minWidth:0,display:"flex",flexDirection:"column"}}>
+<div style={{height:48,display:"flex",alignItems:"center",gap:10,padding:"0 16px",background:"var(--bg-surface)",borderBottom:"1px solid var(--border)"}}><b style={{fontFamily:"var(--font-display)",fontSize:15}}>Dashboard</b><span style={{marginLeft:"auto"}} className="sp-avatar">A</span></div>
+<div style={{padding:16,display:"flex",flexDirection:"column",gap:14}}>
+<div style={{display:"flex",gap:8,flexWrap:"wrap"}}><Button size="sm">Primary</Button><Button size="sm" variant="secondary">Secondary</Button><Button size="sm" variant="accent">Accent</Button><Button size="sm" variant="danger">Danger</Button></div>
+<div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}}>{kpi.map(([t,val,l,i])=><div key={t} className={"sp-stat sp-stat--"+t} style={{padding:"12px 14px",gap:10}}><div className="sp-stat-icon" style={{width:36,height:36}}><Icon name={i} size={18}/></div><div className="sp-stat-body"><div className="sp-stat-value" style={{fontSize:18,lineHeight:"22px"}}>{val}</div><div className="sp-stat-label" style={{fontSize:12,lineHeight:"16px"}}>{l}</div></div></div>)}</div>
+<Field label="Search product"><Input placeholder="Type a name or SKU" icon="search"/></Field>
+<div className="sp-table-card"><table className="sp-table"><thead><tr><th style={{padding:"0 12px"}}>Product</th><th style={{padding:"0 12px"}}>Status</th></tr></thead><tbody><tr><td style={{padding:"0 12px",height:46}}>Espresso Beans</td><td style={{padding:"0 12px"}}><span className="sp-badge sp-badge--success"><i/>Paid</span></td></tr></tbody></table></div>
+<div style={{display:"flex",gap:8,flexWrap:"wrap"}}><span className="sp-badge sp-badge--success"><i/>Success</span><span className="sp-badge sp-badge--warning"><i/>Warning</span><span className="sp-badge sp-badge--danger"><i/>Danger</span><span className="sp-badge sp-badge--info"><i/>Info</span><span className="sp-badge sp-badge--primary"><i/>Primary</span></div>
+<div style={{background:"var(--overlay)",padding:16,borderRadius:"var(--radius-lg)"}}><div className="sp-modal sp-modal--sm" style={{boxShadow:"var(--shadow-xl)"}}><div className="sp-modal-head" style={{padding:"12px 16px"}}><div className="t-section-title" style={{fontSize:15}}>Delete Product?</div><Icon name="x" size={16}/></div><div className="sp-modal-body" style={{padding:16,fontSize:13,color:"var(--text-2)"}}>This action cannot be undone.</div><div className="sp-modal-foot" style={{padding:"10px 16px"}}><Button size="sm" variant="secondary">Cancel</Button><Button size="sm" variant="danger">Delete</Button></div></div></div>
+</div></div></div></div>}
+function App(){
+const O=React.useMemo(readOriginal,[]);
+const saved=React.useMemo(()=>{const d=window.SPTheme.load();return d?d.state:O},[]);const [s,setS]=React.useState(saved);const [applied,setApplied]=React.useState(saved);const [tab,setTab]=React.useState("brand");
+const [msg,setMsg]=React.useState("");const [confirm,setConfirm]=React.useState(false);const [resetOn,setResetOn]=React.useState(false);
+const setC=(k,val)=>{setS(p=>({...p,[k]:val}));setMsg("")};
+const setMode=m=>{setS(p=>({...p,mode:m,...modeNeutrals(m,O)}));setMsg("")};
+const isOrig=Object.keys(O).every(k=>O[k]===s[k]);
+React.useEffect(()=>{if(s.mode!=="System"||!window.matchMedia)return;const mq=matchMedia("(prefers-color-scheme: dark)"),f=()=>setS(p=>p.mode==="System"?{...p,...modeNeutrals("System",O)}:p);mq.addEventListener("change",f);return()=>mq.removeEventListener("change",f)},[s.mode]);
+const bad=[...KEYS,...SEM].some(([k])=>!HEX.test(s[k]));
+const v=varsFor(s,O),sv=n=>v["--"+n];
+const wp=cr(s.primary,"#ffffff")<4.5?"Low contrast with white button text ("+cr(s.primary,"#ffffff").toFixed(1)+":1)":"";
+const wt=k=>cr(s[k],s.surface)<4.5?"Low contrast on card background ("+cr(s[k],s.surface).toFixed(1)+":1)":"";
+const wa=cr(s.accent,"#0b1215")<4.5?"Low contrast with dark button text":"";
+const wd=cr(s.danger,"#ffffff")<4.5?"Low contrast with white button text ("+cr(s.danger,"#ffffff").toFixed(1)+":1)":"";
+const warns={primary:wp,text1:wt("text1"),text2:wt("text2"),accent:wa,danger:wd};
+const [saveAsk,setSaveAsk]=React.useState(false);const [err,setErr]=React.useState("");
+const save=()=>{if(bad){setMsg("");return}setSaveAsk(true)};
+const doSave=()=>{setSaveAsk(false);const vv=varsFor(s,O);let ok=true;try{if(Object.keys(vv).length===0&&s.sidebar===O.sidebar&&s.mode===O.mode)window.SPTheme.clear();else ok=window.SPTheme.save(s,vv)}catch(e){ok=false}if(!ok){setMsg("");setErr("Unable to save theme settings. Please try again.");return}applyRoot(vv);setApplied(s);setResetOn(false);setErr("");setMsg("Theme settings saved successfully.")};
+React.useEffect(()=>{if(!msg&&!err)return;const t=setTimeout(()=>{setMsg("");setErr("")},5000);return()=>clearTimeout(t)},[msg,err]);
+const cancel=()=>{setS(applied);setResetOn(false);setMsg("")};
+const doReset=()=>{setS(O);setApplied(O);window.SPTheme.clear();setConfirm(false);setResetOn(false);setMsg("Original theme restored successfully.")};
+const seg=(k,opts,onPick)=><div className="th-seg">{opts.map(o=><Button key={o} size="sm" variant={s[k]===o?"primary":"secondary"} aria-pressed={s[k]===o} onClick={()=>onPick?onPick(o):setC(k,o)}>{o}</Button>)}</div>;
+const rows=l=>l.map(([k,lab])=><ColorRow key={k} k={k} label={lab} s={s} setC={setC} warn={warns[k]}/>);
+return <AppShell items={SP_NAV} activeId="se" title="Settings" userName="admin" userRole="Administrator" footer="All Rights Reserved © 2026 Sontic Plus">
+<PageHeader title="Theme Settings"><Switch label="Reset to Original Theme" checked={resetOn} onChange={e=>{if(e.target.checked)setConfirm(true)}}/><Button variant="secondary" icon="arrow-left" onClick={()=>location.href="Settings.html"}>Back</Button></PageHeader>
+<p className="t-caption" style={{margin:"-12px 0 20px"}}>Customize the visual appearance of your application.</p>
+{(msg||err)&&<div role={err?"alert":"status"} aria-live="polite" style={{position:"fixed",top:"calc(var(--topbar-h) + 12px)",right:16,left:16,zIndex:120,display:"flex",justifyContent:"flex-end",pointerEvents:"none"}}><div className={"sp-badge sp-badge--"+(err?"danger":"success")} style={{height:"auto",minHeight:44,padding:"10px 16px",whiteSpace:"normal",boxShadow:"var(--shadow-lg)",pointerEvents:"auto",maxWidth:"100%"}}><i/>{err||msg}<Button variant="ghost" size="sm" iconOnly icon="x" aria-label="Dismiss" onClick={()=>{setMsg("");setErr("")}}/></div></div>}
+<div className="th-grid"><div>
+<Tabs value={tab} onChange={setTab} tabs={[{id:"brand",label:"Brand Colors"},{id:"sem",label:"Semantic Colors"},{id:"ui",label:"Interface Preferences"}]}/>
+<FormCard columns={2} onSave={save} onCancel={cancel} saveLabel="Save Changes" cancelLabel="Cancel">
+{tab==="brand"&&rows(KEYS)}
+{tab==="sem"&&SEM.map(([k,lab])=><ColorRow key={k} k={k} label={lab} s={s} setC={setC} warn={warns[k]} badge={<span className={"sp-badge sp-badge--"+k}><i/>{k[0].toUpperCase()+k.slice(1)}</span>}/>)}
+{tab==="ui"&&<><div className="sp-span-all"><Field label="Theme Mode">{seg("mode",["Light","Dark","System"],setMode)}</Field></div><div className="sp-span-all"><Field label="Sidebar Style">{seg("sidebar",["Default","Compact"])}</Field></div><div className="sp-span-all"><Field label="Border Radius">{seg("radius",["Small","Medium","Large"])}</Field></div></>}
+{bad&&<div className="sp-span-all sp-error">Fix invalid hex codes before saving.</div>}
+</FormCard></div>
+<div className="th-sticky"><h2 className="t-section-title" style={{margin:"0 0 12px"}}>Live Preview</h2><Preview s={s} O={O}/></div></div>
+<Modal open={saveAsk} size="sm" title="Save theme settings?" onClose={()=>setSaveAsk(false)} footer={<><Button variant="secondary" onClick={()=>setSaveAsk(false)}>Cancel</Button><Button onClick={doSave}>Save changes</Button></>}><p style={{margin:0}}>Your selected colors and theme preferences will be applied across the application.</p></Modal>
+<Modal open={confirm} size="sm" title="Reset Theme to Default?" onClose={()=>setConfirm(false)} footer={<><Button variant="secondary" onClick={()=>setConfirm(false)}>Cancel</Button><Button variant="danger" onClick={doReset}>Reset Theme</Button></>}><p style={{margin:0}}>This will restore the original Sontic Plus theme colors and appearance.</p></Modal>
+</AppShell>}
+ReactDOM.createRoot(document.getElementById("r")).render(<App/>);</script></body></html>

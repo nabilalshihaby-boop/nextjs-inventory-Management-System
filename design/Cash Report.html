@@ -1,0 +1,38 @@
+<!DOCTYPE html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>Cash Report · Sontic Plus</title><link rel="stylesheet" href="styles.css"><script src="theme.js"></script><style>@media print{.sp-sidebar,.sp-topbar,.sp-footer,.sp-noprint{display:none!important}.sp-shell{display:block}}</style></head><body><div id="r"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="nav.js"></script><script src="tabs.js"></script><script src="_ds_bundle.js"></script>
+<script type="text/babel">const egp=n=>"EGP "+(+n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});const {AppShell,PageHeader,StatCard,TableToolbar,DataTable,Pagination,Badge,Button,Field,Input,Select}=window.Industry_indust;
+const OPEN=50000;
+const TX=[["2026-05-19","SA_11139","Sale · direct-customer","Sale",9970,0],["2026-05-20","SA_11140","Sale · direct-customer","Sale",11970,0],["2026-05-20","EX_114","Salary · Arabi Salary","Expense",0,10000],["2026-05-21","SA_11141","Sale · direct-customer","Sale",11970,0],["2026-05-21","PU_1119","Purchase · China","Purchase",0,4930],["2026-05-22","SA_11142","Sale · direct-customer","Sale",11470,0],["2026-05-23","SA_11143","Sale · direct-customer","Sale",11970,0],["2026-05-23","SR_1116","Sale return · direct-customer","Sale Return",0,7980],["2026-05-24","SA_11144","Sale · direct-customer","Sale",7480,0],["2026-05-24","EX_113","Raju Payment · USA Raju Payment","Expense",0,33000],["2026-05-25","SA_11145","Sale · direct-customer","Sale",7980,0],["2026-05-25","PR_1115","Purchase return · China","Purchase Return",1110,0],["2026-05-26","SA_11146","Sale · direct-customer","Sale",11970,0],["2026-05-26","EX_112","Software · Other Cost","Expense",0,10000],["2026-05-27","SA_11147","Sale · direct-customer","Sale",7980,0],["2026-05-27","SA_11148","Sale · direct-customer","Sale",31920,0],["2026-05-27","SA_11149","Sale · direct-customer","Sale",71800,0]].map((r,i)=>({id:i,date:r[0],ref:r[1],desc:r[2],type:r[3],cin:r[4],cout:r[5]}));
+const TONE={"Sale":"success","Purchase Return":"info","Expense":"danger","Purchase":"warning","Sale Return":"danger"};
+const m=n=>egp(n);const dm=d=>d.split("-").reverse().join("/");
+function App(){
+const [d,setD]=React.useState({from:"2026-05-20",to:"2026-05-27",wh:"All Warehouses"});const [applied,setApplied]=React.useState(d);const [err,setErr]=React.useState("");
+const [q,setQ]=React.useState("");const [type,setType]=React.useState("All Types");const [page,setPage]=React.useState(1);const [size,setSize]=React.useState(10);
+const generate=()=>{if(!d.from||!d.to){setErr("Select both dates");return}if(d.from>d.to){setErr("From Date must be before To Date");return}setErr("");setApplied(d);setPage(1)};
+const before=TX.filter(t=>t.date<applied.from);const opening=OPEN+before.reduce((a,t)=>a+t.cin-t.cout,0);
+const inRange=TX.filter(t=>t.date>=applied.from&&t.date<=applied.to);
+let bal=opening;const withBal=inRange.map(t=>{bal+=t.cin-t.cout;return{...t,bal}});
+const sum=(a,f)=>a.reduce((s,t)=>s+f(t),0);
+const cashIn=sum(inRange,t=>t.cin),cashOut=sum(inRange,t=>t.cout),sales=sum(inRange.filter(t=>t.type==="Sale"),t=>t.cin),exp=sum(inRange.filter(t=>t.type==="Expense"),t=>t.cout);
+const closing=opening+cashIn-cashOut;
+const rows=withBal.filter(t=>(type==="All Types"||t.type===type)&&(t.ref+t.desc).toLowerCase().includes(q.toLowerCase()));
+const shown=rows.slice((page-1)*size,page*size);
+const fin=sum(rows,t=>t.cin),fout=sum(rows,t=>t.cout);
+const cols=[{key:"date",header:"Date",render:v=>dm(v)},{key:"ref",header:"Reference",render:v=><span className="sp-code">{v}</span>},{key:"desc",header:"Description",primary:true},{key:"type",header:"Type",render:v=><Badge tone={TONE[v]} dot={false}>{v}</Badge>},{key:"cin",header:"Cash In",align:"right",render:v=>v?m(v):"—"},{key:"cout",header:"Cash Out",align:"right",render:v=>v?m(v):"—"},{key:"bal",header:"Balance",align:"right",render:v=><b style={{fontWeight:700}}>{m(v)}</b>}];
+const grid={gridTemplateColumns:"repeat(3,minmax(0,1fr))"};
+return <AppShell items={SP_NAV} activeId="re" title="Cash Report" tabs={SP_REPORT_TABS} moreTabs={SP_REPORT_MORE} activeTab="cash" userName="admin" userRole="Administrator" footer="All Rights Reserved © 2026 Sontic Plus">
+<PageHeader title="Cash Report"><span className="sp-noprint" style={{display:"flex",gap:12}}><Button variant="secondary" icon="printer" onClick={()=>window.print()}>Print</Button><Button variant="secondary" icon="file-spreadsheet">EXCEL</Button></span></PageHeader>
+<div className="sp-card sp-noprint" style={{padding:24,marginBottom:24}}><div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr)) auto",gap:24,alignItems:"end"}}>
+<Field label="From Date" required><Input type="date" value={d.from} onChange={e=>setD({...d,from:e.target.value})}/></Field>
+<Field label="To Date" required><Input type="date" value={d.to} onChange={e=>setD({...d,to:e.target.value})}/></Field>
+<Field label="Branch / Warehouse"><Select value={d.wh} onChange={e=>setD({...d,wh:e.target.value})} options={["All Warehouses","Office"]}/></Field>
+<Button icon="chart-column" onClick={generate}>Generate Report</Button></div>{err&&<div className="sp-error" style={{marginTop:12}}>{err}</div>}</div>
+<div className="sp-kpi-grid" style={{...grid,marginBottom:32}}>
+<StatCard tone="violet" icon="wallet" value={m(opening)} label="Opening Cash"/><StatCard tone="green" icon="shopping-cart" value={m(sales)} label="Cash Sales"/><StatCard tone="red" icon="circle-minus" value={m(exp)} label="Cash Expenses"/>
+<StatCard tone="blue" icon="arrow-down-to-line" value={m(cashIn)} label="Cash In"/><StatCard tone="amber" icon="arrow-up-from-line" value={m(cashOut)} label="Cash Out"/><StatCard tone="teal" icon="banknote" value={m(closing)} label="Closing Cash" note="Opening Cash + Cash In − Cash Out"/></div>
+<div className="sp-noprint"><TableToolbar value={q} onSearch={v=>{setQ(v);setPage(1)}} searchPlaceholder="Search reference or description"><div style={{width:200}}><Select value={type} onChange={e=>{setType(e.target.value);setPage(1)}} options={["All Types","Sale","Purchase","Expense","Sale Return","Purchase Return"]}/></div></TableToolbar></div>
+<DataTable columns={cols} rows={shown} footer={{cin:m(fin),cout:m(fout),bal:m(closing)}}><Pagination page={page} pageSize={size} total={rows.length} onPage={setPage} onPageSize={n=>{setSize(n);setPage(1)}}/></DataTable></AppShell>}
+ReactDOM.createRoot(document.getElementById("r")).render(<App/>);</script></body></html>

@@ -1,0 +1,27 @@
+<!DOCTYPE html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>Create Adjustment · Sontic Plus</title><link rel="stylesheet" href="styles.css"><script src="theme.js"></script><style>.sp-qty{display:inline-flex;align-items:stretch}.sp-qty .sp-btn{width:42px;padding:0;border-radius:var(--radius-md) 0 0 var(--radius-md)}.sp-qty .sp-btn:last-child{border-radius:0 var(--radius-md) var(--radius-md) 0}.sp-qty .sp-input{width:56px;text-align:center;padding:0;border-radius:0;border-left:0;border-right:0}.sp-sug{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:30;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);padding:6px}</style></head><body><div id="r"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="nav.js"></script><script src="_ds_bundle.js"></script>
+<script type="text/babel">const {AppShell,PageHeader,FormCard,Field,Input,Select,Button,Badge,Icon,ConfirmDeleteModal}=window.Industry_indust;
+const PRODUCTS=[["001","FACE FAT AND DOUBLE CHIN",2],["002","ipl laser hair removal",0],["003uc","ultrasonic scrubber",7],["001hs","intensive hair serum set",94],["005cp","collagen powder",110],["006lpc","lip care set",100]].map(p=>({code:p[0],name:p[1],stock:p[2]}));
+function App(){const [del,setDel]=React.useState(null);
+const [q,setQ]=React.useState("");const [focus,setFocus]=React.useState(false);
+const [items,setItems]=React.useState([{...PRODUCTS[4],qty:1,type:"Addition"}]);const [err,setErr]=React.useState("");
+const sug=q?PRODUCTS.filter(p=>(p.code+p.name).toLowerCase().includes(q.toLowerCase())):[];
+const add=p=>{setItems(items.find(i=>i.code===p.code)?items:[...items,{...p,qty:1,type:"Addition"}]);setQ("");setErr("")};
+const upd=(c,patch)=>setItems(items.map(i=>i.code===c?{...i,...patch}:i));
+return <AppShell items={SP_NAV} activeId="adj" title="Adjustments" userName="admin" userRole="Administrator" footer="All Rights Reserved © 2026 Sontic Plus">
+<PageHeader title="Create Adjustment"><Button variant="secondary" icon="arrow-left" onClick={()=>history.back()}>Back</Button></PageHeader>
+<FormCard columns={1} onSave={()=>{if(!items.length)setErr("Add at least one order item")}} onCancel={()=>setItems([])}>
+<div style={{display:"flex",flexDirection:"column",gap:24}}>
+<div className="sp-form-grid" style={{"--cols":3}}><Field label="Warehouse" required><Select disabled defaultValue="Office" options={["Office"]}/></Field><Field label="Date" required><Input type="date" defaultValue="2026-05-27"/></Field></div>
+<Field label="Product"><div style={{position:"relative"}}><Input icon="search" placeholder="Search Product by Code Name" value={q} onChange={e=>setQ(e.target.value)} onFocus={()=>setFocus(true)} onBlur={()=>setTimeout(()=>setFocus(false),150)}/>{focus&&sug.length>0&&<div className="sp-sug">{sug.map(p=><button key={p.code} type="button" className="sp-menu-item" onMouseDown={()=>add(p)}><span className="sp-code">{p.code}</span>{p.name}</button>)}</div>}</div></Field>
+<Field label="Order items" required error={err}><div className="sp-table-card" style={{boxShadow:"none"}}><table className="sp-table"><thead><tr><th>Product</th><th>Code Product</th><th>Stock</th><th>Qty</th><th>Type</th><th className="act">Action</th></tr></thead><tbody>
+{items.length===0&&<tr><td colSpan="6" style={{color:"var(--text-3)"}}>No order items</td></tr>}
+{items.map(i=><tr key={i.code}><td className="primary-cell">{i.name}</td><td><span className="sp-code">{i.code}</span></td><td><Badge tone="warning" dot={false}>{i.stock} pic</Badge></td>
+<td><span className="sp-qty"><Button iconOnly icon="minus" aria-label="Decrease" onClick={()=>upd(i.code,{qty:Math.max(1,i.qty-1)})}/><input className="sp-input" value={i.qty} onChange={e=>upd(i.code,{qty:Math.max(1,parseInt(e.target.value)||1)})}/><Button iconOnly icon="plus" aria-label="Increase" onClick={()=>upd(i.code,{qty:i.qty+1})}/></span></td>
+<td style={{width:260}}><Select value={i.type} onChange={e=>upd(i.code,{type:e.target.value})} options={["Addition","Subtraction"]}/></td>
+<td className="act"><Button variant="ghost" size="sm" iconOnly icon="trash-2" aria-label="Remove" style={{color:"var(--danger-500)"}} onClick={()=>setDel(i)}/></td></tr>)}
+</tbody></table></div></Field></div></FormCard><ConfirmDeleteModal open={!!del} itemType="product" itemName={del?del.name:undefined} onCancel={()=>setDel(null)} onConfirm={()=>{setItems(items.filter(x=>x.code!==del.code));setDel(null)}}/></AppShell>}
+ReactDOM.createRoot(document.getElementById("r")).render(<App/>);</script></body></html>

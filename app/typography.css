@@ -1,0 +1,19 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Public+Sans:wght@400;500;600;700&display=swap');
+:root{
+--font-display:"Manrope",system-ui,sans-serif;--font-body:"Public Sans",system-ui,sans-serif;
+/* Type scale: size/line-height, weight */
+--fs-kpi:32px;--lh-kpi:36px;
+--fs-page-title:28px;--lh-page-title:34px;
+--fs-section-title:18px;--lh-section-title:24px;
+--fs-body:15px;--lh-body:22px;
+--fs-table:14px;--lh-table:20px;
+--fs-label:13px;--lh-label:18px;
+--fs-caption:12px;--lh-caption:16px;
+}
+.t-kpi{font:800 var(--fs-kpi)/var(--lh-kpi) var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.t-page-title{font:800 var(--fs-page-title)/var(--lh-page-title) var(--font-display);letter-spacing:-.02em;color:var(--text-1)}
+.t-section-title{font:700 var(--fs-section-title)/var(--lh-section-title) var(--font-display);letter-spacing:-.01em;color:var(--text-1)}
+.t-body{font:400 var(--fs-body)/var(--lh-body) var(--font-body);color:var(--text-1)}
+.t-table{font:400 var(--fs-table)/var(--lh-table) var(--font-body);color:var(--text-1)}
+.t-label{font:600 var(--fs-label)/var(--lh-label) var(--font-body);color:var(--text-1)}
+.t-caption{font:400 var(--fs-caption)/var(--lh-caption) var(--font-body);color:var(--text-3)}

@@ -1,0 +1,21 @@
+<!DOCTYPE html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>Update Expense · Sontic Plus</title><link rel="stylesheet" href="styles.css"><script src="theme.js"></script></head><body><div id="r"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="nav.js"></script><script src="_ds_bundle.js"></script>
+<script type="text/babel">const P=new URLSearchParams(location.search);const iso=(P.get("at")||"").split(" · ")[1];const dt=iso?iso.split("/").reverse().join("-"):"2026-06-03";
+const {AppShell,PageHeader,FormCard,Field,Input,Select,Textarea,Button}=window.Industry_indust;
+function App(){const [f,setF]=React.useState({title:P.get("title")||"",wh:"Office",cat:P.get("cat")||"",amt:(P.get("amt")||"").replace(/,/g,"")});const [e,setE]=React.useState({});
+const set=k=>ev=>{setF({...f,[k]:ev.target.value});setE({...e,[k]:""})};
+const save=()=>{const n={};if(!f.title.trim())n.title="Expense title is required";if(!f.wh)n.wh="Choose a warehouse";if(!f.cat)n.cat="Choose a category";if(!f.amt)n.amt="Amount is required";setE(n);if(!Object.keys(n).length)location.href="Expenses.html"};
+return <AppShell items={SP_NAV} activeId="e1" title="Expenses" userName="admin" userRole="Administrator" footer="All Rights Reserved © 2026 Sontic Plus">
+<PageHeader title="Update Expense"><Button variant="secondary" icon="arrow-left" onClick={()=>location.href="Expenses.html"}>Back</Button></PageHeader>
+<FormCard columns={2} saveLabel="Update" onSave={save} onCancel={()=>location.href="Expenses.html"}>
+<Field label="Date" required><Input type="date" defaultValue={dt}/></Field>
+<Field label="Expense Title" required error={e.title}><Input placeholder="Enter Expense Title" value={f.title} onChange={set("title")}/></Field>
+<Field label="Warehouse" required error={e.wh}><Select value={f.wh} options={["Office"]} onChange={set("wh")}/></Field>
+<Field label="Expense Category" required error={e.cat}><Select value={f.cat} options={["Arabi Salary","USA Raju Payment","Other Cost","Office Cost","Transportation","Shopping Bag Cost","Marketing FB Live","TA/TD","Shohan Salary"]} onChange={set("cat")}/></Field>
+<Field label="Amount" required error={e.amt}><Input addon="EGP" placeholder="Enter Amount" value={f.amt} onChange={set("amt")}/></Field>
+<Field label="Details"><Textarea placeholder="Enter Details"/></Field>
+</FormCard></AppShell>}
+ReactDOM.createRoot(document.getElementById("r")).render(<App/>);</script></body></html>

@@ -1,0 +1,31 @@
+<!DOCTYPE html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>Record Supplier Payment · Sontic Plus</title><link rel="stylesheet" href="styles.css"><script src="theme.js"></script></head><body><div id="r"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script>if(!new URLSearchParams(location.search).get("edit"))location.replace("Supplier Payments.html?new=1")</script><script src="nav.js"></script><script src="tabs.js"></script><script src="_ds_bundle.js"></script><script src="demo.js"></script><script type="text/babel" src="demo.jsx"></script>
+<script type="text/babel">const {AppShell,PageHeader,FormCard,Field,Input,Select,Textarea,Checkbox,Button,Icon}=window.Industry_indust;const egp=DEMO.egp;
+const Q=new URLSearchParams(location.search),EID=Q.get("edit");
+function App(){const db=useDemo();const ex=EID&&db.payments.find(p=>p.id===EID);const [toast,setToast]=useToast();
+const [f,setF]=React.useState(()=>ex?{sup:ex.sup,date:ex.date,method:ex.method,amount:String(ex.amount),txn:ex.txn,notes:ex.notes,un:!ex.alloc.length,refs:ex.alloc.map(a=>a.inv)}:{sup:Q.get("supplier")||"",date:DEMO.today(),method:"Cash",amount:"",txn:"",notes:"",un:false,refs:[]});
+const [e,setE]=React.useState({}),[modal,setModal]=React.useState(false),[done,setDone]=React.useState(false);
+const set=k=>v=>{setF({...f,[k]:v});setE({...e,[k]:""})};
+const inv=f.sup?DEMO.invoices(f.sup,EID).filter(i=>i.due>0).sort((a,b)=>a.date.localeCompare(b.date)):[];
+const picked=inv.filter(i=>f.refs.includes(i.ref)),dueSel=picked.reduce((a,i)=>a+i.due,0),applied=f.un?0:Math.min(+f.amount||0,dueSel);
+const save=()=>{const n={};if(!f.sup)n.sup="Supplier is required";if(!f.date)n.date="Payment date is required";if(!(+f.amount>0))n.amount="Enter an amount greater than 0";if(!f.un&&!f.refs.length)n.apply="Select at least one invoice or choose Unallocated Payment";setE(n);if(Object.keys(n).length){setToast(null);return}
+DEMO.savePayment({...f,refs:f.un?[]:f.refs},EID||null);DEMO.flash(EID?"Payment updated":"Payment recorded");setDone(true);location.href="Supplier Payments.html"};
+if(EID&&!ex)return <AppShell items={SP_NAV} activeId="pe4" title="Supplier Payments" userName="admin" userRole="Administrator" footer="All Rights Reserved © 2026 Sontic Plus"><div className="sp-card sp-empty"><Icon name="search-x" size={36}/><div className="t-section-title">Payment not found</div><Button onClick={()=>location.href="Supplier Payments.html"}>Back to Supplier Payments</Button></div></AppShell>;
+return <AppShell items={SP_NAV} activeId="pe4" title="Supplier Payments" userName="admin" userRole="Administrator" footer="All Rights Reserved © 2026 Sontic Plus">
+<PageHeader title={EID?"Edit Supplier Payment":"Record Supplier Payment"}><Button variant="secondary" icon="arrow-left" onClick={()=>location.href="Supplier Payments.html"}>Back</Button></PageHeader>
+<FormCard columns={2} saveLabel="Save Payment" saveDisabled={done} onSave={save} onCancel={()=>location.href="Supplier Payments.html"}>
+<Field label="Supplier" required error={e.sup}><div style={{display:"flex",gap:12}}><div style={{flex:1}}><Select placeholder="Choose Supplier" value={f.sup} onChange={ev=>setF({...f,sup:ev.target.value,refs:[]})} options={db.suppliers.map(s=>({value:s.id,label:s.name}))}/></div><Button variant="secondary" icon="plus" onClick={()=>setModal(true)}>Add Supplier</Button></div></Field>
+<Field label="Payment Date" required error={e.date}><Input type="date" value={f.date} onChange={ev=>set("date")(ev.target.value)}/></Field>
+<Field label="Payment Method"><Select value={f.method} onChange={ev=>set("method")(ev.target.value)} options={["Cash","Bank Transfer","Card","Cheque"]}/></Field>
+<Field label="Amount" required error={e.amount}><Input type="number" min="0" addon="EGP" placeholder="0.00" value={f.amount} onChange={ev=>set("amount")(ev.target.value)}/></Field>
+<Field label="Reference / Transaction Number"><Input placeholder="Enter Reference" value={f.txn} onChange={ev=>set("txn")(ev.target.value)}/></Field><div/>
+<Field label="Apply Payment To" required error={e.apply} className="sp-span-all"><div className="sp-card" style={{padding:16,boxShadow:"none",display:"flex",flexDirection:"column",gap:12}}>
+<Checkbox label="Unallocated Payment" checked={f.un} onChange={ev=>{setF({...f,un:ev.target.checked,refs:[]});setE({...e,apply:""})}}/>
+{!f.un&&(!f.sup?<span className="t-caption">Choose a supplier to see unpaid purchase invoices.</span>:inv.length===0?<span className="t-caption">This supplier has no unpaid purchase invoices. Choose Unallocated Payment.</span>:inv.map(i=><Checkbox key={i.ref} label={i.ref+" · due "+egp(i.due)+" of "+egp(i.total)+" · "+i.date.split("-").reverse().join("/")} checked={f.refs.includes(i.ref)} onChange={ev=>set("refs")(ev.target.checked?[...f.refs,i.ref]:f.refs.filter(r=>r!==i.ref))}/>))}
+{!f.un&&picked.length>0&&<span className="t-caption">Selected invoices due {egp(dueSel)}. {egp(applied)} will be applied{(+f.amount||0)>dueSel?"; the remaining "+egp((+f.amount)-dueSel)+" stays unallocated":""}.</span>}</div></Field>
+<Field label="Notes" className="sp-span-all"><Textarea placeholder="Enter Notes" value={f.notes} onChange={ev=>set("notes")(ev.target.value)}/></Field></FormCard>
+<SupplierModal open={modal} onClose={()=>setModal(false)} onSaved={s=>{setModal(false);setF({...f,sup:s.id,refs:[]});setToast("Supplier "+s.name+" added")}}/>{toast}</AppShell>}
+ReactDOM.createRoot(document.getElementById("r")).render(<App/>);</script></body></html>

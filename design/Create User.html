@@ -1,0 +1,21 @@
+<!DOCTYPE html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>Create User · Sontic Plus</title><link rel="stylesheet" href="styles.css"><script src="theme.js"></script></head><body><div id="r"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="nav.js"></script><script src="_ds_bundle.js"></script>
+<script type="text/babel">const {AppShell,PageHeader,FormCard,Field,Input,Select,Button,Icon}=window.Industry_indust;
+const P=new URLSearchParams(location.search);const editing=P.has("name");const parts=(P.get("name")||"").split(" ");
+function App(){const [f,setF]=React.useState({first:parts[0]||"",last:parts.slice(1).join(" "),email:P.get("email")||"",phone:P.get("phone")||"",pw:"",pw2:"",role:P.get("role")||""});const [e,setE]=React.useState({});const [img,setImg]=React.useState(null);const fileRef=React.useRef(null);
+const set=k=>ev=>{setF({...f,[k]:ev.target.value});setE({...e,[k]:""})};
+const ok=["first","last","email","phone","role"].every(k=>f[k].trim())&&(editing||(f.pw&&f.pw2));
+const save=()=>{const n={};if(!f.first.trim())n.first="First name is required";if(!f.last.trim())n.last="Last name is required";if(!/^\S+@\S+\.\S+$/.test(f.email))n.email="Enter a valid email";if(!f.phone.trim())n.phone="Phone number is required";if(!editing&&f.pw.length<6)n.pw="Use at least 6 characters";if(f.pw!==f.pw2)n.pw2="Passwords do not match";if(!f.role)n.role="Choose a role";setE(n);if(!Object.keys(n).length)location.href="Users.html"};
+const F=(k,l,ph,type)=><Field label={l} required error={e[k]}><Input type={type} placeholder={ph} value={f[k]} onChange={set(k)}/></Field>;
+return <AppShell items={SP_NAV} activeId="pe3" title="Users" userName="admin" userRole="Administrator" footer="All Rights Reserved © 2026 Sontic Plus">
+<PageHeader title={editing?"Edit User":"Create User"}><Button variant="secondary" icon="arrow-left" onClick={()=>location.href="Users.html"}>Back</Button></PageHeader>
+<FormCard columns={2} saveDisabled={!ok} onSave={save} onCancel={()=>location.href="Users.html"}>
+<Field label="Change Image" className="sp-span-all"><div style={{position:"relative",width:100}}><span className="sp-avatar" style={{width:100,height:100,fontSize:30,overflow:"hidden",background:img?"transparent":undefined}}>{img?<img src={img} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<Icon name="user" size={44}/>}</span><Button variant="secondary" size="sm" iconOnly icon="pencil" aria-label="Change image" style={{position:"absolute",top:-6,right:-6,borderRadius:"50%"}} onClick={()=>fileRef.current.click()}/><input ref={fileRef} type="file" accept="image/*" hidden onChange={ev=>{const x=ev.target.files[0];if(x)setImg(URL.createObjectURL(x))}}/></div></Field>
+{F("first","First Name","Enter First Name")}{F("last","Last Name","Enter Last Name")}{F("email","Email","Enter Email","email")}{F("phone","Phone Number","Enter Phone Number")}
+{F("pw","Password","Enter Password","password")}{F("pw2","Confirm Password","Enter Confirm Password","password")}
+<Field label="Role" required error={e.role}><Select placeholder="Choose Role" value={f.role||""} options={["Manager","admin"]} onChange={set("role")}/></Field>
+</FormCard></AppShell>}
+ReactDOM.createRoot(document.getElementById("r")).render(<App/>);</script></body></html>
