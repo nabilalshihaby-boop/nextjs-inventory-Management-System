@@ -63,7 +63,7 @@ export default async function EditProductPage({ params }: PageProps<"/products/[
       images={p.images}
       openingStock={
         entry
-          ? { warehouse: entry.warehouse.name, supplier: entry.supplier.name, quantity: formatQuantity(entry.quantity.toFixed(3)), status: entry.status }
+          ? { warehouse: entry.warehouse.name, supplier: entry.supplier?.name ?? null, quantity: formatQuantity(entry.quantity.toFixed(3)), status: entry.status }
           : null
       }
     />

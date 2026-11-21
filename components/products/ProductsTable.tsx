@@ -8,14 +8,14 @@ import { useT } from "@/components/i18n/I18nProvider";
 import Pagination, { paginate } from "@/components/ui/Pagination";
 import RowMenu from "@/components/ui/RowMenu";
 import ProductImportModal from "@/components/products/ProductImportModal";
-import type { Option, ProductRow } from "@/lib/products";
+import type { ProductRow } from "@/lib/products";
 
 // Port of design/Products.html: TableToolbar (Filter / Export / Import / Create Product),
 // DataTable (Product image / Name / Code / Brand / Price / Product Unit / In Stock / Created On)
 // and Pagination, plus a row menu (Edit only) for OWNER/ADMIN. Search/paging run over the
 // server-loaded list. Filter, Export and Import are deferred ("Coming soon").
 
-export default function ProductsTable({ rows, canManage, suppliers = [] }: { rows: ProductRow[]; canManage: boolean; suppliers?: Option[] }) {
+export default function ProductsTable({ rows, canManage }: { rows: ProductRow[]; canManage: boolean }) {
   const T = useT();
   const L = T.products.list;
   const SOON = { filter: L.soonFilter, export: L.soonExport };
@@ -152,7 +152,7 @@ export default function ProductsTable({ rows, canManage, suppliers = [] }: { row
           }}
         />
       </div>
-      {importing && canManage && <ProductImportModal suppliers={suppliers} onClose={() => setImporting(false)} />}
+      {importing && canManage && <ProductImportModal onClose={() => setImporting(false)} />}
     </>
   );
 }

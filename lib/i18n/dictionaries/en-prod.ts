@@ -200,6 +200,8 @@ export const enProducts = {
     addUnitAria: "Add unit",
     manageUnits: "Manage units",
     openingQty: "Opening Quantity",
+    source: "Source",
+    sourceInitial: "Initial inventory (CSV import)",
     noOpening: "No opening stock recorded.",
     openingNote: "Opening stock is recorded once, when the product is created. Later stock changes will be made through Stock Adjustments.",
     resolve: "Resolve the notices above before saving",

@@ -8,19 +8,17 @@ import Modal from "@/components/ui/Modal";
 import { useT } from "@/components/i18n/I18nProvider";
 import { fmt } from "@/lib/i18n/config";
 import { confirmProductImport, previewProductImport, type PreviewResult } from "@/app/(dashboard)/products/import/actions";
-import type { Option } from "@/lib/products";
 
 type Problem = { message: string; issues: { row: number; column: string; message: string }[]; count: number };
 
 // Product CSV import (create only). Client state is just the chosen file and the last preview; the server
 // re-reads the session, re-parses and re-validates the file again when "Confirm Import" is pressed.
-export default function ProductImportModal({ suppliers, onClose }: { suppliers: Option[]; onClose: () => void }) {
+export default function ProductImportModal({ onClose }: { onClose: () => void }) {
   const T = useT();
   const L = T.importExport.import;
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [supplierId, setSupplierId] = useState("");
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [pending, startTransition] = useTransition();
@@ -29,8 +27,7 @@ export default function ProductImportModal({ suppliers, onClose }: { suppliers: 
   const summary = preview?.ok ? preview.summary : null;
   const issues = problem?.issues ?? (preview?.ok ? preview.issues : []);
   const issueCount = problem?.count ?? (preview?.ok ? preview.issueCount : 0);
-  const needsSupplier = !!summary && summary.withStock > 0;
-  const canConfirm = !!file && !!summary && summary.total > 0 && summary.invalid === 0 && issueCount === 0 && (!needsSupplier || !!supplierId) && !pending;
+  const canConfirm = !!file && !!summary && summary.total > 0 && summary.invalid === 0 && issueCount === 0 && !pending;
 
   function pick(f: File | null) {
     setFile(f);
@@ -40,7 +37,6 @@ export default function ProductImportModal({ suppliers, onClose }: { suppliers: 
   const form = () => {
     const fd = new FormData();
     if (file) fd.set("file", file);
-    fd.set("supplierId", supplierId);
     return fd;
   };
 
@@ -126,22 +122,6 @@ export default function ProductImportModal({ suppliers, onClose }: { suppliers: 
           <bdi dir="ltr">Product Code, Product Name, Category, Brand, Unit, Warehouse, Opening Stock, Cost, Selling Price, Stock Alert, Tax Rate, Tax Type</bdi>
           <br />
           {L.guideBody}
-        </div>
-
-        <div className="sp-field">
-          <label className="sp-label" htmlFor="imp-supplier">
-            {L.supplierLabel}
-            {needsSupplier && <i>*</i>}
-          </label>
-          <select id="imp-supplier" className={"sp-select " + (supplierId ? "" : "sp-select--placeholder")} value={supplierId} onChange={(e) => setSupplierId(e.target.value)} disabled={pending} data-testid="import-supplier">
-            <option value="">{suppliers.length ? L.supplierPh : L.noSuppliers}</option>
-            {suppliers.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-          <span className="sp-hint">{L.supplierHint}</span>
         </div>
 
         {preview && !preview.ok && (

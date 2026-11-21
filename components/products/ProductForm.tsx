@@ -47,7 +47,7 @@ export default function ProductForm({
   productId?: string;
   initial?: ProductFormValues;
   images?: ProductImageRow[];
-  openingStock?: { warehouse: string; supplier: string; quantity: string; status: string } | null;
+  openingStock?: { warehouse: string; supplier: string | null; quantity: string; status: string } | null;
 }) {
   const router = useRouter();
   const T = useT();
@@ -327,7 +327,7 @@ export default function ProductForm({
                   <div className="sp-card" style={{ padding: 16 }} data-testid="opening-stock">
                     {openingStock ? (
                       <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "8px 16px", font: "400 14px/20px var(--font-body)" }}>
-                        {[[LB.warehouse, openingStock.warehouse], [LB.supplier, openingStock.supplier], [F.openingQty, openingStock.quantity], [F.status, T.products.options[`stock${openingStock.status}` as "stockRECEIVED"] ?? openingStock.status]].map(([k, v]) => (
+                        {[[LB.warehouse, openingStock.warehouse], openingStock.supplier === null ? [F.source, F.sourceInitial] : [LB.supplier, openingStock.supplier], [F.openingQty, openingStock.quantity], [F.status, T.products.options[`stock${openingStock.status}` as "stockRECEIVED"] ?? openingStock.status]].map(([k, v]) => (
                           <Fragment key={k}>
                             <span style={{ color: "var(--text-3)" }}>{k}</span>
                             <span style={{ fontWeight: 600 }}>{v}</span>

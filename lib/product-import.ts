@@ -123,6 +123,9 @@ async function loadLookups(db: Prisma.TransactionClient): Promise<Lookups> {
   return { category: mapOf(category), brand: mapOf(brand), unit: mapOf(unit), warehouse: mapOf(warehouse) };
 }
 
+/** "0", "0.0", "0.000": a valid zero quantity, treated like a blank one. */
+const ZERO_QTY = /^0+(\.0{1,3})?$/;
+
 const FIELD_COLUMN: Partial<Record<keyof ProductFields, Header>> = {
   name: "Product Name",
   code: "Product Code",
@@ -135,10 +138,10 @@ const FIELD_COLUMN: Partial<Record<keyof ProductFields, Header>> = {
 
 /**
  * Validates every row against the real database (names → ids, existing codes) with the SAME Zod
- * schemas and normalization as Create Product. `supplierId` is only needed for rows with opening stock;
- * pass null in the preview (the quantity is still checked).
+ * schemas and normalization as Create Product. Opening Stock is initial inventory: no supplier is
+ * involved anywhere in the import.
  */
-export async function validateImport(db: Prisma.TransactionClient, text: string, t: Dictionary, supplierId: string | null): Promise<{ ok: false; message: string } | ({ ok: true } & ImportValidation)> {
+export async function validateImport(db: Prisma.TransactionClient, text: string, t: Dictionary): Promise<{ ok: false; message: string } | ({ ok: true } & ImportValidation)> {
   const parsed = parseImportCsv(text, t);
   if (!parsed.ok) return parsed;
   const E = t.importExport.err;
@@ -220,18 +223,14 @@ export async function validateImport(db: Prisma.TransactionClient, text: string,
       }
     }
 
-    // Opening stock combination: quantity and warehouse go together; quantity must be > 0.
+    // Opening Stock is initial inventory. Blank or zero = no stock (Warehouse stays optional, and nothing is
+    // recorded); a quantity above zero needs a real warehouse. Negative / malformed quantities are errors.
     let stock: ImportRow["stock"] = null;
-    if (v["Opening Stock"] || v["Warehouse"]) {
-      if (!v["Opening Stock"]) add(row, "Opening Stock", E.warehouseNeedsStock);
-      else if (!v["Warehouse"]) add(row, "Warehouse", E.stockNeedsWarehouse);
-      else {
-        const s = S.openingStockSchema.safeParse({ warehouseId: warehouseId || "x", supplierId: supplierId || "x", quantity: v["Opening Stock"], status: "RECEIVED" });
-        if (!s.success) {
-          const q = s.error.issues.find((i) => i.path[0] === "quantity");
-          if (q) add(row, "Opening Stock", q.message);
-        } else if (warehouseId) stock = { warehouseId, quantity: s.data.quantity };
-      }
+    if (v["Opening Stock"] && !ZERO_QTY.test(v["Opening Stock"])) {
+      if (!v["Warehouse"]) add(row, "Warehouse", E.stockNeedsWarehouse);
+      const q = S.openingStockSchema.shape.quantity.safeParse(v["Opening Stock"]);
+      if (!q.success) add(row, "Opening Stock", q.error.issues[0].message);
+      else if (warehouseId) stock = { warehouseId, quantity: q.data };
     }
 
     if (f.success) {

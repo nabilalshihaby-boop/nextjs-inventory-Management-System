@@ -133,7 +133,7 @@ export async function createProduct(formData: FormData): Promise<ProductResult> 
   const paths: string[] = [];
   try {
     for (const img of images) paths.push(await saveImage(FOLDER, img));
-    const product = await db.$transaction((tx) => createProductRecord(tx, f, stock.data, a.userId, paths));
+    const product = await db.$transaction((tx) => createProductRecord(tx, f, { ...stock.data, source: "PRODUCT_FORM" }, a.userId, paths));
     revalidatePath("/products");
     return { ok: true, message: t.products.ok.created, id: product.id };
   } catch (e) {

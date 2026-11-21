@@ -12,9 +12,10 @@ import { getDict } from "@/lib/i18n/server";
 import { fmt } from "@/lib/i18n/config";
 import type { Dictionary } from "@/lib/i18n";
 
-// Product CSV import (OWNER/ADMIN only). CREATE ONLY, all-or-nothing. The preview is a convenience:
+// Product CSV import (OWNER/ADMIN only). CREATE ONLY, all-or-nothing. Opening Stock is initial inventory:
+// no supplier, purchase, payable or financial entry is ever created. The preview is a convenience:
 // Confirm re-reads the session, re-uploads/re-parses the file and re-validates EVERYTHING inside the
-// writing transaction (names → ids, existing codes, supplier), so nothing the browser says is trusted.
+// writing transaction (names → ids, existing codes), so nothing the browser says is trusted.
 
 const MAX_SHOWN = 200;
 
@@ -33,11 +34,6 @@ async function authorize(t: Dictionary): Promise<{ userId: string } | { error: s
   return { userId: session.user.id };
 }
 
-const text = (fd: FormData, k: string) => {
-  const v = fd.get(k);
-  return typeof v === "string" ? v.trim().slice(0, 64) : "";
-};
-
 export async function previewProductImport(formData: FormData): Promise<PreviewResult> {
   const t = await getDict();
   const a = await authorize(t);
@@ -47,7 +43,7 @@ export async function previewProductImport(formData: FormData): Promise<PreviewR
 
   const file = await readImportFile(formData.get("file"), t);
   if (!file.ok) return file;
-  const v = await validateImport(db, file.text, t, null);
+  const v = await validateImport(db, file.text, t);
   if (!v.ok) return v;
   const summary = v.headerInvalid ? null : { total: v.total, valid: v.total - v.invalidRows, invalid: v.invalidRows, withStock: v.withStock };
   return { ok: true, summary, issues: v.issues.slice(0, MAX_SHOWN), issueCount: v.issues.length };
@@ -63,22 +59,17 @@ export async function confirmProductImport(formData: FormData): Promise<ConfirmR
 
   const file = await readImportFile(formData.get("file"), t);
   if (!file.ok) return file;
-  const supplierId = text(formData, "supplierId");
 
   type Outcome = { kind: "msg"; message: string } | { kind: "issues"; issues: ImportIssue[] } | { kind: "done"; created: number };
   let outcome: Outcome;
   try {
     outcome = await db.$transaction(
       async (tx): Promise<Outcome> => {
-        const v = await validateImport(tx, file.text, t, supplierId || null);
+        const v = await validateImport(tx, file.text, t);
         if (!v.ok) return { kind: "msg", message: v.message };
         if (v.issues.length) return { kind: "issues", issues: v.issues };
-        if (v.withStock > 0) {
-          if (!supplierId) return { kind: "msg", message: E.supplierRequired };
-          if (!(await tx.supplier.findUnique({ where: { id: supplierId }, select: { id: true } }))) return { kind: "msg", message: E.supplierInvalid };
-        }
         for (const r of v.rows) {
-          await createProductRecord(tx, r.fields, r.stock ? { ...r.stock, supplierId, status: "RECEIVED" } : null, a.userId);
+          await createProductRecord(tx, r.fields, r.stock ? { ...r.stock, status: "RECEIVED", source: "INITIAL_STOCK", supplierId: null } : null, a.userId);
         }
         return { kind: "done", created: v.rows.length };
       },

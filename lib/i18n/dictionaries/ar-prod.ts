@@ -202,6 +202,8 @@ export const arProducts: Dictionary["products"] = {
     addUnitAria: "إضافة وحدة",
     manageUnits: "إدارة الوحدات",
     openingQty: "الكمية الافتتاحية",
+    source: "المصدر",
+    sourceInitial: "مخزون أولي (استيراد CSV)",
     noOpening: "لم يتم تسجيل مخزون افتتاحي.",
     openingNote: "يُسجَّل المخزون الافتتاحي مرة واحدة عند إنشاء المنتج. ستتم تغييرات المخزون اللاحقة عبر تسويات المخزون.",
     resolve: "عالج التنبيهات أعلاه قبل الحفظ",

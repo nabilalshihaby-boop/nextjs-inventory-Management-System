@@ -204,6 +204,14 @@ enum StockEntryStatus {
   ORDERED
 }
 
+/// Where a stock entry came from. PRODUCT_FORM: opening stock typed in Create Product (recorded against a
+/// supplier, as before). INITIAL_STOCK: initial inventory the business already owns, added by the CSV
+/// product import — no supplier, no purchase, no payable, no financial entry.
+enum StockEntrySource {
+  PRODUCT_FORM
+  INITIAL_STOCK
+}
+
 /// Products managed on /products. Money uses DECIMAL(14,2) and quantities DECIMAL(14,3) — never
 /// floating point. All master-data relations are RESTRICT so referenced records can't be deleted.
 model Product {
@@ -278,7 +286,7 @@ model ProductStock {
   @@map("product_stocks")
 }
 
-/// Opening stock recorded when a product is created (one per product). PENDING / ORDERED entries
+/// Opening stock recorded when a product is created (at most one per product). PENDING / ORDERED entries
 /// do not change ProductStock; later stock changes belong to a Stock Adjustments module.
 model ProductStockEntry {
   id          String           @id @default(cuid())
@@ -286,10 +294,13 @@ model ProductStockEntry {
   product     Product          @relation(fields: [productId], references: [id], onDelete: Restrict)
   warehouseId String
   warehouse   Warehouse        @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
-  supplierId  String
-  supplier    Supplier         @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  /// Required for PRODUCT_FORM entries; always NULL for INITIAL_STOCK (enforced in createProductRecord,
+  /// the only writer). Entries are immutable: nothing in the app updates or deletes them.
+  supplierId  String?
+  supplier    Supplier?        @relation(fields: [supplierId], references: [id], onDelete: Restrict)
   quantity    Decimal          @db.Decimal(14, 3)
   status      StockEntryStatus
+  source      StockEntrySource @default(PRODUCT_FORM)
   /// The user who recorded it (audit; not a foreign key so users can be managed independently).
   createdById String?          @db.VarChar(191)
   createdAt   DateTime         @default(now())
