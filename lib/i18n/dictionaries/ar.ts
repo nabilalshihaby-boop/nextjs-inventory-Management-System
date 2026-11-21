@@ -22,6 +22,7 @@ import { arCatalog, arProducts } from "@/lib/i18n/dictionaries/ar-prod";
 import { arTransfers } from "@/lib/i18n/dictionaries/ar-xfer";
 import { arAdjustments } from "@/lib/i18n/dictionaries/ar-adj";
 import { arUsers } from "@/lib/i18n/dictionaries/ar-users";
+import { arImpExp } from "@/lib/i18n/dictionaries/ar-impexp";
 export const ar: Dictionary = {
   common: {
     save: "حفظ",
@@ -625,6 +626,7 @@ export const ar: Dictionary = {
   transfers: arTransfers,
   adjustments: arAdjustments,
   users: arUsers,
+  importExport: arImpExp,
   langAdmin: {
     title: "اللغات",
     sections: { nav: "لوحة التحكم والتنقل", auth: "تسجيل الدخول والحساب", settings: "الإعدادات والتفضيلات", pos: "نقطة البيع والصندوق", shared: "الواجهة المشتركة والتقارير", sales: "المبيعات", purchases: "المشتريات", finance: "المالية", products: "المنتجات والمخزون", people: "العملاء والموردون", users: "المستخدمون والأدوار", reports: "التقارير" },

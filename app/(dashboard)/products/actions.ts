@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { canManageProducts } from "@/lib/roles";
 import { getDefaultCurrency } from "@/lib/settings";
 import { deleteImage, saveImage, validateImage, type ValidImage } from "@/lib/image-upload";
+import { createProductRecord, productFieldData } from "@/lib/product-create";
 import { MAX_PRODUCT_IMAGES, makeProductSchemas, type ProductField, type ProductFields } from "@/lib/products";
 import { getDict } from "@/lib/i18n/server";
 import { fmt } from "@/lib/i18n/config";
@@ -95,24 +96,6 @@ async function readImages(fd: FormData, errors: Errors, t: Dictionary): Promise<
   return out;
 }
 
-const fieldData = (f: ProductFields) => ({
-  name: f.name,
-  code: f.code,
-  categoryId: f.categoryId,
-  brandId: f.brandId,
-  barcodeSymbology: f.barcodeSymbology,
-  cost: f.cost, // decimal strings → Prisma Decimal (no floating point)
-  price: f.price,
-  productUnitId: f.productUnitId,
-  saleUnitId: f.saleUnitId,
-  purchaseUnitId: f.purchaseUnitId,
-  stockAlert: f.stockAlert,
-  orderTax: f.orderTax,
-  taxType: f.taxType,
-  quantityLimitation: f.quantityLimitation === "" ? null : f.quantityLimitation,
-  notes: f.notes === "" ? null : f.notes,
-});
-
 export async function createProduct(formData: FormData): Promise<ProductResult> {
   const t = await getDict();
   const E = t.products.err;
@@ -150,25 +133,7 @@ export async function createProduct(formData: FormData): Promise<ProductResult> 
   const paths: string[] = [];
   try {
     for (const img of images) paths.push(await saveImage(FOLDER, img));
-    const product = await db.$transaction(async (tx) => {
-      const p = await tx.product.create({
-        data: { ...fieldData(f), images: { create: paths.map((path, position) => ({ path, position })) } },
-        select: { id: true },
-      });
-      // Opening stock entry (exactly one, recorded with who created it).
-      await tx.productStockEntry.create({
-        data: { productId: p.id, ...stock.data, createdById: a.userId },
-      });
-      // Only RECEIVED stock is on hand; PENDING / ORDERED don't change "In Stock".
-      if (stock.data.status === "RECEIVED") {
-        await tx.productStock.upsert({
-          where: { productId_warehouseId: { productId: p.id, warehouseId: stock.data.warehouseId } },
-          create: { productId: p.id, warehouseId: stock.data.warehouseId, quantity: stock.data.quantity },
-          update: { quantity: { increment: stock.data.quantity } },
-        });
-      }
-      return p;
-    });
+    const product = await db.$transaction((tx) => createProductRecord(tx, f, stock.data, a.userId, paths));
     revalidatePath("/products");
     return { ok: true, message: t.products.ok.created, id: product.id };
   } catch (e) {
@@ -215,7 +180,7 @@ export async function updateProduct(id: unknown, formData: FormData): Promise<Pr
   try {
     for (const img of images) paths.push(await saveImage(FOLDER, img));
     await db.$transaction(async (tx) => {
-      await tx.product.update({ where: { id: existing.id }, data: fieldData(f) });
+      await tx.product.update({ where: { id: existing.id }, data: productFieldData(f) });
       if (removed.length) await tx.productImage.deleteMany({ where: { id: { in: removed.map((r) => r.id) }, productId: existing.id } });
       await Promise.all(keep.map((k, position) => tx.productImage.update({ where: { id: k.id }, data: { position } })));
       if (paths.length) {

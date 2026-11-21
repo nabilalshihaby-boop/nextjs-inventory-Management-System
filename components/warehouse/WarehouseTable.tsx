@@ -124,6 +124,17 @@ export default function WarehouseTable({ rows, canManage }: { rows: WarehouseRow
                       </button>
                       {canManage && (
                         <>
+                          <a
+                            href={`/warehouse/${encodeURIComponent(r.id)}/export`}
+                            download
+                            className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
+                            aria-label={fmt(T.importExport.export.aria, { name: r.name })}
+                            title={T.importExport.export.button}
+                            data-testid="wh-export"
+                            style={{ color: "var(--info-600, var(--primary-600))" }}
+                          >
+                            <Icon name="file-down" size={16} />
+                          </a>
                           <Link
                             href={`/warehouse/${encodeURIComponent(r.id)}/edit`}
                             className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
@@ -184,9 +195,17 @@ export default function WarehouseTable({ rows, canManage }: { rows: WarehouseRow
           title={view.name}
           onClose={() => setView(null)}
           footer={
-            <button type="button" className="sp-btn sp-btn--secondary" onClick={() => setView(null)}>
-              {L.close}
-            </button>
+            <>
+              {canManage && (
+                <a href={`/warehouse/${encodeURIComponent(view.id)}/export`} download className="sp-btn sp-btn--secondary" data-testid="wh-export-modal">
+                  <Icon name="file-down" size={18} />
+                  {T.importExport.export.button}
+                </a>
+              )}
+              <button type="button" className="sp-btn sp-btn--secondary" onClick={() => setView(null)}>
+                {L.close}
+              </button>
+            </>
           }
         >
           <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "12px 24px", font: "400 14px/20px var(--font-body)" }}>

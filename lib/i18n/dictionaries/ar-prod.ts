@@ -137,7 +137,6 @@ export const arProducts: Dictionary["products"] = {
     filterAria: "تصفية (قريبًا)",
     soonFilter: "تصفية المنتجات ستتوفر قريبًا.",
     soonExport: "تصدير المنتجات سيتوفر قريبًا.",
-    soonImport: "استيراد المنتجات سيتوفر قريبًا.",
     export: "تصدير المنتجات",
     import: "استيراد المنتجات",
     create: "إنشاء منتج",

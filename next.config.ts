@@ -4,10 +4,10 @@ const nextConfig: NextConfig = {
   /* config options here */
   experimental: {
     agentFeedback: true,
-    // Profile avatar uploads (2 MB max, enforced in the action) + multipart overhead.
-    // The Server Action default is 1 MB.
+    // Upload limits are enforced inside each action: avatars/product images 2 MB, Product CSV import
+    // 5 MB (lib/product-import.ts), plus multipart overhead. The Server Action default is 1 MB.
     serverActions: {
-      bodySizeLimit: "3mb",
+      bodySizeLimit: "6mb",
     },
   },
   cacheComponents: true,

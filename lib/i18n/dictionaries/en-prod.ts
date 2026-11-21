@@ -135,7 +135,6 @@ export const enProducts = {
     filterAria: "Filter (coming soon)",
     soonFilter: "Product filters are coming soon.",
     soonExport: "Export Products is coming soon.",
-    soonImport: "Import Products is coming soon.",
     export: "Export Products",
     import: "Import Products",
     create: "Create Product",

@@ -63,5 +63,9 @@ export default async function ProductsPage() {
     };
   });
 
-  return <ProductsTable rows={rows} canManage={canManageProducts(session.user.role)} />;
+  const canManage = canManageProducts(session.user.role);
+  // Suppliers are only needed by the import dialog (opening stock is recorded against one); never sent to USER.
+  const suppliers = canManage ? (await db.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } })).map((s) => ({ value: s.id, label: s.name })) : [];
+
+  return <ProductsTable rows={rows} canManage={canManage} suppliers={suppliers} />;
 }

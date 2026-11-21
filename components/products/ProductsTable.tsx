@@ -7,17 +7,19 @@ import Icon from "@/components/layout/Icon";
 import { useT } from "@/components/i18n/I18nProvider";
 import Pagination, { paginate } from "@/components/ui/Pagination";
 import RowMenu from "@/components/ui/RowMenu";
-import type { ProductRow } from "@/lib/products";
+import ProductImportModal from "@/components/products/ProductImportModal";
+import type { Option, ProductRow } from "@/lib/products";
 
 // Port of design/Products.html: TableToolbar (Filter / Export / Import / Create Product),
 // DataTable (Product image / Name / Code / Brand / Price / Product Unit / In Stock / Created On)
 // and Pagination, plus a row menu (Edit only) for OWNER/ADMIN. Search/paging run over the
 // server-loaded list. Filter, Export and Import are deferred ("Coming soon").
 
-export default function ProductsTable({ rows, canManage }: { rows: ProductRow[]; canManage: boolean }) {
+export default function ProductsTable({ rows, canManage, suppliers = [] }: { rows: ProductRow[]; canManage: boolean; suppliers?: Option[] }) {
   const T = useT();
   const L = T.products.list;
-  const SOON = { filter: L.soonFilter, export: L.soonExport, import: L.soonImport };
+  const SOON = { filter: L.soonFilter, export: L.soonExport };
+  const [importing, setImporting] = useState(false);
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -56,7 +58,7 @@ export default function ProductsTable({ rows, canManage }: { rows: ProductRow[];
               <Icon name="upload" size={18} />
               {L.export}
             </button>
-            <button type="button" className="sp-btn sp-btn--secondary" aria-disabled="true" title={SOON.import} style={disabled} onClick={() => soon(SOON.import)}>
+            <button type="button" className="sp-btn sp-btn--secondary" onClick={() => setImporting(true)} data-testid="products-import">
               <Icon name="download" size={18} />
               {L.import}
             </button>
@@ -150,6 +152,7 @@ export default function ProductsTable({ rows, canManage }: { rows: ProductRow[];
           }}
         />
       </div>
+      {importing && canManage && <ProductImportModal suppliers={suppliers} onClose={() => setImporting(false)} />}
     </>
   );
 }

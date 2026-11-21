@@ -1,0 +1,249 @@
+import { parse } from "csv-parse/sync";
+import type { Prisma } from "@/app/generated/prisma/client";
+import { fmt } from "@/lib/i18n/config";
+import type { Dictionary } from "@/lib/i18n";
+import { makeProductSchemas, normalizeCode, type ProductFields } from "@/lib/products";
+
+// CSV product import — parsing and validation (server-only). Import is CREATE ONLY. The same module
+// validates for the preview and again inside the confirming transaction, and the rows it returns are
+// written through createProductRecord (lib/product-create.ts), exactly like the Create Product form.
+
+/** The fixed, ordered column contract of the template. These names are technical and not translated. */
+export const IMPORT_HEADERS = [
+  "Product Code",
+  "Product Name",
+  "Category",
+  "Brand",
+  "Unit",
+  "Warehouse",
+  "Opening Stock",
+  "Cost",
+  "Selling Price",
+  "Stock Alert",
+  "Tax Rate",
+  "Tax Type",
+] as const;
+type Header = (typeof IMPORT_HEADERS)[number];
+
+export const MAX_IMPORT_MB = 5;
+export const MAX_IMPORT_BYTES = MAX_IMPORT_MB * 1024 * 1024;
+export const MAX_IMPORT_ROWS = 1000;
+/** Barcode symbology isn't a CSV column; imported products use the form's first option. */
+export const IMPORT_BARCODE = "CODE128" as const;
+
+export type ImportIssue = { row: number; column: string; message: string };
+export type ImportRow = { row: number; fields: ProductFields; stock: { warehouseId: string; quantity: string } | null };
+export type ImportValidation = {
+  total: number;
+  /** Distinct rows that have at least one problem. */
+  invalidRows: number;
+  withStock: number;
+  issues: ImportIssue[];
+  rows: ImportRow[];
+  /** True when the header row itself is wrong (no row was checked). */
+  headerInvalid: boolean;
+};
+
+type FileResult = { ok: true; text: string } | { ok: false; message: string };
+
+/** Content checks on the uploaded file (extension, size, UTF-8 text). Never trusts the client's MIME type. */
+export async function readImportFile(file: unknown, t: Dictionary): Promise<FileResult> {
+  const E = t.importExport.err;
+  if (!(file instanceof File) || file.size === 0) return { ok: false, message: E.noFile };
+  if (!/\.csv$/i.test(file.name)) return { ok: false, message: E.notCsv };
+  if (file.size > MAX_IMPORT_BYTES) return { ok: false, message: fmt(E.tooLarge, { max: MAX_IMPORT_MB }) };
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (bytes.length > MAX_IMPORT_BYTES) return { ok: false, message: fmt(E.tooLarge, { max: MAX_IMPORT_MB }) };
+  if (bytes.includes(0)) return { ok: false, message: E.notText };
+  try {
+    // fatal: invalid UTF-8 is rejected instead of silently replaced; the BOM is removed here.
+    let text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+    return { ok: true, text };
+  } catch {
+    return { ok: false, message: E.notText };
+  }
+}
+
+type Records = { ok: true; header: string[]; data: { row: number; cells: string[] }[] } | { ok: false; message: string };
+
+/** RFC 4180 parsing (quoted commas/quotes/newlines, CRLF or LF) with a real parser — never split(","). */
+export function parseImportCsv(text: string, t: Dictionary): Records {
+  const E = t.importExport.err;
+  let records: string[][];
+  try {
+    records = parse(text, { bom: true, delimiter: ",", quote: '"', escape: '"', relax_column_count: true, skip_empty_lines: false, trim: false }) as string[][];
+  } catch {
+    return { ok: false, message: E.malformed };
+  }
+  if (records.length === 0) return { ok: false, message: E.empty };
+  const [header, ...rest] = records;
+  // Row numbers are spreadsheet rows: the header is row 1. Blank/trailing empty rows are skipped but still counted.
+  const data = rest.map((cells, i) => ({ row: i + 2, cells })).filter((r) => !r.cells.every((c) => c.trim() === ""));
+  if (data.length === 0) return { ok: false, message: E.empty };
+  if (data.length > MAX_IMPORT_ROWS) return { ok: false, message: fmt(E.tooManyRows, { max: MAX_IMPORT_ROWS }) };
+  return { ok: true, header: header.map((h) => h.trim()), data };
+}
+
+/** Header issues (missing / unexpected / duplicate / wrong order); empty when the header is exactly right. */
+function checkHeader(header: string[], t: Dictionary): ImportIssue[] {
+  const E = t.importExport.err;
+  const issues: ImportIssue[] = [];
+  const known = new Set<string>(IMPORT_HEADERS);
+  const seen = new Set<string>();
+  for (const h of header) {
+    if (seen.has(h)) issues.push({ row: 1, column: h, message: fmt(E.duplicateHeader, { name: h }) });
+    seen.add(h);
+    if (!known.has(h)) issues.push({ row: 1, column: h || "—", message: fmt(E.unexpectedHeader, { name: h }) });
+  }
+  for (const h of IMPORT_HEADERS) if (!seen.has(h)) issues.push({ row: 1, column: h, message: fmt(E.missingHeader, { name: h }) });
+  if (!issues.length && header.some((h, i) => h !== IMPORT_HEADERS[i])) {
+    issues.push({ row: 1, column: IMPORT_HEADERS[0], message: fmt(E.headerOrder, { list: IMPORT_HEADERS.join(", ") }) });
+  }
+  return issues;
+}
+
+type Lookups = {
+  category: Map<string, string>;
+  brand: Map<string, string>;
+  unit: Map<string, string>;
+  warehouse: Map<string, string>;
+};
+/** Names match case-insensitively on the trimmed value (the same names are unique in the database). */
+const key = (v: string) => v.trim().normalize("NFC").toLowerCase();
+const mapOf = (rows: { id: string; name: string }[]) => new Map(rows.map((r) => [key(r.name), r.id]));
+
+async function loadLookups(db: Prisma.TransactionClient): Promise<Lookups> {
+  const [category, brand, unit, warehouse] = await Promise.all([
+    db.productCategory.findMany({ select: { id: true, name: true } }),
+    db.brand.findMany({ select: { id: true, name: true } }),
+    db.productUnit.findMany({ select: { id: true, name: true } }),
+    db.warehouse.findMany({ select: { id: true, name: true } }),
+  ]);
+  return { category: mapOf(category), brand: mapOf(brand), unit: mapOf(unit), warehouse: mapOf(warehouse) };
+}
+
+const FIELD_COLUMN: Partial<Record<keyof ProductFields, Header>> = {
+  name: "Product Name",
+  code: "Product Code",
+  cost: "Cost",
+  price: "Selling Price",
+  stockAlert: "Stock Alert",
+  orderTax: "Tax Rate",
+  taxType: "Tax Type",
+};
+
+/**
+ * Validates every row against the real database (names → ids, existing codes) with the SAME Zod
+ * schemas and normalization as Create Product. `supplierId` is only needed for rows with opening stock;
+ * pass null in the preview (the quantity is still checked).
+ */
+export async function validateImport(db: Prisma.TransactionClient, text: string, t: Dictionary, supplierId: string | null): Promise<{ ok: false; message: string } | ({ ok: true } & ImportValidation)> {
+  const parsed = parseImportCsv(text, t);
+  if (!parsed.ok) return parsed;
+  const E = t.importExport.err;
+  const base = { ok: true as const, total: parsed.data.length, withStock: 0, rows: [] as ImportRow[] };
+
+  const headerIssues = checkHeader(parsed.header, t);
+  if (headerIssues.length) return { ...base, invalidRows: 0, issues: headerIssues, headerInvalid: true };
+
+  const S = makeProductSchemas(t.products.val, t.products.labels);
+  const L = await loadLookups(db);
+  const issues: ImportIssue[] = [];
+  const bad = new Set<number>();
+  const add = (row: number, column: string, message: string) => {
+    issues.push({ row, column, message });
+    bad.add(row);
+  };
+
+  // Existing codes (CREATE ONLY: an existing product is never touched).
+  const codes = [...new Set(parsed.data.map((r) => normalizeCode(r.cells[0] ?? "")).filter(Boolean))];
+  const existing = new Set((codes.length ? await db.product.findMany({ where: { code: { in: codes } }, select: { code: true } }) : []).map((p) => p.code));
+  const firstRowOf = new Map<string, number>();
+
+  for (const { row, cells } of parsed.data) {
+    if (cells.length !== IMPORT_HEADERS.length) {
+      add(row, IMPORT_HEADERS[0], fmt(E.colCount, { n: IMPORT_HEADERS.length, m: cells.length }));
+      continue;
+    }
+    const v = Object.fromEntries(IMPORT_HEADERS.map((h, i) => [h, cells[i].trim()])) as Record<Header, string>;
+    const before = issues.length;
+
+    // Related records are matched by name; nothing is ever created implicitly.
+    const resolve = (col: "Category" | "Brand" | "Unit" | "Warehouse", map: Map<string, string>, unknownMsg: string): string => {
+      if (!v[col]) {
+        if (col !== "Warehouse") add(row, col, fmt(E.required, { label: col }));
+        return "";
+      }
+      const id = map.get(key(v[col]));
+      if (!id) add(row, col, fmt(unknownMsg, { v: v[col] }));
+      return id ?? "";
+    };
+    const categoryId = resolve("Category", L.category, E.unknownCategory);
+    const brandId = resolve("Brand", L.brand, E.unknownBrand);
+    const unitId = resolve("Unit", L.unit, E.unknownUnit);
+    const warehouseId = resolve("Warehouse", L.warehouse, E.unknownWarehouse);
+
+    let taxType: "EXCLUSIVE" | "INCLUSIVE" = "EXCLUSIVE";
+    if (v["Tax Type"]) {
+      const tt = v["Tax Type"].toUpperCase();
+      if (tt === "EXCLUSIVE" || tt === "INCLUSIVE") taxType = tt;
+      else add(row, "Tax Type", E.taxType);
+    }
+
+    // Same schema + normalization as the form. Unresolved ids use a placeholder so only the real problem is reported.
+    const f = S.productFieldsSchema.safeParse({
+      name: v["Product Name"],
+      code: v["Product Code"],
+      categoryId: categoryId || "x",
+      brandId: brandId || "x",
+      barcodeSymbology: IMPORT_BARCODE,
+      cost: v["Cost"],
+      price: v["Selling Price"],
+      productUnitId: unitId || "x",
+      saleUnitId: unitId || "x",
+      purchaseUnitId: unitId || "x",
+      stockAlert: v["Stock Alert"] || "0",
+      orderTax: v["Tax Rate"] || "0",
+      taxType,
+      quantityLimitation: "",
+      notes: "",
+    });
+    if (!f.success) {
+      const done = new Set<string>();
+      for (const i of f.error.issues) {
+        const col = FIELD_COLUMN[i.path[0] as keyof ProductFields];
+        if (col && !done.has(col)) {
+          done.add(col);
+          add(row, col, i.message);
+        }
+      }
+    }
+
+    // Opening stock combination: quantity and warehouse go together; quantity must be > 0.
+    let stock: ImportRow["stock"] = null;
+    if (v["Opening Stock"] || v["Warehouse"]) {
+      if (!v["Opening Stock"]) add(row, "Opening Stock", E.warehouseNeedsStock);
+      else if (!v["Warehouse"]) add(row, "Warehouse", E.stockNeedsWarehouse);
+      else {
+        const s = S.openingStockSchema.safeParse({ warehouseId: warehouseId || "x", supplierId: supplierId || "x", quantity: v["Opening Stock"], status: "RECEIVED" });
+        if (!s.success) {
+          const q = s.error.issues.find((i) => i.path[0] === "quantity");
+          if (q) add(row, "Opening Stock", q.message);
+        } else if (warehouseId) stock = { warehouseId, quantity: s.data.quantity };
+      }
+    }
+
+    if (f.success) {
+      const code = f.data.code;
+      if (firstRowOf.has(code)) add(row, "Product Code", fmt(E.dupInFile, { n: firstRowOf.get(code)! }));
+      else firstRowOf.set(code, row);
+      if (existing.has(code)) add(row, "Product Code", E.existsDb);
+    }
+
+    if (issues.length === before && f.success) base.rows.push({ row, fields: f.data, stock });
+  }
+  base.withStock = base.rows.filter((r) => r.stock).length;
+  // Rows with opening stock that are otherwise valid still count as valid in the preview.
+  return { ...base, invalidRows: bad.size, issues: issues.sort((a, b) => a.row - b.row), headerInvalid: false };
+}
