@@ -57,7 +57,7 @@ export const posCheckoutSchema = z
     const seen = new Set<string>();
     for (const i of v.items) {
       if (seen.has(i.productId)) {
-        ctx.addIssue({ code: "custom", path: ["items"], message: "Each product can appear only once" });
+        ctx.addIssue({ code: "custom", path: ["items"], message: "posTx.val.dupProduct" });
         return;
       }
       seen.add(i.productId);
@@ -67,7 +67,7 @@ export const posCheckoutSchema = z
     for (const x of v.tenders) {
       const k = `${x.cashBankAccountId}|${x.paymentMethod}`;
       if (t.has(k)) {
-        ctx.addIssue({ code: "custom", path: ["tenders"], message: "Each account and payment method can appear only once — combine the amounts" });
+        ctx.addIssue({ code: "custom", path: ["tenders"], message: "posTx.val.dupTender" });
         return;
       }
       t.add(k);

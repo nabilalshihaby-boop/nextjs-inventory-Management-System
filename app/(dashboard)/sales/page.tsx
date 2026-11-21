@@ -6,9 +6,12 @@ import { db } from "@/lib/db";
 import { canManageSales } from "@/lib/roles";
 import { getDefaultCurrency } from "@/lib/settings";
 import { getSaleRows } from "@/lib/sale-data";
+import { getDict } from "@/lib/i18n/server";
 import SalesTable from "@/components/sales/SalesTable";
 
-export const metadata: Metadata = { title: "Sales" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).nav.sales };
+}
 
 export const instant = false;
 

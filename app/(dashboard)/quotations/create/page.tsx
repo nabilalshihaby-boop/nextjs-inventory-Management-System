@@ -5,9 +5,12 @@ import { auth } from "@/auth";
 import { todayLocal } from "@/lib/cash-bank";
 import { canManageQuotations, canManageSystemSettings } from "@/lib/roles";
 import { getQuotationFormData } from "@/lib/quotation-data";
+import { getDict } from "@/lib/i18n/server";
 import QuotationForm from "@/components/quotations/QuotationForm";
 
-export const metadata: Metadata = { title: "Create Quotation" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).quotations.form.createTitle };
+}
 
 export const instant = false;
 

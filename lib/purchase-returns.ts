@@ -1,5 +1,7 @@
 import { z } from "zod";
-import { transactionDateSchema } from "@/lib/cash-bank";
+import { makeTxDate } from "@/lib/cash-bank";
+import { en } from "@/lib/i18n/dictionaries/en";
+import type { Dictionary } from "@/lib/i18n";
 import { toUnits } from "@/lib/transfers";
 
 // Shared Purchase Return rules (client + server). The browser only sends the purchase id, the
@@ -11,36 +13,40 @@ export const formatPurchaseReturnReference = (n: number) => `PR_${String(n).padS
 const QTY_RE = /^\d{1,11}(\.\d{1,3})?$/;
 const id = (msg: string) => z.string({ error: msg }).trim().min(1, msg).max(64, msg);
 
-export const purchaseReturnInputSchema = z
-  .object({
-    returnDate: transactionDateSchema,
-    purchaseId: id("Choose a received purchase"),
-    notes: z.string().trim().max(2000, "Notes are too long").optional().default(""),
-    items: z
-      .array(
-        z.object({
-          purchaseItemId: id("Choose a valid purchase line"),
-          quantity: z
-            .string({ error: "Quantity is required" })
-            .trim()
-            .refine((v) => QTY_RE.test(v), "Quantity must be a number with up to 3 decimal places")
-            .refine((v) => !QTY_RE.test(v) || toUnits(v, 3) > BigInt(0), "Quantity must be greater than 0"),
-        }),
-        { error: "Add at least one return line" },
-      )
-      .min(1, "Enter a return quantity for at least one line")
-      .max(200, "Up to 200 lines per return"),
-  })
-  .superRefine((v, ctx) => {
-    const seen = new Set<string>();
-    for (const i of v.items) {
-      if (seen.has(i.purchaseItemId)) {
-        ctx.addIssue({ code: "custom", path: ["items"], message: "Each purchase line can appear only once" });
-        break;
+/** Return payload schema; messages are dictionary text (English by default). */
+export function makePurchaseReturnSchema(m: Dictionary["purchaseReturns"]["val"] = en.purchaseReturns.val, d: Dictionary["purchases"]["val"] = en.purchases.val) {
+  return z
+    .object({
+      returnDate: makeTxDate({ required: d.dateRequired, invalid: d.dateInvalid, future: d.dateFuture }),
+      purchaseId: id(m.choosePurchase),
+      notes: z.string().trim().max(2000, m.notesLong).optional().default(""),
+      items: z
+        .array(
+          z.object({
+            purchaseItemId: id(m.chooseLine),
+            quantity: z
+              .string({ error: m.qtyRequired })
+              .trim()
+              .refine((v) => QTY_RE.test(v), m.qtyFormat)
+              .refine((v) => !QTY_RE.test(v) || toUnits(v, 3) > BigInt(0), m.qtyPositive),
+          }),
+          { error: m.addLine },
+        )
+        .min(1, m.minLine)
+        .max(200, m.maxLines),
+    })
+    .superRefine((v, ctx) => {
+      const seen = new Set<string>();
+      for (const i of v.items) {
+        if (seen.has(i.purchaseItemId)) {
+          ctx.addIssue({ code: "custom", path: ["items"], message: m.uniqueLine });
+          break;
+        }
+        seen.add(i.purchaseItemId);
       }
-      seen.add(i.purchaseItemId);
-    }
-  });
+    });
+}
+export const purchaseReturnInputSchema = makePurchaseReturnSchema();
 
 export type PurchaseReturnInput = z.infer<typeof purchaseReturnInputSchema>;
 export type PurchaseReturnField = "returnDate" | "purchaseId" | "notes" | "items";

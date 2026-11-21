@@ -9,7 +9,10 @@ import { LedgerError, appendLedgerRow, dateOnly, ledgerTxOptions, lockAccounts }
 import { formatMoney } from "@/lib/money";
 import { canManageCustomerPayments } from "@/lib/roles";
 import { getSystemSettings } from "@/lib/settings";
-import { CUSTOMER_PAYMENT_PURPOSE, customerPaymentInputSchema, formatCustomerPaymentReference, type CustomerPaymentField } from "@/lib/customer-payments";
+import { CUSTOMER_PAYMENT_PURPOSE, formatCustomerPaymentReference, makeCustomerPaymentSchema, type CustomerPaymentField } from "@/lib/customer-payments";
+import { getDict } from "@/lib/i18n/server";
+import { LocalizedError, errorMessage, tr, type Vars } from "@/lib/i18n/messages";
+import type { Dictionary } from "@/lib/i18n";
 
 // Customer Payments — a real receipt, not a generic deposit. Integrity rules (server-side, ONE
 // transaction, READ COMMITTED):
@@ -35,25 +38,33 @@ export type CustomerPaymentResult = { ok: true; message: string; id?: string } |
 
 const isKnown = (e: unknown, ...codes: string[]) => e instanceof Prisma.PrismaClientKnownRequestError && codes.includes(e.code);
 const FIELD: Record<string, CustomerPaymentField> = { amount: "amount", paymentDate: "paymentDate", cashBankAccountId: "cashBankAccountId", customerId: "customerId", allocations: "allocations" };
-const fail = (message: string, field?: CustomerPaymentField): never => {
-  throw new LedgerError(message, field);
+// Carries a dictionary key (+ variables); translated with the request dictionary in the catch below.
+class PaymentError extends LocalizedError {
+  constructor(key: string, vars: Vars, readonly field?: CustomerPaymentField) {
+    super(key, vars);
+  }
+}
+const fail = (key: string, vars: Vars = {}, field?: CustomerPaymentField): never => {
+  throw new PaymentError(key, vars, field);
 };
 
-async function authorize(): Promise<{ userId: string } | { error: CustomerPaymentResult }> {
+async function authorize(): Promise<{ userId: string; t: Dictionary } | { error: CustomerPaymentResult }> {
   const s = await auth();
-  if (!s?.user?.id) return { error: { ok: false, message: "Your session has expired. Please sign in again." } };
-  if (!canManageCustomerPayments(s.user.role)) return { error: { ok: false, message: "You don't have permission to record customer payments." } };
-  return { userId: s.user.id };
+  const t = await getDict();
+  if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
+  if (!canManageCustomerPayments(s.user.role)) return { error: { ok: false, message: t.custPay.err.noPermission } };
+  return { userId: s.user.id, t };
 }
 
 export async function recordCustomerPayment(input: unknown): Promise<CustomerPaymentResult> {
   const a = await authorize();
   if ("error" in a) return a.error;
-  const v = customerPaymentInputSchema.safeParse(input);
+  const t = a.t;
+  const v = makeCustomerPaymentSchema(t.custPay.val, t.sales.val).safeParse(input);
   if (!v.success) {
     const fieldErrors: Partial<Record<CustomerPaymentField, string>> = {};
-    for (const i of v.error.issues) fieldErrors[(i.path[0] as CustomerPaymentField) ?? "allocations"] ??= i.code === "unrecognized_keys" ? "Unexpected fields were sent" : i.message;
-    return { ok: false, message: Object.values(fieldErrors)[0] ?? "Please check the form", fieldErrors };
+    for (const i of v.error.issues) fieldErrors[(i.path[0] as CustomerPaymentField) ?? "allocations"] ??= i.code === "unrecognized_keys" ? t.common.unexpectedFields : i.message;
+    return { ok: false, message: Object.values(fieldErrors)[0] ?? t.common.checkForm, fieldErrors };
   }
   const d = v.data;
   const settings = await getSystemSettings();
@@ -62,7 +73,7 @@ export async function recordCustomerPayment(input: unknown): Promise<CustomerPay
     try {
       const created = await db.$transaction(async (tx) => {
         const customer = await tx.customer.findUnique({ where: { id: d.customerId }, select: { id: true, name: true } });
-        if (!customer) fail("Choose a valid customer", "customerId");
+        if (!customer) fail("custPay.err.customerGone", {}, "customerId");
 
         // Lock the sales first (stable id order), then re-read them.
         const ids = [...new Set(d.allocations.map((x) => x.saleId))].sort();
@@ -72,24 +83,24 @@ export async function recordCustomerPayment(input: unknown): Promise<CustomerPay
         const returned = new Map((await tx.saleReturn.groupBy({ by: ["saleId"], where: { saleId: { in: ids } }, _sum: { grandTotal: true } })).map((r) => [r.saleId, r._sum.grandTotal ?? new Prisma.Decimal(0)]));
 
         const lines = d.allocations.map((al) => {
-          const s = byId.get(al.saleId) ?? fail("A selected sale no longer exists", "allocations");
-          if (s.customerId !== customer!.id) fail(`${s.reference} belongs to another customer.`, "allocations");
-          if (s.status !== "COMPLETED") fail(`${s.reference} is Pending — only completed sales can be paid.`, "allocations");
-          if (dateOnly(d.paymentDate) < s.saleDate) fail(`The payment date can't be before the date of ${s.reference}.`, "paymentDate");
+          const s = byId.get(al.saleId) ?? fail("custPay.err.saleGone", {}, "allocations");
+          if (s.customerId !== customer!.id) fail("custPay.err.otherCustomer", { ref: s.reference }, "allocations");
+          if (s.status !== "COMPLETED") fail("custPay.err.pending", { ref: s.reference }, "allocations");
+          if (dateOnly(d.paymentDate) < s.saleDate) fail("custPay.err.beforeSale", { ref: s.reference }, "paymentDate");
           const due = new Prisma.Decimal(s.grandTotal).minus(returned.get(s.id) ?? 0).minus(s.paidAmount);
           const money = (x: Prisma.Decimal) => formatMoney(x.toFixed(2), { code: "", symbol: s.currency.symbol, right: !!settings?.currencyIconRight });
-          if (!due.gt(0)) fail(`${s.reference} has nothing left to pay.`, "allocations");
-          if (new Prisma.Decimal(al.amount).gt(due)) fail(`${money(new Prisma.Decimal(al.amount))} is more than the ${money(due)} still due on ${s.reference}.`, "allocations");
+          if (!due.gt(0)) fail("custPay.err.nothingToPay", { ref: s.reference }, "allocations");
+          if (new Prisma.Decimal(al.amount).gt(due)) fail("custPay.err.tooMuch", { amount: money(new Prisma.Decimal(al.amount)), due: money(due), ref: s.reference }, "allocations");
           return { s, amount: al.amount };
         });
-        if (new Set(lines.map((l) => l.s.currencyId)).size !== 1) fail("All selected sales must use the same currency.", "allocations");
+        if (new Set(lines.map((l) => l.s.currencyId)).size !== 1) fail("custPay.err.sameCurrency", {}, "allocations");
         const total = lines.reduce((sum, l) => sum.plus(l.amount), new Prisma.Decimal(0));
-        if (!total.equals(d.amount)) fail("The payment amount must equal the sum of the allocations.", "amount");
+        if (!total.equals(d.amount)) fail("custPay.err.sumMismatch", {}, "amount");
 
         // Then lock and check the receiving account.
-        const acc = (await lockAccounts(tx, [d.cashBankAccountId])).get(d.cashBankAccountId) ?? fail("Choose a valid cash/bank account", "cashBankAccountId");
-        if (acc.status !== "ACTIVE") fail(`${acc.name} is inactive and can't be used for new transactions.`, "cashBankAccountId");
-        if (acc.currencyId !== lines[0].s.currencyId) fail(`${acc.name} uses a different currency from the selected sales.`, "cashBankAccountId");
+        const acc = (await lockAccounts(tx, [d.cashBankAccountId])).get(d.cashBankAccountId) ?? fail("custPay.err.accountInvalid", {}, "cashBankAccountId");
+        if (acc.status !== "ACTIVE") fail("custPay.err.accountInactive", { name: acc.name }, "cashBankAccountId");
+        if (acc.currencyId !== lines[0].s.currencyId) fail("custPay.err.accountCurrency", { name: acc.name }, "cashBankAccountId");
 
         // Immutable payment + allocations; Sale Paid updated in the same transaction.
         const p0 = await tx.customerPayment.create({
@@ -129,14 +140,18 @@ export async function recordCustomerPayment(input: unknown): Promise<CustomerPay
       for (const id of d.allocations.map((x) => x.saleId)) revalidatePath(`/sales/${id}`);
       revalidatePath("/finance/accounts");
       revalidatePath("/finance/transactions");
-      return { ok: true, message: `Payment ${created.reference} recorded (${created.ledger}) — applied to ${created.refs.join(", ")}`, id: created.id };
+      return { ok: true, message: tr(t, "custPay.ok.recorded", { ref: created.reference, ledger: created.ledger, sales: created.refs.join(", ") }), id: created.id };
     } catch (e) {
+      if (e instanceof PaymentError) {
+        const message = errorMessage(t, e);
+        return { ok: false, message, fieldErrors: e.field ? { [e.field]: message } : undefined };
+      }
       if (e instanceof LedgerError) {
         const field = e.field ? FIELD[e.field] : undefined;
         return { ok: false, message: e.message, fieldErrors: field ? { [field]: e.message } : undefined };
       }
       if (attempt < 4 && isKnown(e, "P2034")) continue; // deadlock / write conflict → retry
-      if (isKnown(e, "P2003")) return { ok: false, message: "A selected customer, sale or account no longer exists. Refresh and try again." };
+      if (isKnown(e, "P2003")) return { ok: false, message: t.custPay.err.refsGone };
       throw e;
     }
   }

@@ -6,9 +6,12 @@ import { db } from "@/lib/db";
 import { canManageSupplierPayments } from "@/lib/roles";
 import { getDefaultCurrency } from "@/lib/settings";
 import { getSupplierPaymentRows } from "@/lib/supplier-payment-data";
+import { getDict } from "@/lib/i18n/server";
 import SupplierPaymentsTable from "@/components/supplier-payments/SupplierPaymentsTable";
 
-export const metadata: Metadata = { title: "Supplier Payments" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).supplierPay.list.title };
+}
 
 export const instant = false;
 

@@ -8,11 +8,20 @@
 // chronological order (date, then the moment it was recorded). Each currency is its own ledger.
 import type { StatementCurrency } from "@/lib/supplier-statement";
 
+import { isStatementDate } from "@/lib/supplier-statement";
+
 export { isStatementDate, statementRangeError } from "@/lib/supplier-statement";
+
+/** Same rules as statementRangeError, but returns a dictionary key (stmt.range*) so the message can be localized. */
+export function statementRangeKey(from: string, to: string): "stmt.rangeBoth" | "stmt.rangeInvalid" | "stmt.rangeOrder" | null {
+  if (!from || !to) return "stmt.rangeBoth";
+  if (!isStatementDate(from) || !isStatementDate(to)) return "stmt.rangeInvalid";
+  if (from > to) return "stmt.rangeOrder";
+  return null;
+}
 export type { StatementCurrency };
 
 export type CustomerStatementKind = "SALE" | "RETURN" | "PAYMENT";
-export const CUSTOMER_KIND_LABEL: Record<CustomerStatementKind, string> = { SALE: "Sale", RETURN: "Sales Return", PAYMENT: "Payment" };
 /** Design badge tones: Sale warning, Payment success, Return info. */
 export const CUSTOMER_KIND_TONE: Record<CustomerStatementKind, string> = { SALE: "warning", RETURN: "info", PAYMENT: "success" };
 

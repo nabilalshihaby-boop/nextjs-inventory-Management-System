@@ -6,6 +6,9 @@ import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
 import { holdOrderSchema, heldIdSchema, type HeldOrderSummary, type ResumedOrder } from "@/lib/pos-held";
 import { getHeldOrders } from "@/lib/pos-held-data";
+import { getDict } from "@/lib/i18n/server";
+import { tr } from "@/lib/i18n/messages";
+import type { Dictionary } from "@/lib/i18n";
 import { canUsePos } from "@/lib/roles";
 import { getDefaultCurrency } from "@/lib/settings";
 import { fromUnits, toUnits } from "@/lib/transfers";
@@ -24,14 +27,14 @@ export type ResumeResult = { ok: true; order: ResumedOrder } | { ok: false; mess
 export type DiscardResult = { ok: true; message: string; orders: HeldOrderSummary[] } | { ok: false; message: string };
 
 const MAX_OPEN_HELD = 50;
-const NOT_FOUND = "That held order was not found (it may have been used or discarded).";
 const isKnown = (e: unknown, ...codes: string[]) => e instanceof Prisma.PrismaClientKnownRequestError && codes.includes(e.code);
 
-async function authorize(): Promise<{ userId: string } | { error: { ok: false; message: string } }> {
+async function authorize(): Promise<{ userId: string; t: Dictionary } | { error: { ok: false; message: string } }> {
   const s = await auth();
-  if (!s?.user?.id) return { error: { ok: false, message: "Your session has expired. Please sign in again." } };
-  if (!canUsePos(s.user.role)) return { error: { ok: false, message: "You don't have permission to use the POS." } };
-  return { userId: s.user.id };
+  const t = await getDict();
+  if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
+  if (!canUsePos(s.user.role)) return { error: { ok: false, message: t.pos.noPermission } };
+  return { userId: s.user.id, t };
 }
 
 export async function listHeldOrders(): Promise<{ ok: true; orders: HeldOrderSummary[] } | { ok: false; message: string }> {
@@ -43,14 +46,15 @@ export async function listHeldOrders(): Promise<{ ok: true; orders: HeldOrderSum
 export async function holdPosOrder(input: unknown): Promise<HoldResult> {
   const a = await authorize();
   if ("error" in a) return a.error;
+  const t = a.t;
   const v = holdOrderSchema.safeParse(input);
-  if (!v.success) return { ok: false, message: v.error.issues[0]?.code === "unrecognized_keys" ? "Unexpected fields were sent" : (v.error.issues[0]?.message ?? "Please check the order") };
+  if (!v.success) return { ok: false, message: v.error.issues[0]?.code === "unrecognized_keys" ? t.common.unexpectedFields : (v.error.issues[0]?.message.startsWith("posTx.") ? tr(t, v.error.issues[0].message) : (v.error.issues[0]?.message ?? t.common.checkForm)) };
   const d = v.data;
 
   // Merge duplicate lines safely (exact thousandths).
   const merged = new Map<string, bigint>();
   for (const i of d.items) merged.set(i.productId, (merged.get(i.productId) ?? BigInt(0)) + toUnits(i.quantity, 3));
-  for (const q of merged.values()) if (q > toUnits("99999999999.999", 3)) return { ok: false, message: "A quantity is too large" };
+  for (const q of merged.values()) if (q > toUnits("99999999999.999", 3)) return { ok: false, message: t.posTx.held.qtyLarge };
 
   const accountIds = [...new Set(d.tenders.map((t) => t.cashBankAccountId).filter(Boolean))];
   const [products, customer, warehouse, accountRows] = await Promise.all([
@@ -60,10 +64,10 @@ export async function holdPosOrder(input: unknown): Promise<HoldResult> {
     accountIds.length ? db.cashBankAccount.findMany({ where: { id: { in: accountIds } }, select: { id: true } }) : Promise.resolve([]),
   ]);
   const byId = new Map(products.map((p) => [p.id, p]));
-  if ([...merged.keys()].some((pid) => !byId.has(pid))) return { ok: false, message: "A product in the cart no longer exists" };
-  if (!customer) return { ok: false, message: "The selected customer no longer exists" };
-  if (!warehouse) return { ok: false, message: "The selected warehouse no longer exists" };
-  if (accountRows.length !== accountIds.length) return { ok: false, message: "A selected payment account no longer exists" };
+  if ([...merged.keys()].some((pid) => !byId.has(pid))) return { ok: false, message: t.posTx.held.productGone };
+  if (!customer) return { ok: false, message: t.posTx.held.customerGone };
+  if (!warehouse) return { ok: false, message: t.posTx.held.warehouseGone };
+  if (accountRows.length !== accountIds.length) return { ok: false, message: t.posTx.held.accountGone };
 
   const itemRows = [...merged.entries()].map(([productId, q]) => {
     const p = byId.get(productId)!;
@@ -91,15 +95,15 @@ export async function holdPosOrder(input: unknown): Promise<HoldResult> {
       await tx.posHeldOrder.update({ where: { id: h0.id }, data: { reference } });
       return { id: h0.id, reference, updated: false };
     });
-    if (!res) return { ok: false, message: NOT_FOUND };
-    return { ok: true, message: res.updated ? `Held order ${res.reference} updated` : `Order held as ${res.reference}`, id: res.id, reference: res.reference, orders: await getHeldOrders(a.userId) };
+    if (!res) return { ok: false, message: t.posTx.held.notFound };
+    return { ok: true, message: tr(t, res.updated ? "posTx.held.updated" : "posTx.held.held", { ref: res.reference }), id: res.id, reference: res.reference, orders: await getHeldOrders(a.userId) };
   } catch (e) {
-    if (e instanceof Error && e.message === "LIMIT") return { ok: false, message: `You already have ${MAX_OPEN_HELD} held orders. Resume or discard some first.` };
+    if (e instanceof Error && e.message === "LIMIT") return { ok: false, message: tr(t, "posTx.held.limit", { max: MAX_OPEN_HELD }) };
     if (isKnown(e, "P2002")) {
       // The same Hold action was already saved (double click / retry) → return that order.
       const ex = await db.posHeldOrder.findUnique({ where: { holdKey: d.holdKey }, select: { id: true, reference: true, createdById: true } });
-      if (ex && ex.createdById === a.userId) return { ok: true, message: `Order held as ${ex.reference}`, id: ex.id, reference: ex.reference, orders: await getHeldOrders(a.userId) };
-      return { ok: false, message: "Invalid hold key. Refresh the POS and try again." };
+      if (ex && ex.createdById === a.userId) return { ok: true, message: tr(t, "posTx.held.held", { ref: ex.reference }), id: ex.id, reference: ex.reference, orders: await getHeldOrders(a.userId) };
+      return { ok: false, message: t.posTx.held.holdKey };
     }
     throw e;
   }
@@ -109,6 +113,9 @@ export async function holdPosOrder(input: unknown): Promise<HoldResult> {
 export async function resumeHeldOrder(id: unknown): Promise<ResumeResult> {
   const a = await authorize();
   if ("error" in a) return a.error;
+  const t = a.t;
+  const NOT_FOUND = t.posTx.held.notFound;
+  const D = t;
   const hid = heldIdSchema.safeParse(id);
   if (!hid.success) return { ok: false, message: NOT_FOUND };
   const o = await db.posHeldOrder.findFirst({ where: { id: hid.data, createdById: a.userId, status: "HELD" }, include: { items: { orderBy: { id: "asc" } }, tenders: { orderBy: { position: "asc" } } } });
@@ -124,31 +131,33 @@ export async function resumeHeldOrder(id: unknown): Promise<ResumeResult> {
     getDefaultCurrency(),
   ]);
   const problems: string[] = [];
-  if (o.customerId && !customer) problems.push("The customer on this order no longer exists — choose a customer.");
-  if (o.warehouseId && !warehouse) problems.push("The warehouse on this order no longer exists — choose a warehouse.");
+  if (o.customerId && !customer) problems.push(D.posTx.held.resumeCustomer);
+  if (o.warehouseId && !warehouse) problems.push(D.posTx.held.resumeWarehouse);
   const accById = new Map(accountRows.map((a) => [a.id, a]));
   const tenders = saved.map((t) => {
     if (!t.cashBankAccountId) return t;
     const acc = accById.get(t.cashBankAccountId);
-    if (!acc) problems.push("A payment account on this order no longer exists - choose another when paying.");
-    else if (acc.status !== "ACTIVE") problems.push(`${acc.name} is inactive - choose another account when paying.`);
-    else if (currency && acc.currencyId !== currency.id) problems.push(`${acc.name} uses a different currency from the sale - choose another account when paying.`);
+    if (!acc) problems.push(D.posTx.held.resumeAccount);
+    else if (acc.status !== "ACTIVE") problems.push(tr(D, "posTx.held.resumeInactive", { name: acc.name }));
+    else if (currency && acc.currencyId !== currency.id) problems.push(tr(D, "posTx.held.resumeCurrency", { name: acc.name }));
     else return t;
     return { ...t, cashBankAccountId: "" };
   });
   const live = new Set(products.map((p) => p.id));
   const lines = o.items.map((i) => ({ productId: i.productId, code: i.productCode, name: i.productName, quantity: i.quantity.toFixed(3).replace(/\.?0+$/, ""), missing: !live.has(i.productId) }));
-  for (const l of lines) if (l.missing) problems.push(`${l.code} ${l.name} no longer exists — remove it from the cart.`);
+  for (const l of lines) if (l.missing) problems.push(tr(D, "posTx.held.resumeLine", { code: l.code, name: l.name }));
   return { ok: true, order: { id: o.id, reference: o.reference, customerId: customer ? (o.customerId ?? "") : "", warehouseId: warehouse ? (o.warehouseId ?? "") : "", tenders, notes: o.notes ?? "", lines, problems } };
 }
 
 export async function discardHeldOrder(id: unknown): Promise<DiscardResult> {
   const a = await authorize();
   if ("error" in a) return a.error;
+  const t = a.t;
+  const NOT_FOUND = t.posTx.held.notFound;
   const hid = heldIdSchema.safeParse(id);
   if (!hid.success) return { ok: false, message: NOT_FOUND };
   // Conditional: only the creator's still-HELD order; archived (kept for audit), never deleted.
   const r = await db.posHeldOrder.updateMany({ where: { id: hid.data, createdById: a.userId, status: "HELD" }, data: { status: "DISCARDED" } });
   if (r.count !== 1) return { ok: false, message: NOT_FOUND };
-  return { ok: true, message: "Held order discarded", orders: await getHeldOrders(a.userId) };
+  return { ok: true, message: t.posTx.held.discarded, orders: await getHeldOrders(a.userId) };
 }

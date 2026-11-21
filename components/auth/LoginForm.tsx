@@ -4,11 +4,13 @@ import { useState, type ChangeEvent, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import Icon from "@/components/layout/Icon";
+import { useT } from "@/components/i18n/I18nProvider";
 
 type Errors = { email?: string; pw?: string; form?: string };
 
 // Markup mirrors design/Sign In.html (Field / Input / Button / Checkbox from the design system).
 export default function LoginForm() {
+  const t = useT();
   const router = useRouter();
   const [f, setF] = useState({ email: "", pw: "" });
   const [show, setShow] = useState(false);
@@ -24,8 +26,8 @@ export default function LoginForm() {
   async function submit(ev: FormEvent<HTMLFormElement>) {
     ev.preventDefault();
     const n: Errors = {};
-    if (!f.email.trim()) n.email = "Email is required";
-    if (!f.pw) n.pw = "Password is required";
+    if (!f.email.trim()) n.email = t.auth.emailRequired;
+    if (!f.pw) n.pw = t.auth.passwordRequired;
     if (Object.keys(n).length) {
       setE(n);
       return;
@@ -40,7 +42,7 @@ export default function LoginForm() {
       });
       if (!res || res.error) {
         // One generic message: never reveal whether the email exists.
-        setE({ form: "Invalid email or password." });
+        setE({ form: t.auth.invalid });
         setBusy(false);
         return;
       }
@@ -49,7 +51,7 @@ export default function LoginForm() {
       router.replace("/dashboard");
       router.refresh();
     } catch {
-      setE({ form: "Could not sign in. Please try again." });
+      setE({ form: t.auth.failed });
       setBusy(false);
     }
   }
@@ -57,9 +59,9 @@ export default function LoginForm() {
   return (
     <form className="si-box" onSubmit={submit} noValidate aria-busy={busy}>
       <div>
-        <h1 className="t-page-title" style={{ margin: 0 }}>Sign in</h1>
+        <h1 className="t-page-title" style={{ margin: 0 }}>{t.auth.signInTitle}</h1>
         <p className="t-body" style={{ margin: "8px 0 0", color: "var(--text-2)" }}>
-          Enter your account details to continue.
+          {t.auth.signInIntro}
         </p>
       </div>
 
@@ -76,7 +78,7 @@ export default function LoginForm() {
 
       <div className={"sp-field" + (e.email ? " sp-field--error" : "")}>
         <label className="sp-label" htmlFor="si-email">
-          Email<i>*</i>
+          {t.auth.email}<i>*</i>
         </label>
         <div className="sp-group">
           <Icon name="mail" size={18} className="sp-input-icon" />
@@ -87,7 +89,7 @@ export default function LoginForm() {
             type="text"
             inputMode="email"
             autoComplete="email"
-            placeholder="Enter Email"
+            placeholder={t.auth.emailPlaceholder}
             value={f.email}
             onChange={set("email")}
             disabled={busy}
@@ -100,7 +102,7 @@ export default function LoginForm() {
 
       <div className={"sp-field" + (e.pw ? " sp-field--error" : "")}>
         <label className="sp-label" htmlFor="si-password">
-          Password<i>*</i>
+          {t.auth.password}<i>*</i>
         </label>
         <div className="si-pw">
           <div className="sp-group">
@@ -111,7 +113,7 @@ export default function LoginForm() {
               className="sp-input "
               type={show ? "text" : "password"}
               autoComplete="current-password"
-              placeholder="Enter Password"
+              placeholder={t.auth.passwordPlaceholder}
               value={f.pw}
               onChange={set("pw")}
               disabled={busy}
@@ -122,7 +124,7 @@ export default function LoginForm() {
             <button
               type="button"
               className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-              aria-label={show ? "Hide password" : "Show password"}
+              aria-label={show ? t.auth.hidePassword : t.auth.showPassword}
               onClick={() => setShow(!show)}
             >
               <Icon name={show ? "eye-off" : "eye"} size={16} />
@@ -135,7 +137,7 @@ export default function LoginForm() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <label className="sp-check">
           <input type="checkbox" name="remember" disabled={busy} />
-          Remember me
+          {t.auth.remember}
         </label>
         <a
           href="#"
@@ -145,7 +147,7 @@ export default function LoginForm() {
           }}
           style={{ font: "600 14px/20px var(--font-body)" }}
         >
-          Forgot password?
+          {t.auth.forgot}
         </a>
       </div>
 
@@ -156,7 +158,7 @@ export default function LoginForm() {
           style={{ height: "auto", padding: "10px 14px", whiteSpace: "normal" }}
         >
           <Icon name="info" size={16} />
-          Password reset is not available yet.
+          {t.auth.resetUnavailable}
         </div>
       )}
 
@@ -166,7 +168,7 @@ export default function LoginForm() {
         disabled={busy}
         style={{ width: "100%" }}
       >
-        {busy ? "Signing in…" : "Sign In"}
+        {busy ? t.auth.signingIn : t.auth.signIn}
       </button>
     </form>
   );

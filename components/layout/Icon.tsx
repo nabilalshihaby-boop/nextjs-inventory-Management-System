@@ -153,6 +153,7 @@ const ICONS = {
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;
+const DIRECTIONAL = new Set<string>(["arrow-left", "arrow-right", "chevron-left", "chevron-right", "chevrons-left", "chevrons-right", "panel-left-close", "panel-left-open", "log-out", "undo-2"]);
 
 // Decorative by default (aria-hidden), like the design's Icon: buttons carry the aria-label.
 // Stroke is currentColor with Lucide's default 2px stroke, matching the design's mask icons.
@@ -168,5 +169,7 @@ export default function Icon({
   style?: CSSProperties;
 }) {
   const Svg = ICONS[name];
-  return <Svg aria-hidden="true" size={size} className={`sp-icon ${className}`.trim()} style={style} />;
+  // Directional icons are mirrored in right-to-left layouts (see .sp-flip in app/styles.css); universal icons are not.
+  const flip = DIRECTIONAL.has(name) ? " sp-flip" : "";
+  return <Svg aria-hidden="true" size={size} className={`sp-icon${flip} ${className}`.trim()} style={style} />;
 }

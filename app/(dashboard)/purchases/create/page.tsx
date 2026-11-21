@@ -5,9 +5,12 @@ import { auth } from "@/auth";
 import { canManagePurchases, canManageSystemSettings } from "@/lib/roles";
 import { getPurchaseFormData } from "@/lib/purchase-data";
 import { todayLocal } from "@/lib/cash-bank";
+import { getDict } from "@/lib/i18n/server";
 import PurchaseForm from "@/components/purchases/PurchaseForm";
 
-export const metadata: Metadata = { title: "Create Purchase" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).purchases.form.createTitle };
+}
 
 export const instant = false;
 

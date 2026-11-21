@@ -10,7 +10,10 @@ import { canManagePurchases } from "@/lib/roles";
 import { getDefaultCurrency } from "@/lib/settings";
 import { toUnits } from "@/lib/transfers";
 import { calcOrder } from "@/lib/purchase-calc";
-import { formatPurchaseReference, purchaseInputSchema, type PurchaseField, type PurchaseInput } from "@/lib/purchases";
+import { formatPurchaseReference, makePurchaseSchema, type PurchaseField, type PurchaseInput } from "@/lib/purchases";
+import { getDict } from "@/lib/i18n/server";
+import { tr } from "@/lib/i18n/messages";
+import type { Dictionary } from "@/lib/i18n";
 
 // Purchases. Integrity rules (server-side):
 // - OWNER/ADMIN only; auth() is re-read in every action and the role never comes from the client.
@@ -29,17 +32,17 @@ export type PurchaseResult =
 
 const idSchema = z.string().trim().min(1).max(64);
 const MAX_TOTAL = toUnits("999999999999.99", 2);
-const NO_CURRENCY = "No default currency is configured. The Owner must choose one in System Settings before purchases can be recorded.";
 
-async function authorize(): Promise<{ userId: string } | { error: PurchaseResult }> {
+async function authorize(): Promise<{ userId: string; t: Dictionary } | { error: PurchaseResult }> {
   const s = await auth();
-  if (!s?.user?.id) return { error: { ok: false, message: "Your session has expired. Please sign in again." } };
-  if (!canManagePurchases(s.user.role)) return { error: { ok: false, message: "You don't have permission to change purchases." } };
-  return { userId: s.user.id };
+  const t = await getDict();
+  if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
+  if (!canManagePurchases(s.user.role)) return { error: { ok: false, message: t.purchases.err.noPermission } };
+  return { userId: s.user.id, t };
 }
 
-function parse(input: unknown): { ok: true; data: PurchaseInput } | { ok: false; error: PurchaseResult } {
-  const v = purchaseInputSchema.safeParse(input);
+function parse(input: unknown, t: Dictionary): { ok: true; data: PurchaseInput } | { ok: false; error: PurchaseResult } {
+  const v = makePurchaseSchema(t.purchases.val).safeParse(input);
   if (v.success) return { ok: true, data: v.data };
   const fieldErrors: Partial<Record<PurchaseField, string>> = {};
   const itemErrors: Record<string, string> = {};
@@ -49,7 +52,7 @@ function parse(input: unknown): { ok: true; data: PurchaseInput } | { ok: false;
     if (k === "items" && typeof index === "number" && Array.isArray(raw) && typeof raw[index]?.productId === "string") itemErrors[raw[index].productId as string] ??= i.message;
     fieldErrors[(k as PurchaseField) ?? "items"] ??= i.message;
   }
-  return { ok: false, error: { ok: false, message: Object.values(fieldErrors)[0] ?? "Please check the form", fieldErrors, itemErrors } };
+  return { ok: false, error: { ok: false, message: Object.values(fieldErrors)[0] ?? t.common.checkForm, fieldErrors, itemErrors } };
 }
 
 const isKnown = (e: unknown, ...codes: string[]) => e instanceof Prisma.PrismaClientKnownRequestError && codes.includes(e.code);
@@ -86,32 +89,37 @@ function revalidate(id?: string) {
 export async function createPurchase(input: unknown): Promise<PurchaseResult> {
   const a = await authorize();
   if ("error" in a) return a.error;
-  const v = parse(input);
+  const t = a.t;
+  const v = parse(input, t);
   if (!v.ok) return v.error;
   const d = v.data;
   const currency = await getDefaultCurrency();
-  if (!currency) return { ok: false, message: NO_CURRENCY };
+  if (!currency) return { ok: false, message: t.purchases.err.noCurrency };
 
   const [supplier, warehouse, products] = await Promise.all([
     db.supplier.findUnique({ where: { id: d.supplierId }, select: { id: true } }),
     db.warehouse.findUnique({ where: { id: d.warehouseId }, select: { id: true } }),
     db.product.findMany({ where: { id: { in: d.items.map((i) => i.productId) } }, select: { id: true } }),
   ]);
-  if (!supplier) return { ok: false, message: "Choose a valid supplier", fieldErrors: { supplierId: "Choose a valid supplier" } };
-  if (!warehouse) return { ok: false, message: "Choose a valid warehouse", fieldErrors: { warehouseId: "Choose a valid warehouse" } };
+  if (!supplier) return { ok: false, message: t.purchases.err.invalidSupplier, fieldErrors: { supplierId: t.purchases.err.invalidSupplier } };
+  if (!warehouse) return { ok: false, message: t.purchases.err.invalidWarehouse, fieldErrors: { warehouseId: t.purchases.err.invalidWarehouse } };
   const known = new Set(products.map((p) => p.id));
   const missing = d.items.find((i) => !known.has(i.productId));
-  if (missing) return { ok: false, message: "A product in the order no longer exists", fieldErrors: { items: "A product in the order no longer exists" }, itemErrors: { [missing.productId]: "This product no longer exists" } };
+  if (missing) return { ok: false, message: t.purchases.err.productGone, fieldErrors: { items: t.purchases.err.productGone }, itemErrors: { [missing.productId]: t.purchases.err.itemGone } };
 
   // Authoritative totals (server-side).
   const calc = calcOrder(d.items, { orderTaxRate: d.orderTaxRate, discount: d.discount, shipping: d.shipping });
   const badLine = calc.lines.findIndex((l) => l.error);
   if (badLine >= 0) {
     const pid = d.items[badLine].productId;
-    return { ok: false, message: calc.lines[badLine].error!, fieldErrors: { items: calc.lines[badLine].error }, itemErrors: { [pid]: calc.lines[badLine].error! } };
+    const lm = calc.lines[badLine].errorKey ? tr(t, calc.lines[badLine].errorKey!) : calc.lines[badLine].error!;
+    return { ok: false, message: lm, fieldErrors: { items: lm }, itemErrors: { [pid]: lm } };
   }
-  if (calc.error) return { ok: false, message: calc.error, fieldErrors: { discount: calc.error } };
-  if (toUnits(calc.grandTotal, 2) > MAX_TOTAL || toUnits(calc.subtotal, 2) > MAX_TOTAL) return { ok: false, message: "The purchase total is too large", fieldErrors: { items: "The purchase total is too large" } };
+  if (calc.error) {
+    const om = calc.errorKey ? tr(t, calc.errorKey) : calc.error;
+    return { ok: false, message: om, fieldErrors: { discount: om } };
+  }
+  if (toUnits(calc.grandTotal, 2) > MAX_TOTAL || toUnits(calc.subtotal, 2) > MAX_TOTAL) return { ok: false, message: t.purchases.err.totalTooLarge, fieldErrors: { items: t.purchases.err.totalTooLarge } };
 
   try {
     const created = await withRetry(() =>
@@ -159,10 +167,9 @@ export async function createPurchase(input: unknown): Promise<PurchaseResult> {
       }),
     );
     revalidate(created.id);
-    const note = d.status === "RECEIVED" ? " — stock added to the warehouse" : " — no stock added until it is received";
-    return { ok: true, message: `Purchase ${created.reference} created${note}`, id: created.id };
+    return { ok: true, message: tr(t, d.status === "RECEIVED" ? "purchases.ok.createdReceived" : "purchases.ok.createdPending", { ref: created.reference }), id: created.id };
   } catch (e) {
-    if (isKnown(e, "P2003")) return { ok: false, message: "A selected supplier, warehouse or product no longer exists. Refresh and try again." };
+    if (isKnown(e, "P2003")) return { ok: false, message: t.purchases.err.refsGone };
     throw e;
   }
 }
@@ -171,11 +178,12 @@ export async function createPurchase(input: unknown): Promise<PurchaseResult> {
 export async function markPurchaseReceived(id: unknown): Promise<PurchaseResult> {
   const a = await authorize();
   if ("error" in a) return a.error;
+  const t = a.t;
   const pid = idSchema.safeParse(id);
-  if (!pid.success) return { ok: false, message: "Purchase not found" };
+  if (!pid.success) return { ok: false, message: t.purchases.err.notFound };
   const p = await db.purchase.findUnique({ where: { id: pid.data }, select: { id: true, reference: true, status: true } });
-  if (!p) return { ok: false, message: "Purchase not found" };
-  if (p.status === "RECEIVED") return { ok: false, message: `Purchase ${p.reference} has already been received.` };
+  if (!p) return { ok: false, message: t.purchases.err.notFound };
+  if (p.status === "RECEIVED") return { ok: false, message: tr(t, "purchases.err.alreadyReceived", { ref: p.reference }) };
 
   const done = await withRetry(() =>
     db.$transaction(async (tx) => {
@@ -186,7 +194,7 @@ export async function markPurchaseReceived(id: unknown): Promise<PurchaseResult>
       return true;
     }),
   );
-  if (!done) return { ok: false, message: `Purchase ${p.reference} has already been received.` };
+  if (!done) return { ok: false, message: tr(t, "purchases.err.alreadyReceived", { ref: p.reference }) };
   revalidate(p.id);
-  return { ok: true, message: `Purchase ${p.reference} received — stock added to the warehouse` };
+  return { ok: true, message: tr(t, "purchases.ok.received", { ref: p.reference }) };
 }

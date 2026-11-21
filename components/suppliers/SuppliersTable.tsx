@@ -9,6 +9,8 @@ import { ConfirmDeleteModal } from "@/components/ui/Modal";
 import Pagination, { paginate } from "@/components/ui/Pagination";
 import { deleteSupplier } from "@/app/(dashboard)/suppliers/actions";
 import type { SupplierRow } from "@/lib/suppliers";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
 
 // Port of design/Suppliers.html: TableToolbar (search + Import Suppliers + Create Supplier),
 // DataTable (Supplier = name + email / Phone Number / Created On / Action), Pagination and
@@ -18,11 +20,13 @@ import type { SupplierRow } from "@/lib/suppliers";
 // - Import Suppliers: CSV import is not implemented ("Coming soon").
 // Account Statement links to /suppliers/statement for OWNER/ADMIN (it shows purchase and payment
 // amounts); USER sees it disabled with an explanation.
-const IMPORT_SOON = "Import Suppliers is coming soon. CSV import isn't available yet.";
-const STATEMENT_DENIED = "Supplier statements are available to Owners and Administrators.";
 
 export default function SuppliersTable({ rows, canManage, canViewStatement }: { rows: SupplierRow[]; canManage: boolean; canViewStatement: boolean }) {
   const router = useRouter();
+  const T = useT();
+  const S = T.suppliers.list;
+  const IMPORT_SOON = S.importSoon;
+  const STATEMENT_DENIED = S.statementDenied;
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -47,7 +51,7 @@ export default function SuppliersTable({ rows, canManage, canViewStatement }: { 
         toast.success(r.message, { id: "supplier" });
         router.refresh();
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "supplier" });
+        toast.error(T.common.somethingWrong, { id: "supplier" });
       }
     });
   }
@@ -62,8 +66,8 @@ export default function SuppliersTable({ rows, canManage, canViewStatement }: { 
           <Icon name="search" size={18} className="sp-input-icon" />
           <input
             className="sp-input "
-            placeholder="Search"
-            aria-label="Search suppliers"
+            placeholder={S.search}
+            aria-label={S.searchAria}
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
@@ -84,11 +88,11 @@ export default function SuppliersTable({ rows, canManage, canViewStatement }: { 
               onClick={() => comingSoon(IMPORT_SOON)}
             >
               <Icon name="upload" size={18} />
-              Import Suppliers
+              {S.importBtn}
             </button>
             <Link href="/suppliers/create" className="sp-btn sp-btn--primary">
               <Icon name="plus" size={18} />
-              Create Supplier
+              {S.create}
             </Link>
           </>
         )}
@@ -99,10 +103,10 @@ export default function SuppliersTable({ rows, canManage, canViewStatement }: { 
           <table className="sp-table">
             <thead>
               <tr>
-                <th>Supplier</th>
-                <th>Phone Number</th>
-                <th>Created On</th>
-                <th className="num">Action</th>
+                <th>{S.colSupplier}</th>
+                <th>{S.colPhone}</th>
+                <th>{S.colCreated}</th>
+                <th className="num">{S.colAction}</th>
               </tr>
             </thead>
             <tbody>
@@ -111,10 +115,10 @@ export default function SuppliersTable({ rows, canManage, canViewStatement }: { 
                   <td>
                     <div style={{ padding: "6px 0" }}>
                       <div style={{ color: "var(--primary-700)", fontWeight: 600 }}>{r.name}</div>
-                      <div style={{ color: "var(--text-2)" }}>{r.email}</div>
+                      <div style={{ color: "var(--text-2)" }}><bdi dir="ltr">{r.email}</bdi></div>
                     </div>
                   </td>
-                  <td>{r.phoneNumber}</td>
+                  <td><bdi dir="ltr">{r.phoneNumber}</bdi></td>
                   <td>
                     <span className="sp-badge sp-badge--info">{r.createdOn}</span>
                   </td>
@@ -124,8 +128,8 @@ export default function SuppliersTable({ rows, canManage, canViewStatement }: { 
                         <Link
                           href={`/suppliers/statement?supplier=${encodeURIComponent(r.id)}`}
                           className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-                          aria-label={`Account Statement for ${r.name}`}
-                          title="Account Statement"
+                          aria-label={fmt(S.statementAria, { name: r.name })}
+                          title={S.statementTitle}
                           style={{ color: "var(--primary-600)" }}
                         >
                           <Icon name="file-text" size={16} />
@@ -134,7 +138,7 @@ export default function SuppliersTable({ rows, canManage, canViewStatement }: { 
                         <button
                           type="button"
                           className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-                          aria-label={`Account Statement for ${r.name} (not available for your role)`}
+                          aria-label={fmt(S.statementDeniedAria, { name: r.name })}
                           aria-disabled="true"
                           title={STATEMENT_DENIED}
                           style={{ color: "var(--primary-600)", ...disabledStyle }}
@@ -148,7 +152,7 @@ export default function SuppliersTable({ rows, canManage, canViewStatement }: { 
                           <Link
                             href={`/suppliers/${encodeURIComponent(r.id)}/edit`}
                             className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-                            aria-label={`Edit ${r.name}`}
+                            aria-label={fmt(S.editAria, { name: r.name })}
                             style={{ color: "var(--primary-600)" }}
                           >
                             <Icon name="pencil" size={16} />
@@ -156,7 +160,7 @@ export default function SuppliersTable({ rows, canManage, canViewStatement }: { 
                           <button
                             type="button"
                             className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-                            aria-label={`Delete ${r.name}`}
+                            aria-label={fmt(S.deleteAria, { name: r.name })}
                             style={{ color: "var(--danger-500)" }}
                             onClick={() => setDel(r)}
                           >
@@ -173,11 +177,11 @@ export default function SuppliersTable({ rows, canManage, canViewStatement }: { 
                   <td colSpan={4} style={{ textAlign: "center", color: "var(--text-2)" }}>
                     {rows.length === 0 ? (
                       <span>
-                        <b style={{ color: "var(--text-1)" }}>No suppliers yet</b>
-                        {canManage ? " — use Create Supplier to add your first supplier." : "."}
+                        <b style={{ color: "var(--text-1)" }}>{S.emptyTitle}</b>
+                        {canManage ? S.emptyHint : S.emptyNoManage}
                       </span>
                     ) : (
-                      "No suppliers match your search."
+                      S.noMatch
                     )}
                   </td>
                 </tr>
@@ -201,7 +205,7 @@ export default function SuppliersTable({ rows, canManage, canViewStatement }: { 
       </div>
 
       {del && canManage && (
-        <ConfirmDeleteModal itemType="supplier" itemName={del.name} busy={pending} onCancel={() => setDel(null)} onConfirm={confirmDelete} />
+        <ConfirmDeleteModal itemType={S.deleteType} itemName={del.name} busy={pending} onCancel={() => setDel(null)} onConfirm={confirmDelete} />
       )}
     </>
   );

@@ -8,9 +8,12 @@ import { formatMoney } from "@/lib/money";
 import { canManageExpenses } from "@/lib/roles";
 import { getSystemSettings } from "@/lib/settings";
 import type { ExpenseRow } from "@/lib/expenses";
+import { getDict, getLocale } from "@/lib/i18n/server";
 import ExpensesTable from "@/components/expenses/ExpensesTable";
 
-export const metadata: Metadata = { title: "Expenses" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).expenses.list.title };
+}
 
 export const instant = false;
 
@@ -22,6 +25,7 @@ export default async function ExpensesPage() {
   if (!session?.user?.id) redirect("/");
   if (!canManageExpenses(session.user.role)) redirect("/dashboard");
 
+    const locale = await getLocale();
   const [expenses, settings] = await Promise.all([
     db.expense.findMany({
       where: { deletedAt: null },
@@ -48,7 +52,7 @@ export default async function ExpensesPage() {
     category: e.category.name,
     account: e.cashBankAccount.name,
     amount: formatMoney(e.amount.toFixed(2), { ...e.cashBankAccount.currency, right }), // the paying account's currency
-    createdOn: formatDateTime(e.createdAt, settings?.dateFormat),
+    createdOn: formatDateTime(e.createdAt, settings?.dateFormat, locale),
   }));
   return <ExpensesTable rows={rows} />;
 }

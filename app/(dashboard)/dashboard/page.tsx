@@ -3,37 +3,45 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import Icon, { type IconName } from "@/components/layout/Icon";
 import DashboardChart from "@/components/dashboard/DashboardChart";
+import { getDict } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n/config";
+import type { Dictionary } from "@/lib/i18n";
 
 // Converted from design/Dashboard.html — main-area content only.
 // Sidebar, Topbar, Footer and <main className="bp-content"> come from app/(dashboard)/layout.tsx.
 // All figures below are the design's demo data; replace them with real queries later.
 
-export const metadata: Metadata = { title: "Dashboard" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).nav.dash };
+}
+
+export const instant = false;
 
 const egp = (n: number) =>
   "EGP " + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 type Tone = "teal" | "green" | "blue" | "amber" | "violet" | "rose" | "cyan" | "red";
 
-const TILES: { tone: Tone; icon: IconName; label: string; href: string }[] = [
-  { tone: "teal", icon: "shopping-cart", label: "Sales", href: "/sales" },
-  { tone: "green", icon: "package-plus", label: "Purchases", href: "/purchases" },
-  { tone: "blue", icon: "arrow-right", label: "Sales Returns", href: "/sales/returns" },
-  { tone: "amber", icon: "arrow-left", label: "Purchases Returns", href: "/purchases/returns" },
-  { tone: "violet", icon: "dollar-sign", label: "Today Total Sales", href: "/sales" },
-  { tone: "rose", icon: "banknote", label: "Today Total Received(Sales)", href: "/sales" },
-  { tone: "cyan", icon: "shopping-cart", label: "Today Total Purchases", href: "/purchases" },
-  { tone: "red", icon: "circle-minus", label: "Today Total Expense", href: "/expenses" },
+type TileKey = keyof Dictionary["dash"]["tiles"];
+const TILES: { tone: Tone; icon: IconName; key: TileKey; href: string }[] = [
+  { tone: "teal", icon: "shopping-cart", key: "sales", href: "/sales" },
+  { tone: "green", icon: "package-plus", key: "purchases", href: "/purchases" },
+  { tone: "blue", icon: "arrow-right", key: "salesReturns", href: "/sales/returns" },
+  { tone: "amber", icon: "arrow-left", key: "purchasesReturns", href: "/purchases/returns" },
+  { tone: "violet", icon: "dollar-sign", key: "todaySales", href: "/sales" },
+  { tone: "rose", icon: "banknote", key: "todayReceived", href: "/sales" },
+  { tone: "cyan", icon: "shopping-cart", key: "todayPurchases", href: "/purchases" },
+  { tone: "red", icon: "circle-minus", key: "todayExpense", href: "/expenses" },
 ];
 
 // design/customer-data.js totals (12 customers; no session payments recorded → collected = 0)
 const RECEIVABLE_OUT = 365080;
 const CUSTOMER_PAID = 367700;
 const CUSTOMER_COUNT = 12;
-const RECEIVABLES: { tone: Tone; icon: IconName; value: number; label: string; note: string }[] = [
-  { tone: "teal", icon: "hand-coins", value: RECEIVABLE_OUT, label: "Total Accounts Receivable", note: "Sales − Collections − Returns" },
-  { tone: "green", icon: "banknote", value: CUSTOMER_PAID, label: "Total Customer Collections", note: "Payments received" },
-  { tone: "red", icon: "circle-minus", value: RECEIVABLE_OUT, label: "Outstanding Customer Balances", note: `${CUSTOMER_COUNT} customers with open statements` },
+const RECEIVABLES: { tone: Tone; icon: IconName; value: number; key: "total" | "collections" | "outstanding" }[] = [
+  { tone: "teal", icon: "hand-coins", value: RECEIVABLE_OUT, key: "total" },
+  { tone: "green", icon: "banknote", value: CUSTOMER_PAID, key: "collections" },
+  { tone: "red", icon: "circle-minus", value: RECEIVABLE_OUT, key: "outstanding" },
 ];
 
 const WEEK = ["2026-05-20", "2026-05-21", "2026-05-22", "2026-05-23", "2026-05-24", "2026-05-25", "2026-05-26"];
@@ -112,25 +120,28 @@ function Card({ title, center, action, children }: { title: string; center?: boo
 
 const tileLinkStyle = { textDecoration: "none", display: "block" } as const;
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const D = (await getDict()).dash;
+  const recNote = { total: D.receivables.totalNote, collections: D.receivables.collectionsNote, outstanding: fmt(D.receivables.outstandingNote, { n: CUSTOMER_COUNT }) };
+  const recLabel = { total: D.receivables.total, collections: D.receivables.collections, outstanding: D.receivables.outstanding };
   return (
     <div className="bp-dashboard">
       <div className="sp-kpi-grid">
         {TILES.map((t) => (
-          <Link key={t.label} href={t.href} aria-label={t.label} style={tileLinkStyle}>
-            <StatCard tone={t.tone} icon={t.icon} value="EGP 0.00" label={t.label} />
+          <Link key={t.key} href={t.href} aria-label={D.tiles[t.key]} style={tileLinkStyle}>
+            <StatCard tone={t.tone} icon={t.icon} value="EGP 0.00" label={D.tiles[t.key]} />
           </Link>
         ))}
       </div>
 
       <div style={{ margin: "32px 0 0" }}>
         <h2 className="t-section-title" style={{ margin: "0 0 16px" }}>
-          Customer Receivables
+          {D.receivables.title}
         </h2>
         <div className="sp-kpi-grid" style={{ gridTemplateColumns: "repeat(3,minmax(0,1fr))" }}>
           {RECEIVABLES.map((t) => (
-            <Link key={t.label} href="/customer-statement" aria-label={t.label} style={tileLinkStyle}>
-              <StatCard tone={t.tone} icon={t.icon} value={egp(t.value)} label={t.label} note={t.note} />
+            <Link key={t.key} href="/customer-statement" aria-label={recLabel[t.key]} style={tileLinkStyle}>
+              <StatCard tone={t.tone} icon={t.icon} value={egp(t.value)} label={recLabel[t.key]} note={recNote[t.key]} />
             </Link>
           ))}
         </div>

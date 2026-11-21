@@ -9,7 +9,10 @@ import { formatMoney, formatQuantity } from "@/lib/money";
 import { getSystemSettings } from "@/lib/settings";
 import { canManagePurchaseReturns } from "@/lib/roles";
 import { calcReturn } from "@/lib/purchase-return-calc";
-import { formatPurchaseReturnReference, purchaseReturnInputSchema, type PurchaseReturnField } from "@/lib/purchase-returns";
+import { formatPurchaseReturnReference, makePurchaseReturnSchema, type PurchaseReturnField } from "@/lib/purchase-returns";
+import { getDict } from "@/lib/i18n/server";
+import { LocalizedError, errorMessage, tr, type Vars } from "@/lib/i18n/messages";
+import type { Dictionary } from "@/lib/i18n";
 
 // Purchase Returns. Integrity rules (server-side, all inside ONE transaction):
 // - OWNER/ADMIN only; auth() is re-read and the role never comes from the client.
@@ -33,32 +36,34 @@ export type PurchaseReturnResult =
   | { ok: true; message: string; id?: string }
   | { ok: false; message: string; fieldErrors?: Partial<Record<PurchaseReturnField, string>>; itemErrors?: Record<string, string> };
 
-class ReturnError extends Error {
-  constructor(message: string, readonly field?: PurchaseReturnField, readonly itemId?: string) {
-    super(message);
+class ReturnError extends LocalizedError {
+  constructor(key: string, vars: Vars, readonly field?: PurchaseReturnField, itemId?: string) {
+    super(key, vars, itemId);
   }
 }
-const fail = (message: string, field?: PurchaseReturnField, itemId?: string): never => {
-  throw new ReturnError(message, field, itemId);
+const fail = (key: string, vars: Vars = {}, field?: PurchaseReturnField, itemId?: string): never => {
+  throw new ReturnError(key, vars, field, itemId);
 };
 const isKnown = (e: unknown, ...codes: string[]) => e instanceof Prisma.PrismaClientKnownRequestError && codes.includes(e.code);
 const dateOnly = (v: string) => new Date(`${v}T00:00:00.000Z`);
 
-async function authorize(): Promise<{ userId: string } | { error: PurchaseReturnResult }> {
+async function authorize(): Promise<{ userId: string; t: Dictionary } | { error: PurchaseReturnResult }> {
   const s = await auth();
-  if (!s?.user?.id) return { error: { ok: false, message: "Your session has expired. Please sign in again." } };
-  if (!canManagePurchaseReturns(s.user.role)) return { error: { ok: false, message: "You don't have permission to create purchase returns." } };
-  return { userId: s.user.id };
+  const t = await getDict();
+  if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
+  if (!canManagePurchaseReturns(s.user.role)) return { error: { ok: false, message: t.purchaseReturns.err.noPermission } };
+  return { userId: s.user.id, t };
 }
 
 export async function createPurchaseReturn(input: unknown): Promise<PurchaseReturnResult> {
   const a = await authorize();
   if ("error" in a) return a.error;
-  const v = purchaseReturnInputSchema.safeParse(input);
+  const t = a.t;
+  const v = makePurchaseReturnSchema(t.purchaseReturns.val, t.purchases.val).safeParse(input);
   if (!v.success) {
     const fieldErrors: Partial<Record<PurchaseReturnField, string>> = {};
     for (const i of v.error.issues) fieldErrors[(i.path[0] as PurchaseReturnField) ?? "items"] ??= i.message;
-    return { ok: false, message: Object.values(fieldErrors)[0] ?? "Please check the form", fieldErrors };
+    return { ok: false, message: Object.values(fieldErrors)[0] ?? t.common.checkForm, fieldErrors };
   }
   const d = v.data;
   const settings = await getSystemSettings();
@@ -69,7 +74,7 @@ export async function createPurchaseReturn(input: unknown): Promise<PurchaseRetu
         async (tx) => {
           // 1. Lock the purchase, then re-read it (current committed data only).
           const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM purchases WHERE id = ${d.purchaseId} FOR UPDATE`;
-          if (!locked.length) fail("Choose a received purchase", "purchaseId");
+          if (!locked.length) fail("purchaseReturns.val.choosePurchase", {}, "purchaseId");
           const p = await tx.purchase.findUniqueOrThrow({
             where: { id: d.purchaseId },
             select: {
@@ -80,8 +85,8 @@ export async function createPurchaseReturn(input: unknown): Promise<PurchaseRetu
               items: { select: { id: true, productId: true, quantity: true, unitCost: true, netUnitCost: true, taxType: true, taxRate: true, discountType: true, discountValue: true, discountAmount: true, taxAmount: true, subtotal: true, product: { select: { code: true, name: true } } } },
             },
           });
-          if (p.status !== "RECEIVED") fail(`${p.reference} hasn't been received, so nothing can be returned from it.`, "purchaseId");
-          if (dateOnly(d.returnDate) < p.purchaseDate) fail(`The return date can't be before the purchase date of ${p.reference}.`, "returnDate");
+          if (p.status !== "RECEIVED") fail("purchaseReturns.err.notReceived", { ref: p.reference }, "purchaseId");
+          if (dateOnly(d.returnDate) < p.purchaseDate) fail("purchaseReturns.err.beforePurchase", { ref: p.reference }, "returnDate");
 
           // 2. Everything already returned from this purchase.
           const [priorByLine, priorSub] = await Promise.all([
@@ -93,11 +98,11 @@ export async function createPurchaseReturn(input: unknown): Promise<PurchaseRetu
 
           // 3. Lines: must belong to this purchase and stay within the returnable quantity.
           const lines = d.items.map((it) => {
-            const pi = byId.get(it.purchaseItemId) ?? fail("A return line doesn't belong to this purchase.", "items", it.purchaseItemId);
+            const pi = byId.get(it.purchaseItemId) ?? fail("purchaseReturns.err.wrongPurchase", {}, "items", it.purchaseItemId);
             const returned = returnedOf.get(pi.id) ?? new Prisma.Decimal(0);
             const returnable = new Prisma.Decimal(pi.quantity).minus(returned);
             if (new Prisma.Decimal(it.quantity).gt(returnable)) {
-              fail(`Only ${formatQuantity(returnable.toFixed(3))} of ${pi.product.code} ${pi.product.name} can still be returned (purchased ${formatQuantity(pi.quantity.toFixed(3))}, already returned ${formatQuantity(returned.toFixed(3))}).`, "items", pi.id);
+              fail("purchaseReturns.err.exceeds", { returnable: formatQuantity(returnable.toFixed(3)), code: pi.product.code, name: pi.product.name, bought: formatQuantity(pi.quantity.toFixed(3)), returned: formatQuantity(returned.toFixed(3)) }, "items", pi.id);
             }
             return { pi, quantity: it.quantity, returned: returned.toFixed(3) };
           });
@@ -113,12 +118,8 @@ export async function createPurchaseReturn(input: unknown): Promise<PurchaseRetu
           const due = new Prisma.Decimal(p.grandTotal).minus(p.paidAmount).minus(priorSub._sum.grandTotal ?? 0);
           if (new Prisma.Decimal(calc.grandTotal).gt(due)) {
             const m = (x: Prisma.Decimal) => formatMoney(x.toFixed(2), { code: "", symbol: p.currency.symbol, right: !!settings?.currencyIconRight });
-            fail(
-              due.gt(0)
-                ? `This return is worth ${m(new Prisma.Decimal(calc.grandTotal))} but only ${m(due)} is still unpaid on ${p.reference}. Refunds and supplier credit for paid amounts aren't available yet.`
-                : `${p.reference} is already fully paid. Returns of paid purchases need a supplier refund/credit, which isn't available yet.`,
-              "items",
-            );
+            if (due.gt(0)) fail("purchaseReturns.err.dueExceeded", { worth: m(new Prisma.Decimal(calc.grandTotal)), due: m(due), ref: p.reference }, "items");
+            fail("purchaseReturns.err.fullyPaid", { ref: p.reference }, "items");
           }
 
           // 5. Deduct stock — conditional, never below zero (stable lock order by product).
@@ -126,7 +127,7 @@ export async function createPurchaseReturn(input: unknown): Promise<PurchaseRetu
             const r = await tx.productStock.updateMany({ where: { productId: l.pi.productId, warehouseId: p.warehouseId, quantity: { gte: l.quantity } }, data: { quantity: { decrement: l.quantity } } });
             if (r.count !== 1) {
               const s = await tx.productStock.findUnique({ where: { productId_warehouseId: { productId: l.pi.productId, warehouseId: p.warehouseId } }, select: { quantity: true } });
-              fail(`Not enough stock of ${l.pi.product.code} ${l.pi.product.name} in ${p.warehouse.name} to return ${formatQuantity(new Prisma.Decimal(l.quantity).toFixed(3))} (only ${formatQuantity((s?.quantity ?? new Prisma.Decimal(0)).toFixed(3))} in stock).`, "items", l.pi.id);
+              fail("purchaseReturns.err.noStock", { code: l.pi.product.code, name: l.pi.product.name, warehouse: p.warehouse.name, qty: formatQuantity(new Prisma.Decimal(l.quantity).toFixed(3)), available: formatQuantity((s?.quantity ?? new Prisma.Decimal(0)).toFixed(3)) }, "items", l.pi.id);
             }
           }
 
@@ -175,11 +176,14 @@ export async function createPurchaseReturn(input: unknown): Promise<PurchaseRetu
       revalidatePath("/purchases");
       revalidatePath(`/purchases/${created.purchaseId}`);
       revalidatePath("/products");
-      return { ok: true, message: `Purchase return ${created.reference} created — stock deducted and the due of ${created.purchaseRef} reduced`, id: created.id };
+      return { ok: true, message: tr(t, "purchaseReturns.ok.created", { ref: created.reference, purchase: created.purchaseRef }), id: created.id };
     } catch (e) {
-      if (e instanceof ReturnError) return { ok: false, message: e.message, fieldErrors: e.field ? { [e.field]: e.message } : undefined, itemErrors: e.itemId ? { [e.itemId]: e.message } : undefined };
+      if (e instanceof ReturnError) {
+        const message = errorMessage(t, e);
+        return { ok: false, message, fieldErrors: e.field ? { [e.field]: message } : undefined, itemErrors: e.itemId ? { [e.itemId]: message } : undefined };
+      }
       if (attempt < 4 && isKnown(e, "P2034")) continue; // deadlock / write conflict → retry
-      if (isKnown(e, "P2003")) return { ok: false, message: "The purchase or a product no longer exists. Refresh and try again." };
+      if (isKnown(e, "P2003")) return { ok: false, message: t.purchaseReturns.err.refsGone };
       throw e;
     }
   }

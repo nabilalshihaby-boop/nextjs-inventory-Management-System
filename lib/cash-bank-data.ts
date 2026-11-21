@@ -4,14 +4,31 @@ import { db } from "@/lib/db";
 import { computeBalances } from "@/lib/cash-bank-server";
 import { formatDateOnly } from "@/lib/format";
 import { getDefaultCurrency, getSystemSettings } from "@/lib/settings";
+import { fmt } from "@/lib/i18n/config";
+import type { Dictionary } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n/config";
 import type { AccountOption, AccountRow, CurrencyView, TxRow, TxTypeValue } from "@/lib/cash-bank";
 
-const time = (d: Date) => {
+const timeOf = (d: Date, locale: Locale) => {
   const h = d.getHours();
-  return `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+  const mer = locale === "ar" ? (h < 12 ? "ص" : "م") : h < 12 ? "AM" : "PM";
+  return `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, "0")} ${mer}`;
 };
-const describe = (t: { type: TxTypeValue; purpose: string | null; notes: string | null }) =>
-  t.type === "TRANSFER" ? t.notes || "Transfer between accounts" : [t.purpose, t.notes].filter(Boolean).join(" · ") || (t.type === "DEPOSIT" ? "Deposit" : "Withdrawal");
+/** Display name of a stored ledger purpose (the stored value never changes; unknown values are shown as stored). */
+const purposeLabel = (t: Dictionary, purpose: string) => (t.finance.purposes as Record<string, string>)[purpose] ?? purpose;
+/** Display-only translation of the English notes the system itself writes into the ledger (stored text never changes). */
+const displayNote = (t: Dictionary, notes: string | null): string | null => {
+  if (!notes) return notes;
+  const mv = notes.match(/^(Cash In|Cash Out) · (RS_\S+) · ([\s\S]*)$/);
+  if (mv) return `${t.register.movement[mv[1] === "Cash In" ? "CASH_IN" : "CASH_OUT"]} · ${mv[2]} · ${mv[3]}`;
+  const rv = notes.match(/^Reversal of (.+) \((\S+) (updated|deleted)\)$/);
+  if (rv) return fmt(t.finance.describe.reversal, { tx: rv[1] === "the original payment" ? t.finance.describe.reversalOriginal : rv[1], ref: rv[2], why: rv[3] === "updated" ? t.finance.describe.whyUpdated : t.finance.describe.whyDeleted });
+  return notes.replace(/ · Ref (\S[^·]*)$/, (_m, r) => ` · ${t.finance.describe.refPrefix} ${r}`);
+};
+const makeDescribe = (t: Dictionary) => (x: { type: TxTypeValue; purpose: string | null; notes: string | null }) => {
+  const notes = displayNote(t, x.notes);
+  return x.type === "TRANSFER" ? notes || t.finance.describe.transfer : [x.purpose ? purposeLabel(t, x.purpose) : "", notes].filter(Boolean).join(" · ") || (x.type === "DEPOSIT" ? t.finance.describe.deposit : t.finance.describe.withdrawal);
+};
 
 async function base() {
   const [settings, defaultCurrency] = await Promise.all([getSystemSettings(), getDefaultCurrency()]);
@@ -21,8 +38,9 @@ async function base() {
   return { dateFormat: settings?.dateFormat, view, defaultCurrency: dc ? { id: dc.id, ...view(dc) } : null };
 }
 
-export async function getAccountsView(): Promise<{ accounts: AccountRow[]; defaultCurrency: (CurrencyView & { id: string }) | null }> {
+export async function getAccountsView(T: Dictionary): Promise<{ accounts: AccountRow[]; defaultCurrency: (CurrencyView & { id: string }) | null }> {
   const { dateFormat, view, defaultCurrency } = await base();
+  const describe = makeDescribe(T);
   const accounts = await db.cashBankAccount.findMany({ orderBy: [{ status: "asc" }, { name: "asc" }], include: { currency: { select: { id: true, code: true, symbol: true, name: true } } } });
   const balances = await computeBalances(db, accounts.map((a) => a.id));
   const recent = await Promise.all(
@@ -53,7 +71,7 @@ export async function getAccountsView(): Promise<{ accounts: AccountRow[]; defau
         const out = t.type === "WITHDRAWAL" || (t.type === "TRANSFER" && t.accountId === a.id);
         return {
           date: formatDateOnly(t.transactionDate, dateFormat),
-          description: t.type === "TRANSFER" ? (out ? `Transfer to ${t.destinationAccount?.name}` : `Transfer from ${t.account.name}`) : describe(t),
+          description: t.type === "TRANSFER" ? (out ? fmt(T.finance.describe.transferTo, { account: t.destinationAccount?.name ?? "" }) : fmt(T.finance.describe.transferFrom, { account: t.account.name })) : describe(t),
           reference: t.reference,
           direction: out ? "out" : "in",
           amount: t.amount.toFixed(2),
@@ -64,8 +82,9 @@ export async function getAccountsView(): Promise<{ accounts: AccountRow[]; defau
 }
 
 /** The whole ledger with running balances (per account, by date then entry order). */
-export async function getLedgerView(): Promise<{ rows: TxRow[]; accounts: AccountOption[]; defaultCurrency: (CurrencyView & { id: string }) | null }> {
+export async function getLedgerView(T: Dictionary, locale: Locale): Promise<{ rows: TxRow[]; accounts: AccountOption[]; defaultCurrency: (CurrencyView & { id: string }) | null }> {
   const { dateFormat, view, defaultCurrency } = await base();
+  const describe = makeDescribe(T);
   const [accounts, txs] = await Promise.all([
     db.cashBankAccount.findMany({ orderBy: { name: "asc" }, include: { currency: { select: { code: true, symbol: true, name: true } } } }),
     db.cashBankTransaction.findMany({ orderBy: [{ transactionDate: "asc" }, { number: "asc" }] }),
@@ -88,7 +107,7 @@ export async function getLedgerView(): Promise<{ rows: TxRow[]; accounts: Accoun
       number: t.number,
       reference: t.reference,
       date: t.transactionDate.toISOString().slice(0, 10),
-      when: `${formatDateOnly(t.transactionDate, dateFormat)} · ${time(t.createdAt)}`,
+      when: `${formatDateOnly(t.transactionDate, dateFormat)} · ${timeOf(t.createdAt, locale)}`,
       type: t.type,
       accountId: src.id,
       accountName: src.name,
@@ -102,7 +121,7 @@ export async function getLedgerView(): Promise<{ rows: TxRow[]; accounts: Accoun
       toBalanceAfter: toAfter?.toFixed(2) ?? null,
       paymentMethod: t.paymentMethod ?? "",
       purpose: t.purpose ?? "",
-      notes: t.notes ?? "",
+      notes: displayNote(T, t.notes) ?? "",
       currency: view(src.currency),
     };
   });

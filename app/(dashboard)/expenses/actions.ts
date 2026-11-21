@@ -6,10 +6,13 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
-import { LedgerError, appendLedgerRow, assertChronology, assertSufficient, dateOnly, ledgerReject, ledgerTxOptions, lockAccounts, type LockedAccount, type Tx } from "@/lib/cash-bank-ledger";
+import { LedgerError, appendLedgerRow, assertChronology, assertSufficient, dateOnly, ledgerFail, ledgerTxOptions, lockAccounts, type LockedAccount, type Tx } from "@/lib/cash-bank-ledger";
+import { getDict } from "@/lib/i18n/server";
+import { tr } from "@/lib/i18n/messages";
+import type { Dictionary } from "@/lib/i18n";
 import { canManageExpenses } from "@/lib/roles";
 import { getDefaultCurrency } from "@/lib/settings";
-import { EXPENSE_PURPOSE, EXPENSE_REVERSAL_PURPOSE, expenseInputSchema, formatExpenseReference, type ExpenseField, type ExpenseInput } from "@/lib/expenses";
+import { EXPENSE_PURPOSE, EXPENSE_REVERSAL_PURPOSE, makeExpenseSchema, formatExpenseReference, type ExpenseField, type ExpenseInput } from "@/lib/expenses";
 
 // Expenses. Financial-integrity rules (all server-side, using the shared ledger rules in
 // lib/cash-bank-ledger.ts — the same locking, overdraft and backdating checks as Cash & Bank):
@@ -29,39 +32,37 @@ import { EXPENSE_PURPOSE, EXPENSE_REVERSAL_PURPOSE, expenseInputSchema, formatEx
 export type ExpenseResult = { ok: true; message: string; reference?: string } | { ok: false; message: string; fieldErrors?: Partial<Record<ExpenseField, string>> };
 
 const idSchema = z.string().trim().min(1).max(64);
-const NOT_FOUND = "Expense not found (it may have been deleted)";
-const NO_CURRENCY = "No default currency is configured. The Owner must choose one in System Settings before expenses can be recorded.";
-
-async function authorize(): Promise<{ userId: string } | { error: ExpenseResult }> {
+async function authorize(): Promise<{ userId: string; t: Dictionary } | { error: ExpenseResult }> {
   const s = await auth();
-  if (!s?.user?.id) return { error: { ok: false, message: "Your session has expired. Please sign in again." } };
-  if (!canManageExpenses(s.user.role)) return { error: { ok: false, message: "You don't have permission to change expenses." } };
-  return { userId: s.user.id };
+  const t = await getDict();
+  if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
+  if (!canManageExpenses(s.user.role)) return { error: { ok: false, message: t.expenses.err.noPermission } };
+  return { userId: s.user.id, t };
 }
 
-function parse(input: unknown): { ok: true; data: ExpenseInput } | { ok: false; error: ExpenseResult } {
-  const v = expenseInputSchema.safeParse(input);
+function parse(input: unknown, t: Dictionary): { ok: true; data: ExpenseInput } | { ok: false; error: ExpenseResult } {
+  const v = makeExpenseSchema(t.expenses.val, t.finance.val).safeParse(input);
   if (v.success) return { ok: true, data: v.data };
   const fieldErrors: Partial<Record<ExpenseField, string>> = {};
   for (const i of v.error.issues) fieldErrors[i.path[0] as ExpenseField] ??= i.message;
-  return { ok: false, error: { ok: false, message: Object.values(fieldErrors)[0] ?? "Please check the form", fieldErrors } };
+  return { ok: false, error: { ok: false, message: Object.values(fieldErrors)[0] ?? t.common.checkForm, fieldErrors } };
 }
 
 /** Warehouse and category must exist (the account is checked under its lock inside the transaction). */
-async function checkRefs(d: ExpenseInput): Promise<ExpenseResult | null> {
+async function checkRefs(d: ExpenseInput, t: Dictionary): Promise<ExpenseResult | null> {
   const [w, c] = await Promise.all([
     db.warehouse.findUnique({ where: { id: d.warehouseId }, select: { id: true } }),
     db.expenseCategory.findUnique({ where: { id: d.categoryId }, select: { id: true } }),
   ]);
-  if (!w) return { ok: false, message: "Choose a valid warehouse", fieldErrors: { warehouseId: "Choose a valid warehouse" } };
-  if (!c) return { ok: false, message: "Choose a valid expense category", fieldErrors: { categoryId: "Choose a valid expense category" } };
+  if (!w) return { ok: false, message: t.expenses.err.invalidWarehouse, fieldErrors: { warehouseId: t.expenses.err.invalidWarehouse } };
+  if (!c) return { ok: false, message: t.expenses.err.invalidCategory, fieldErrors: { categoryId: t.expenses.err.invalidCategory } };
   return null;
 }
 
 const isKnown = (e: unknown, ...codes: string[]) => e instanceof Prisma.PrismaClientKnownRequestError && codes.includes(e.code);
 const FIELD: Record<string, ExpenseField> = { amount: "amount", transactionDate: "expenseDate", expenseDate: "expenseDate", accountId: "cashBankAccountId", cashBankAccountId: "cashBankAccountId" };
 
-async function run(fn: (tx: Tx) => Promise<string>): Promise<{ ok: true; message: string } | { ok: false; error: ExpenseResult }> {
+async function run(t: Dictionary, fn: (tx: Tx) => Promise<string>): Promise<{ ok: true; message: string } | { ok: false; error: ExpenseResult }> {
   try {
     const message = await db.$transaction(fn, ledgerTxOptions);
     revalidatePath("/expenses");
@@ -69,21 +70,22 @@ async function run(fn: (tx: Tx) => Promise<string>): Promise<{ ok: true; message
     revalidatePath("/finance/transactions");
     return { ok: true, message };
   } catch (e) {
-    if (e instanceof LedgerError) {
+        if (e instanceof LedgerError) {
       const field = e.field ? FIELD[e.field] : undefined;
-      return { ok: false, error: { ok: false, message: e.message, fieldErrors: field ? { [field]: e.message } : undefined } };
+      const message = e.i18n ? tr(t, e.i18n.key, e.i18n.vars) : e.message;
+      return { ok: false, error: { ok: false, message, fieldErrors: field ? { [field]: message } : undefined } };
     }
-    if (isKnown(e, "P2034")) return { ok: false, error: { ok: false, message: "The account was busy. Please try again." } };
-    if (isKnown(e, "P2003")) return { ok: false, error: { ok: false, message: "A selected warehouse, category or account no longer exists. Refresh and try again." } };
+    if (isKnown(e, "P2034")) return { ok: false, error: { ok: false, message: t.finance.err.busy } };
+    if (isKnown(e, "P2003")) return { ok: false, error: { ok: false, message: t.expenses.err.refsGone } };
     throw e;
   }
 }
 
 /** The account the expense is paid from: must exist, be active and use the default currency. */
 function payingAccount(acc: LockedAccount | undefined, currencyId: string): LockedAccount {
-  if (!acc) return ledgerReject("Choose a valid cash/bank account", "cashBankAccountId");
-  if (acc.status !== "ACTIVE") ledgerReject(`${acc.name} is inactive and can't be used for new transactions.`, "cashBankAccountId");
-  if (acc.currencyId !== currencyId) ledgerReject(`${acc.name} doesn't use the default currency, so it can't pay this expense.`, "cashBankAccountId");
+    if (!acc) return ledgerFail("finance.err.invalidAccount", {}, "cashBankAccountId");
+  if (acc.status !== "ACTIVE") ledgerFail("finance.err.inactiveUse", { name: acc.name }, "cashBankAccountId");
+  if (acc.currencyId !== currencyId) ledgerFail("expenses.err.notDefaultCurrency", { name: acc.name }, "cashBankAccountId");
   return acc;
 }
 const method = (acc: LockedAccount) => (acc.type === "CASH" ? "Cash" : "Bank Transfer");
@@ -111,13 +113,13 @@ async function lockExpense(tx: Tx, id: string) {
     where: { id },
     select: { id: true, reference: true, expenseDate: true, amount: true, cashBankAccountId: true, deletedAt: true, activeTransaction: { select: { reference: true } } },
   });
-  if (!e || e.deletedAt) ledgerReject(NOT_FOUND);
+  if (!e || e.deletedAt) ledgerFail("expenses.err.notFound");
   return e!;
 }
 
 /** Reversal DEPOSIT of the original amount into the original account, dated on the original date. */
 async function reverse(tx: Tx, orig: Awaited<ReturnType<typeof lockExpense>>, acc: LockedAccount, why: "updated" | "deleted", userId: string) {
-  if (acc.status !== "ACTIVE") ledgerReject(`${acc.name} is inactive, so the original payment can't be reversed into it. Reactivate the account first.`, "cashBankAccountId");
+  if (acc.status !== "ACTIVE") ledgerFail("expenses.err.reverseInactive", { name: acc.name }, "cashBankAccountId");
   await assertChronology(tx, acc, orig.expenseDate, new Prisma.Decimal(orig.amount)); // money in: always passes
   return appendLedgerRow(tx, "DEPOSIT", {
     transactionDate: orig.expenseDate,
@@ -134,15 +136,16 @@ async function reverse(tx: Tx, orig: Awaited<ReturnType<typeof lockExpense>>, ac
 export async function createExpense(input: unknown): Promise<ExpenseResult> {
   const a = await authorize();
   if ("error" in a) return a.error;
-  const v = parse(input);
+    const t = a.t;
+  const v = parse(input, t);
   if (!v.ok) return v.error;
   const currency = await getDefaultCurrency();
-  if (!currency) return { ok: false, message: NO_CURRENCY, fieldErrors: { amount: NO_CURRENCY } };
-  const bad = await checkRefs(v.data);
+  if (!currency) return { ok: false, message: t.expenses.err.noCurrency, fieldErrors: { amount: t.expenses.err.noCurrency } };
+  const bad = await checkRefs(v.data, t);
   if (bad) return bad;
   const d = v.data;
 
-  const r = await run(async (tx) => {
+    const r = await run(t, async (tx) => {
     const acc = payingAccount((await lockAccounts(tx, [d.cashBankAccountId])).get(d.cashBankAccountId), currency.id);
     // withdraw() validates current + chronological balance; any rejection rolls back the whole
     // transaction, including this expense row (nothing is written).
@@ -163,7 +166,7 @@ export async function createExpense(input: unknown): Promise<ExpenseResult> {
     const reference = formatExpenseReference(e0.number);
     const w = await withdraw(tx, acc, d, e0.id, reference, a.userId);
     await tx.expense.update({ where: { id: e0.id }, data: { reference, activeTransactionId: w.id } });
-    return `Expense ${reference} created — ${w.reference} paid from ${acc.name}`;
+    return tr(t, "expenses.ok.created", { ref: reference, tx: w.reference, account: acc.name });
   });
   return r.ok ? { ok: true, message: r.message } : r.error;
 }
@@ -175,27 +178,28 @@ export async function createExpense(input: unknown): Promise<ExpenseResult> {
 export async function updateExpense(id: unknown, input: unknown): Promise<ExpenseResult> {
   const a = await authorize();
   if ("error" in a) return a.error;
+    const t = a.t;
   const eid = idSchema.safeParse(id);
-  if (!eid.success) return { ok: false, message: NOT_FOUND };
-  const v = parse(input);
+  if (!eid.success) return { ok: false, message: t.expenses.err.notFound };
+  const v = parse(input, t);
   if (!v.ok) return v.error;
   const currency = await getDefaultCurrency();
-  if (!currency) return { ok: false, message: NO_CURRENCY, fieldErrors: { amount: NO_CURRENCY } };
-  const bad = await checkRefs(v.data);
+  if (!currency) return { ok: false, message: t.expenses.err.noCurrency, fieldErrors: { amount: t.expenses.err.noCurrency } };
+  const bad = await checkRefs(v.data, t);
   if (bad) return bad;
   const d = v.data;
 
-  const r = await run(async (tx) => {
+    const r = await run(t, async (tx) => {
     const orig = await lockExpense(tx, eid.data);
     const descriptive = { title: d.title, warehouseId: d.warehouseId, categoryId: d.categoryId, details: d.details || null };
     const financialChange =
       orig.cashBankAccountId !== d.cashBankAccountId || !new Prisma.Decimal(orig.amount).equals(d.amount) || orig.expenseDate.toISOString().slice(0, 10) !== d.expenseDate;
     if (!financialChange) {
       await tx.expense.update({ where: { id: orig.id }, data: descriptive });
-      return `Expense ${orig.reference} updated (no change to the payment)`;
+      return tr(t, "expenses.ok.updatedNoChange", { ref: orig.reference });
     }
     const locked = await lockAccounts(tx, [orig.cashBankAccountId, d.cashBankAccountId]);
-    const origAcc = locked.get(orig.cashBankAccountId) ?? ledgerReject("The original account no longer exists.");
+    const origAcc = locked.get(orig.cashBankAccountId) ?? ledgerFail("expenses.err.originalGone");
     const newAcc = payingAccount(locked.get(d.cashBankAccountId), currency.id);
     // 1. reverse the original effect (append-only)
     const rev = await reverse(tx, orig, origAcc, "updated", a.userId);
@@ -203,7 +207,7 @@ export async function updateExpense(id: unknown, input: unknown): Promise<Expens
     const w = await withdraw(tx, newAcc, d, orig.id, orig.reference, a.userId);
     // 4. update the expense and its active ledger link
     await tx.expense.update({ where: { id: orig.id }, data: { ...descriptive, expenseDate: dateOnly(d.expenseDate), amount: d.amount, cashBankAccountId: newAcc.id, activeTransactionId: w.id } });
-    return `Expense ${orig.reference} updated with reversal (${rev.reference} reversed the original, ${w.reference} paid the new amount)`;
+    return tr(t, "expenses.ok.updatedReversal", { ref: orig.reference, rev: rev.reference, tx: w.reference });
   });
   return r.ok ? { ok: true, message: r.message } : r.error;
 }
@@ -212,15 +216,16 @@ export async function updateExpense(id: unknown, input: unknown): Promise<Expens
 export async function deleteExpense(id: unknown): Promise<ExpenseResult> {
   const a = await authorize();
   if ("error" in a) return a.error;
+    const t = a.t;
   const eid = idSchema.safeParse(id);
-  if (!eid.success) return { ok: false, message: NOT_FOUND };
+  if (!eid.success) return { ok: false, message: t.expenses.err.notFound };
 
-  const r = await run(async (tx) => {
+  const r = await run(t, async (tx) => {
     const orig = await lockExpense(tx, eid.data);
-    const acc = (await lockAccounts(tx, [orig.cashBankAccountId])).get(orig.cashBankAccountId) ?? ledgerReject("The original account no longer exists.");
+    const acc = (await lockAccounts(tx, [orig.cashBankAccountId])).get(orig.cashBankAccountId) ?? ledgerFail("expenses.err.originalGone");
     const rev = await reverse(tx, orig, acc, "deleted", a.userId);
     await tx.expense.update({ where: { id: orig.id }, data: { deletedAt: new Date(), activeTransactionId: null } });
-    return `Expense ${orig.reference} deleted and reversed (${rev.reference})`;
+    return tr(t, "expenses.ok.deleted", { ref: orig.reference, rev: rev.reference });
   });
   return r.ok ? { ok: true, message: r.message } : r.error;
 }

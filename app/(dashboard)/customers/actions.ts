@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { getDict } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n/config";
 import { auth } from "@/auth";
 import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
@@ -18,8 +20,9 @@ const DUPLICATE = "A customer with this name already exists";
 /** OWNER/ADMIN only — re-checked in every mutation; the role never comes from the client. */
 async function authorize(): Promise<CustomerResult | null> {
   const session = await auth();
-  if (!session?.user?.id) return { ok: false, message: "Your session has expired. Please sign in again." };
-  if (!canManageCustomers(session.user.role)) return { ok: false, message: "You don't have permission to change customers." };
+  const t = await getDict();
+  if (!session?.user?.id) return { ok: false, message: t.common.sessionExpired };
+  if (!canManageCustomers(session.user.role)) return { ok: false, message: t.customers.err.noPermission };
   return null;
 }
 
@@ -93,38 +96,40 @@ export async function updateCustomer(id: unknown, input: unknown): Promise<Custo
 async function findCustomerReferences(customerId: string): Promise<string[]> {
   const blockers: string[] = [];
   const [quotations, sales, saleReturns, payments] = await Promise.all([db.quotation.count({ where: { customerId } }), db.sale.count({ where: { customerId } }), db.saleReturn.count({ where: { customerId } }), db.customerPayment.count({ where: { customerId } })]);
-  if (quotations) blockers.push(`${quotations} quotation${quotations === 1 ? "" : "s"}`);
-  if (sales) blockers.push(`${sales} sale${sales === 1 ? "" : "s"}`);
-  if (saleReturns) blockers.push(`${saleReturns} sales return${saleReturns === 1 ? "" : "s"}`);
-  if (payments) blockers.push(`${payments} customer payment${payments === 1 ? "" : "s"}`);
+  const E = (await getDict()).customers.err;
+  if (quotations) blockers.push(fmt(quotations === 1 ? E.quotation : E.quotations, { n: quotations }));
+  if (sales) blockers.push(fmt(sales === 1 ? E.sale : E.sales, { n: sales }));
+  if (saleReturns) blockers.push(fmt(saleReturns === 1 ? E.saleReturn : E.saleReturns, { n: saleReturns }));
+  if (payments) blockers.push(fmt(payments === 1 ? E.payment : E.payments, { n: payments }));
   return blockers;
 }
 
 export async function deleteCustomer(id: unknown): Promise<CustomerResult> {
   const denied = await authorize();
   if (denied) return denied;
+  const T = await getDict();
   const cid = idSchema.safeParse(id);
-  if (!cid.success) return { ok: false, message: "Customer not found" };
+  if (!cid.success) return { ok: false, message: T.customers.err.notFound };
 
   const existing = await db.customer.findUnique({ where: { id: cid.data }, select: { id: true } });
-  if (!existing) return { ok: false, message: "Customer not found" };
+  if (!existing) return { ok: false, message: T.customers.err.notFound };
 
   // The POS Walk-in Customer setting must never point at a deleted customer (the database also refuses).
   const walkIn = await db.systemSettings.findFirst({ where: { posWalkInCustomerId: existing.id }, select: { id: true } });
-  if (walkIn) return { ok: false, message: "This customer is the POS Walk-in Customer. Choose another (or none) in System Settings before deleting it." };
+  if (walkIn) return { ok: false, message: T.customers.err.walkIn };
 
   const blockers = await findCustomerReferences(existing.id);
-  if (blockers.length) return { ok: false, message: `This customer can't be deleted because it still has ${blockers.join(", ")}.` };
+  if (blockers.length) return { ok: false, message: fmt(T.customers.err.blockers, { list: blockers.join(T.customers.err.sep) }) };
 
   try {
     await db.customer.delete({ where: { id: existing.id } });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && (e.code === "P2003" || e.code === "P2014")) {
-      return { ok: false, message: "This customer can't be deleted because other records still use it." };
+      return { ok: false, message: T.customers.err.inUse };
     }
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") return { ok: false, message: "Customer not found" };
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") return { ok: false, message: T.customers.err.notFound };
     throw e;
   }
   revalidatePath("/customers");
-  return { ok: true, message: "Customer deleted" };
+  return { ok: true, message: T.customers.ok.deleted };
 }

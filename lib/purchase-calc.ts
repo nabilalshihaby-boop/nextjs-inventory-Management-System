@@ -11,9 +11,9 @@ export type LineInput = {
   discountType: "FIXED" | "PERCENTAGE";
   discountValue: string;
 };
-export type LineResult = { base: string; discountAmount: string; taxAmount: string; subtotal: string; netUnitCost: string; error?: string };
+export type LineResult = { base: string; discountAmount: string; taxAmount: string; subtotal: string; netUnitCost: string; error?: string; /** Dictionary key for `error` (used by localized modules). */ errorKey?: string };
 export type OrderInput = { orderTaxRate: string; discount: string; shipping: string };
-export type OrderResult = { lines: LineResult[]; subtotal: string; orderTaxAmount: string; grandTotal: string; error?: string };
+export type OrderResult = { lines: LineResult[]; subtotal: string; orderTaxAmount: string; grandTotal: string; error?: string; errorKey?: string };
 
 const B = (n: number) => BigInt(n);
 /** round(a × b ÷ d), half-up, for non-negative values. */
@@ -27,7 +27,7 @@ export function calcLine(l: LineInput): LineResult {
   const discountAmount = l.discountType === "FIXED" ? toUnits(l.discountValue, 2) : mulDiv(base, toUnits(l.discountValue, 2), B(10000));
   const taxable = base - discountAmount;
   const rate = toUnits(l.taxRate, 2);
-  if (taxable < B(0)) return { base: cents(base), discountAmount: cents(discountAmount), taxAmount: "0.00", subtotal: "0.00", netUnitCost: "0.00", error: "Discount can't exceed the line amount" };
+  if (taxable < B(0)) return { base: cents(base), discountAmount: cents(discountAmount), taxAmount: "0.00", subtotal: "0.00", netUnitCost: "0.00", error: "Discount can't exceed the line amount", errorKey: "sales.err.calcLineDiscount" };
   // Exclusive: tax is added on top. Inclusive: the price already contains the tax.
   const tax = l.taxType === "EXCLUSIVE" ? mulDiv(taxable, rate, B(10000)) : mulDiv(taxable, rate, B(10000) + rate);
   const subtotal = l.taxType === "EXCLUSIVE" ? taxable + tax : taxable;
@@ -41,11 +41,13 @@ export function calcOrder(lines: LineInput[], o: OrderInput): OrderResult {
   const orderTax = mulDiv(sub, toUnits(o.orderTaxRate, 2), B(10000));
   const grand = sub + orderTax - toUnits(o.discount, 2) + toUnits(o.shipping, 2);
   const lineError = res.find((r) => r.error)?.error;
+  const lineErrorKey = res.find((r) => r.error)?.errorKey;
   return {
     lines: res,
     subtotal: cents(sub),
     orderTaxAmount: cents(orderTax),
     grandTotal: cents(grand < B(0) ? B(0) : grand),
     error: lineError ?? (grand < B(0) ? "The discount can't exceed the order total" : undefined),
+    errorKey: lineError ? lineErrorKey : grand < B(0) ? "sales.err.calcOrderDiscount" : undefined,
   };
 }

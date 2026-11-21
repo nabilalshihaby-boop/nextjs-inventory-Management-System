@@ -2,6 +2,7 @@
 import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
+import { getLocale } from "@/lib/i18n/server";
 import { getSystemSettings } from "@/lib/settings";
 import type { OpenRegister, RegisterHistoryRow, RegisterMovementRow, RegisterOverview } from "@/lib/register";
 
@@ -26,6 +27,7 @@ export async function totalsBySession(ids: string[]): Promise<Map<string, Sessio
 export const expectedOf = (opening: Prisma.Decimal, t: SessionTotals) => opening.plus(t.cashSales).plus(t.cashIn).minus(t.cashOut);
 
 export async function getRegisterOverview(): Promise<RegisterOverview> {
+  const locale = await getLocale();
   const [sessions, settings] = await Promise.all([
     db.cashRegisterSession.findMany({ orderBy: { number: "desc" }, take: 60, include: { cashBankAccount: { select: { name: true } } } }),
     getSystemSettings(),
@@ -40,7 +42,7 @@ export async function getRegisterOverview(): Promise<RegisterOverview> {
   const users = new Map((await db.user.findMany({ where: { id: { in: userIds } }, select: { id: true, firstName: true, lastName: true } })).map((u) => [u.id, `${u.firstName} ${u.lastName}`]));
   const totals = await totalsBySession(sessions.map((s) => s.id));
   const name = (uid: string | null) => (uid ? (users.get(uid) ?? "—") : "—");
-  const fmt = (d: Date) => formatDateTime(d, settings?.dateFormat);
+  const fmt = (d: Date) => formatDateTime(d, settings?.dateFormat, locale);
   const open: OpenRegister[] = [];
   const history: RegisterHistoryRow[] = [];
   for (const s of sessions) {

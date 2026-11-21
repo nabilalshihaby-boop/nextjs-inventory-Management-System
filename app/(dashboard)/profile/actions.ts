@@ -6,6 +6,8 @@ import path from "node:path";
 import { z } from "zod";
 import { auth, updateSession } from "@/auth";
 import { db } from "@/lib/db";
+import { getDict } from "@/lib/i18n/server";
+import type { Dictionary } from "@/lib/i18n";
 
 export type ProfileValues = {
   firstName: string;
@@ -22,16 +24,18 @@ export type ProfileState =
   | { status: "error"; message: string; fieldErrors: ProfileFieldErrors }
   | { status: "success"; message: string; values: ProfileValues };
 
-const profileSchema = z.object({
-  firstName: z.string().trim().min(1, "First name is required").max(100, "First name is too long"),
-  lastName: z.string().trim().min(1, "Last name is required").max(100, "Last name is too long"),
-  email: z.string().trim().toLowerCase().max(191, "Email is too long").pipe(z.email("Enter a valid email")),
-  phoneNumber: z
-    .string()
-    .trim()
-    .min(1, "Phone number is required")
-    .regex(/^[0-9+()\-.\s]{6,32}$/, "Enter a valid phone number"),
-});
+// Validation messages come from the user's language dictionary (the schema is built per request).
+const profileSchema = (t: Dictionary) =>
+  z.object({
+    firstName: z.string().trim().min(1, t.profile.firstRequired).max(100, t.profile.firstTooLong),
+    lastName: z.string().trim().min(1, t.profile.lastRequired).max(100, t.profile.lastTooLong),
+    email: z.string().trim().toLowerCase().max(191, t.profile.emailTooLong).pipe(z.email(t.profile.emailInvalid)),
+    phoneNumber: z
+      .string()
+      .trim()
+      .min(1, t.profile.phoneRequired)
+      .regex(/^[0-9+()\-.\s]{6,32}$/, t.profile.phoneInvalid),
+  });
 
 // ---- Avatar upload (local-development storage under public/, publicly reachable) ----
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
@@ -50,15 +54,15 @@ function sniffImage(bytes: Uint8Array): "jpg" | "png" | "webp" | null {
   return null;
 }
 
-async function readAvatar(file: File): Promise<{ bytes: Uint8Array; ext: "jpg" | "png" | "webp" } | { error: string }> {
+async function readAvatar(file: File, t: Dictionary): Promise<{ bytes: Uint8Array; ext: "jpg" | "png" | "webp" } | { error: string }> {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
   if (!ALLOWED_EXTENSIONS.has(ext) || !ALLOWED_MIME.has(file.type)) {
-    return { error: "Use a JPG, PNG or WebP image" };
+    return { error: t.profile.avatarType };
   }
-  if (file.size > MAX_AVATAR_BYTES) return { error: "Image must be 2 MB or smaller" };
+  if (file.size > MAX_AVATAR_BYTES) return { error: t.profile.avatarSize };
   const bytes = new Uint8Array(await file.arrayBuffer());
   const kind = sniffImage(bytes);
-  if (!kind) return { error: "This file is not a valid JPG, PNG or WebP image" };
+  if (!kind) return { error: t.profile.avatarNotImage };
   return { bytes, ext: kind };
 }
 
@@ -75,12 +79,13 @@ export async function updateProfile(_prev: ProfileState, formData: FormData): Pr
   // fields a client might add to the FormData are simply never read.
   const session = await auth();
   const userId = session?.user?.id;
-  if (!userId) return { status: "error", message: "Your session has expired. Please sign in again.", fieldErrors: {} };
+  const t = await getDict();
+  if (!userId) return { status: "error", message: t.common.sessionExpired, fieldErrors: {} };
 
   const current = await db.user.findUnique({ where: { id: userId }, select: { image: true } });
-  if (!current) return { status: "error", message: "Your account could not be found.", fieldErrors: {} };
+  if (!current) return { status: "error", message: t.password.notFound, fieldErrors: {} };
 
-  const parsed = profileSchema.safeParse({
+  const parsed = profileSchema(t).safeParse({
     firstName: text(formData.get("firstName")),
     lastName: text(formData.get("lastName")),
     email: text(formData.get("email")),
@@ -98,7 +103,7 @@ export async function updateProfile(_prev: ProfileState, formData: FormData): Pr
   const file = formData.get("avatar");
   let upload: { bytes: Uint8Array; ext: string } | null = null;
   if (file instanceof File && file.size > 0 && !removeAvatar) {
-    const result = await readAvatar(file);
+    const result = await readAvatar(file, t);
     if ("error" in result) fieldErrors.avatar = result.error;
     else upload = result;
   }
@@ -108,11 +113,11 @@ export async function updateProfile(_prev: ProfileState, formData: FormData): Pr
       where: { email: parsed.data.email, NOT: { id: userId } },
       select: { id: true },
     });
-    if (taken) fieldErrors.email = "This email is already used by another account";
+    if (taken) fieldErrors.email = t.profile.emailTaken;
   }
 
   if (!parsed.success || Object.keys(fieldErrors).length) {
-    return { status: "error", message: "Please fix the highlighted fields.", fieldErrors };
+    return { status: "error", message: t.profile.fixFields, fieldErrors };
   }
 
   // Save the new file first so the database never points at a missing image.
@@ -139,7 +144,7 @@ export async function updateProfile(_prev: ProfileState, formData: FormData): Pr
     if (newImage) await removeUploadedAvatar(newImage);
     // Unique-constraint race: another account took the email after our check.
     if (typeof error === "object" && error && "code" in error && error.code === "P2002") {
-      return { status: "error", message: "Please fix the highlighted fields.", fieldErrors: { email: "This email is already used by another account" } };
+      return { status: "error", message: t.profile.fixFields, fieldErrors: { email: t.profile.emailTaken } };
     }
     throw error;
   }
@@ -151,5 +156,5 @@ export async function updateProfile(_prev: ProfileState, formData: FormData): Pr
   // layout's auth() — which reads the incoming request — sees the updated name/avatar.
   await updateSession({});
 
-  return { status: "success", message: "Profile updated.", values: saved };
+  return { status: "success", message: t.profile.updated, values: saved };
 }

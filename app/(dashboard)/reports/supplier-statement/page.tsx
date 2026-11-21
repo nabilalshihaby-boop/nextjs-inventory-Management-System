@@ -9,13 +9,16 @@ import { getCountryOptions } from "@/lib/countries";
 import { formatMoney } from "@/lib/money";
 import { getReportCompany } from "@/lib/report-company";
 import { canViewSupplierStatement } from "@/lib/roles";
-import { STATEMENT_KIND_LABEL } from "@/lib/supplier-statement";
 import { getSupplierStatement } from "@/lib/supplier-statement-data";
 import { fromUnits, toUnits } from "@/lib/transfers";
+import { getLocaleInfo, getDict } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n/config";
 import ReportActions from "@/components/reports/ReportActions";
 import ReportDocument, { ReportSummary } from "@/components/reports/ReportDocument";
 
-export const metadata: Metadata = { title: "Supplier Statement Report" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).supplierStmtReport.pageTitle };
+}
 
 export const instant = false;
 
@@ -40,15 +43,17 @@ export default async function SupplierStatementReportPage({ searchParams }: Page
   const sp = await searchParams;
   const one = (v: unknown) => (Array.isArray(v) ? v[0] : v);
   const q = queryShape.parse({ supplier: one(sp.supplier), from: one(sp.from), to: one(sp.to), currency: one(sp.currency) });
-  const [data, { company, generatedAt }] = await Promise.all([getSupplierStatement(q, todayLocal()), getReportCompany()]);
+  const { dict: T, locale } = await getLocaleInfo();
+  const R = T.supplierStmtReport;
+  const [data, { company, generatedAt }] = await Promise.all([getSupplierStatement(q, todayLocal(), T), getReportCompany()]);
 
   if (!data) {
     return (
       <>
         <ReportActions backHref="/suppliers/statement" />
         <div className="sp-card sp-empty" data-testid="report-none">
-          <div className="t-section-title">No suppliers yet</div>
-          <span>There is no supplier statement to report.</span>
+          <div className="t-section-title">{R.noneNone}</div>
+          <span>{R.noneBody}</span>
         </div>
       </>
     );
@@ -56,7 +61,7 @@ export default async function SupplierStatementReportPage({ searchParams }: Page
   const s = data.statement;
   const back = new URLSearchParams({ supplier: s.supplier.id, from: s.from, to: s.to, ...(s.currency && s.currencies.length > 1 ? { currency: s.currency.id } : {}) });
   const supplier = await db.supplier.findUnique({ where: { id: s.supplier.id }, select: { email: true, phoneNumber: true, address: true, city: true, countryCode: true } });
-  const country = new Map<string, string>(getCountryOptions().map((c) => [c.code, c.name]));
+  const country = new Map<string, string>(getCountryOptions(locale).map((c) => [c.code, c.name]));
   const m = (v: string) => formatMoney(v, s.currency);
   const opening = s.opening !== "0.00";
   const debitTotal = fromUnits(toUnits(s.totalReturns, 2) + toUnits(s.totalPaid, 2), 2);
@@ -64,64 +69,69 @@ export default async function SupplierStatementReportPage({ searchParams }: Page
 
   return (
     <>
-      <ReportActions backHref={`/suppliers/statement?${back.toString()}`} backLabel="Back to Statement" />
+      <ReportActions backHref={`/suppliers/statement?${back.toString()}`} backLabel={T.report.backToStatement} />
       {data.notice && (
         <div className="sp-card sp-noprint" role="status" data-testid="report-notice" style={{ padding: "12px 16px", margin: "0 auto 16px", maxWidth: "210mm" }}>
           {data.notice}
         </div>
       )}
       <ReportDocument
-        title="Supplier Account Statement"
+        title={R.title}
         company={company}
         generatedAt={generatedAt}
         generatedBy={creator ? `${creator.firstName} ${creator.lastName}` : undefined}
         meta={[
           {
-            label: "Supplier",
+            label: R.supplier,
             value: (
               <>
                 {s.supplier.name}
                 {supplier && (
                   <span className="bp-report-muted" style={{ display: "block", fontWeight: 400 }}>
-                    {[supplier.email, supplier.phoneNumber].filter(Boolean).join(" · ")}
+                    {[supplier.email, supplier.phoneNumber].filter(Boolean).map((v, i) => (
+                      <span key={i}>
+                        {i > 0 && " · "}
+                        <bdi dir="ltr">{v}</bdi>
+                      </span>
+                    ))}
                     <br />
-                    {[supplier.address, supplier.city, country.get(supplier.countryCode) ?? supplier.countryCode].filter(Boolean).join(", ")}
+                    <bdi dir="auto">{[supplier.address, supplier.city, country.get(supplier.countryCode) ?? supplier.countryCode].filter(Boolean).join(", ")}</bdi>
                   </span>
                 )}
               </>
             ),
           },
-          { label: "Period", value: `${s.fromLabel} – ${s.toLabel}` },
-          { label: "Currency", value: s.currency ? `${s.currency.code} (${s.currency.symbol})` : "—" },
-          { label: "Transactions", value: String(s.rows.length) },
+          { label: R.period, value: `${s.fromLabel} – ${s.toLabel}` },
+          { label: R.currency, value: s.currency ? `${s.currency.code} (${s.currency.symbol})` : "—" },
+          { label: R.transactions, value: String(s.rows.length) },
         ]}
         testId="report-supplier-statement"
       >
         <ReportSummary
           testId="report-summary"
           items={[
-            { label: "Opening Balance", value: m(s.opening), note: `Before ${s.fromLabel}` },
-            { label: "Total Purchases", value: m(s.totalPurchases) },
-            { label: "Total Returns", value: m(s.totalReturns) },
-            { label: "Total Paid", value: m(s.totalPaid) },
-            { label: "Outstanding Balance", value: m(s.closing), strong: true },
+            { label: R.openingBalance, value: m(s.opening), note: fmt(R.before, { date: s.fromLabel }) },
+            { label: R.totalPurchases, value: m(s.totalPurchases) },
+            { label: R.totalReturns, value: m(s.totalReturns) },
+            { label: R.totalPaid, value: m(s.totalPaid) },
+            { label: R.outstanding, value: m(s.closing), strong: true },
           ]}
         />
         {s.rows.length === 0 && !opening ? (
           <div className="bp-report-empty" data-testid="report-empty">
-            No transactions in this period.
+            {R.empty}
           </div>
         ) : (
           <table className="bp-report-table" data-testid="report-table">
             <thead>
               <tr>
-                <th style={{ width: "11%" }}>Date</th>
-                <th style={{ width: "12%" }}>Reference</th>
-                <th style={{ width: "12%" }}>Type</th>
-                <th>Description</th>
-                <th className="num" style={{ width: "12%" }}>Debit</th>
-                <th className="num" style={{ width: "12%" }}>Credit</th>
-                <th className="num" style={{ width: "13%" }}>Balance</th>
+                <th style={{ width: "11%" }}>{R.colDate}</th>
+                <th style={{ width: "12%" }}>{R.colReference}</th>
+                <th style={{ width: "12%" }}>{R.colType}</th>
+                <th>{R.colDescription}</th>
+                <th className="num" style={{ width: "12%" }}>{R.colDebit}</th>
+                <th className="num" style={{ width: "12%" }}>{R.colCredit}</th>
+                <th className="num" style={{ width: "13%" }}>{R.colBalance}</th>
               </tr>
             </thead>
             <tbody>
@@ -129,8 +139,8 @@ export default async function SupplierStatementReportPage({ searchParams }: Page
                 <tr className="is-muted" data-testid="report-opening">
                   <td>{s.fromLabel}</td>
                   <td>—</td>
-                  <td>Opening</td>
-                  <td>Opening balance (before {s.fromLabel})</td>
+                  <td>{R.opening}</td>
+                  <td>{fmt(R.openingDesc, { date: s.fromLabel })}</td>
                   <td className="num">—</td>
                   <td className="num">—</td>
                   <td className="num">{m(s.opening)}</td>
@@ -140,7 +150,7 @@ export default async function SupplierStatementReportPage({ searchParams }: Page
                 <tr key={r.key} data-ref={r.reference}>
                   <td>{r.dateLabel}</td>
                   <td>{r.reference}</td>
-                  <td>{STATEMENT_KIND_LABEL[r.kind]}</td>
+                  <td>{T.supplierStmt.kind[r.kind]}</td>
                   <td>{r.description}</td>
                   <td className="num" data-col="debit">{r.debit ? m(r.debit) : "—"}</td>
                   <td className="num" data-col="credit">{r.credit ? m(r.credit) : "—"}</td>
@@ -150,7 +160,7 @@ export default async function SupplierStatementReportPage({ searchParams }: Page
             </tbody>
             <tfoot>
               <tr data-testid="report-totals">
-                <td colSpan={4}>Total</td>
+                <td colSpan={4}>{R.total}</td>
                 <td className="num">{m(debitTotal)}</td>
                 <td className="num">{m(s.totalPurchases)}</td>
                 <td className="num">{m(s.closing)}</td>
@@ -158,7 +168,7 @@ export default async function SupplierStatementReportPage({ searchParams }: Page
             </tfoot>
           </table>
         )}
-        <p className="bp-report-note">Credit increases the amount owed to the supplier (purchases). Debit reduces it (purchase returns and payments). Amounts in {s.currency?.code ?? "the selected currency"} only.</p>
+        <p className="bp-report-note">{fmt(R.note, { currency: s.currency?.code ?? R.currencyFallback })}</p>
       </ReportDocument>
     </>
   );

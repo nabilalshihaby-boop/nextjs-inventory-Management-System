@@ -7,6 +7,7 @@ import Icon from "./Icon";
 import { useShell } from "./AppShell";
 import { findActive, findOwnerGroup, visibleNav, type NavItem } from "./nav";
 import { siteConfig } from "@/config/site";
+import { useT } from "@/components/i18n/I18nProvider";
 
 // `brand` and `logo` come from System Settings (company name/logo), with Bluepiller as fallback.
 // `role` (from the server session) decides which role-restricted items appear: Users/Settings for
@@ -21,11 +22,12 @@ export default function Sidebar({ brand = siteConfig.name, logo = null, role }: 
     setLogoFailed(false);
   }
   const showLogo = !!logo && !logoFailed;
+  const t = useT();
 
   return (
     <aside className="bp-sidebar">
       <div className="sp-brand">
-        <span className="sp-brand-text" style={showLogo ? { alignItems: "center", gap: 10, minWidth: 0 } : undefined}>
+        <span className="sp-brand-text" dir="auto" style={showLogo ? { alignItems: "center", gap: 10, minWidth: 0 } : undefined}>
           {showLogo ? (
             <>
               {/* eslint-disable-next-line @next/next/no-img-element -- runtime upload under /uploads */}
@@ -51,7 +53,7 @@ export default function Sidebar({ brand = siteConfig.name, logo = null, role }: 
         <button
           type="button"
           className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-          aria-label="Collapse sidebar"
+          aria-label={t.shell.collapseSidebar}
           onClick={toggleSidebar}
         >
           <Icon name="panel-left-close" size={16} />
@@ -62,7 +64,7 @@ export default function Sidebar({ brand = siteConfig.name, logo = null, role }: 
           <button
             type="button"
             className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-            aria-label="Expand sidebar"
+            aria-label={t.shell.expandSidebar}
             onClick={toggleSidebar}
             style={{ alignSelf: "center", marginBottom: 8 }}
           >
@@ -84,6 +86,9 @@ function NavItemsForRoute({ items }: { items: NavItem[] }) {
 
 function NavItems({ pathname, items }: { pathname: string | null; items: NavItem[] }) {
   const { collapsed, closeDrawer } = useShell();
+  const t = useT();
+  const names = t.nav as Record<string, string>;
+  const name = (x: { id: string; label: string }) => names[x.id] ?? x.label; // translated by id; the English label is only a fallback
   const activeId = findActive(pathname)?.id;
   const owner = findOwnerGroup(activeId);
 
@@ -106,12 +111,12 @@ function NavItems({ pathname, items }: { pathname: string | null; items: NavItem
               key={it.id}
               href={it.href}
               className="sp-nav-item"
-              title={collapsed ? it.label : undefined}
+              title={collapsed ? name(it) : undefined}
               aria-current={active ? "page" : undefined}
               onClick={closeDrawer}
             >
               <Icon name={it.icon} size={20} />
-              <span className="sp-nav-label">{it.label}</span>
+              <span className="sp-nav-label">{name(it)}</span>
             </Link>
           );
         }
@@ -123,13 +128,13 @@ function NavItems({ pathname, items }: { pathname: string | null; items: NavItem
             <button
               type="button"
               className="sp-nav-item"
-              title={collapsed ? it.label : undefined}
+              title={collapsed ? name(it) : undefined}
               aria-expanded={expanded}
               style={active ? { color: "var(--primary-700)" } : undefined}
               onClick={() => setOpen(expanded ? null : it.id)}
             >
               <Icon name={it.icon} size={20} />
-              <span className="sp-nav-label">{it.label}</span>
+              <span className="sp-nav-label">{name(it)}</span>
               <Icon name="chevron-down" size={16} className="sp-chev" />
             </button>
             {expanded && (
@@ -147,7 +152,7 @@ function NavItems({ pathname, items }: { pathname: string | null; items: NavItem
                       aria-label={c.disabled}
                       style={{ opacity: 0.5, cursor: "not-allowed" }}
                     >
-                      {c.label}
+                      {name(c)}
                     </span>
                   ) : (
                     <Link
@@ -157,7 +162,7 @@ function NavItems({ pathname, items }: { pathname: string | null; items: NavItem
                       aria-current={c.id === activeId ? "page" : undefined}
                       onClick={closeDrawer}
                     >
-                      {c.label}
+                      {name(c)}
                     </Link>
                   ),
                 )}

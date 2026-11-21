@@ -8,14 +8,16 @@ import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
 import { canManageQuotations } from "@/lib/roles";
 import { getDefaultCurrency } from "@/lib/settings";
+import { getDict } from "@/lib/i18n/server";
+import { LocalizedError, errorMessage, tr, type Vars } from "@/lib/i18n/messages";
+import type { Dictionary } from "@/lib/i18n";
 import { toUnits } from "@/lib/transfers";
 import {
   QUOTATION_STATUSES,
-  QUOTATION_STATUS_LABEL,
   calcQuotation,
   canTransition,
   formatQuotationReference,
-  quotationInputSchema,
+  makeQuotationSchema,
   type QuotationField,
   type QuotationInput,
   type QuotationStatusValue,
@@ -40,21 +42,26 @@ export type QuotationResult =
 const idSchema = z.string().trim().min(1).max(64);
 const statusSchema = z.enum(QUOTATION_STATUSES);
 const MAX_TOTAL = toUnits("999999999999.99", 2);
-const NO_CURRENCY = "No default currency is configured. The Owner must choose one in System Settings before quotations can be created.";
 
-class QuotationError extends Error {}
+// Carries a dictionary key (+ variables); translated with the request dictionary in each catch.
+class QuotationError extends LocalizedError {
+  constructor(key: string, vars: Vars = {}) {
+    super(key, vars);
+  }
+}
 const isKnown = (e: unknown, ...codes: string[]) => e instanceof Prisma.PrismaClientKnownRequestError && codes.includes(e.code);
 const dateOnly = (v: string) => new Date(`${v}T00:00:00.000Z`);
 
-async function authorize(): Promise<{ userId: string } | { error: QuotationResult }> {
+async function authorize(): Promise<{ userId: string; t: Dictionary } | { error: QuotationResult }> {
   const s = await auth();
-  if (!s?.user?.id) return { error: { ok: false, message: "Your session has expired. Please sign in again." } };
-  if (!canManageQuotations(s.user.role)) return { error: { ok: false, message: "You don't have permission to manage quotations." } };
-  return { userId: s.user.id };
+  const t = await getDict();
+  if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
+  if (!canManageQuotations(s.user.role)) return { error: { ok: false, message: t.quotations.err.noPermission } };
+  return { userId: s.user.id, t };
 }
 
-function parse(input: unknown): { ok: true; data: QuotationInput } | { ok: false; error: QuotationResult } {
-  const v = quotationInputSchema.safeParse(input);
+function parse(input: unknown, t: Dictionary): { ok: true; data: QuotationInput } | { ok: false; error: QuotationResult } {
+  const v = makeQuotationSchema(t.quotations.val).safeParse(input);
   if (v.success) return { ok: true, data: v.data };
   const fieldErrors: Partial<Record<QuotationField, string>> = {};
   const itemErrors: Record<string, string> = {};
@@ -64,30 +71,33 @@ function parse(input: unknown): { ok: true; data: QuotationInput } | { ok: false
     if (k === "items" && typeof index === "number" && Array.isArray(raw) && typeof raw[index]?.productId === "string") itemErrors[raw[index].productId as string] ??= i.message;
     fieldErrors[(k as QuotationField) ?? "items"] ??= i.message;
   }
-  return { ok: false, error: { ok: false, message: Object.values(fieldErrors)[0] ?? "Please check the form", fieldErrors, itemErrors } };
+  return { ok: false, error: { ok: false, message: Object.values(fieldErrors)[0] ?? t.common.checkForm, fieldErrors, itemErrors } };
 }
 
 /** Re-read references and compute the authoritative totals + line snapshots. */
-async function prepare(d: QuotationInput): Promise<{ ok: true; data: Prisma.QuotationItemCreateWithoutQuotationInput[]; totals: ReturnType<typeof calcQuotation> } | { ok: false; error: QuotationResult }> {
+async function prepare(d: QuotationInput, t: Dictionary): Promise<{ ok: true; data: Prisma.QuotationItemCreateWithoutQuotationInput[]; totals: ReturnType<typeof calcQuotation> } | { ok: false; error: QuotationResult }> {
   const [customer, warehouse, products] = await Promise.all([
     db.customer.findUnique({ where: { id: d.customerId }, select: { id: true } }),
     db.warehouse.findUnique({ where: { id: d.warehouseId }, select: { id: true } }),
     db.product.findMany({ where: { id: { in: d.items.map((i) => i.productId) } }, select: { id: true, code: true, name: true, saleUnit: { select: { name: true } } } }),
   ]);
-  if (!customer) return { ok: false, error: { ok: false, message: "Choose a valid customer", fieldErrors: { customerId: "Choose a valid customer" } } };
-  if (!warehouse) return { ok: false, error: { ok: false, message: "Choose a valid warehouse", fieldErrors: { warehouseId: "Choose a valid warehouse" } } };
+  if (!customer) return { ok: false, error: { ok: false, message: t.quotations.err.invalidCustomer, fieldErrors: { customerId: t.quotations.err.invalidCustomer } } };
+  if (!warehouse) return { ok: false, error: { ok: false, message: t.quotations.err.invalidWarehouse, fieldErrors: { warehouseId: t.quotations.err.invalidWarehouse } } };
   const byId = new Map(products.map((p) => [p.id, p]));
   const missing = d.items.find((i) => !byId.has(i.productId));
-  if (missing) return { ok: false, error: { ok: false, message: "A product in the quotation no longer exists", fieldErrors: { items: "A product in the quotation no longer exists" }, itemErrors: { [missing.productId]: "This product no longer exists" } } };
+  if (missing) return { ok: false, error: { ok: false, message: t.quotations.err.productGone, fieldErrors: { items: t.quotations.err.productGone }, itemErrors: { [missing.productId]: t.quotations.err.itemGone } } };
 
   const totals = calcQuotation(d.items, { orderTaxRate: d.orderTaxRate, discount: d.discount, shipping: d.shipping });
   const bad = totals.lines.findIndex((l) => l.error);
   if (bad >= 0) {
-    const msg = totals.lines[bad].error!;
+    const msg = totals.lines[bad].errorKey ? tr(t, totals.lines[bad].errorKey!) : totals.lines[bad].error!;
     return { ok: false, error: { ok: false, message: msg, fieldErrors: { items: msg }, itemErrors: { [d.items[bad].productId]: msg } } };
   }
-  if (totals.error) return { ok: false, error: { ok: false, message: totals.error, fieldErrors: { discount: totals.error } } };
-  if (toUnits(totals.grandTotal, 2) > MAX_TOTAL || toUnits(totals.subtotal, 2) > MAX_TOTAL) return { ok: false, error: { ok: false, message: "The quotation total is too large", fieldErrors: { items: "The quotation total is too large" } } };
+  if (totals.error) {
+    const msg = totals.errorKey ? tr(t, totals.errorKey) : totals.error;
+    return { ok: false, error: { ok: false, message: msg, fieldErrors: { discount: msg } } };
+  }
+  if (toUnits(totals.grandTotal, 2) > MAX_TOTAL || toUnits(totals.subtotal, 2) > MAX_TOTAL) return { ok: false, error: { ok: false, message: t.quotations.err.totalTooLarge, fieldErrors: { items: t.quotations.err.totalTooLarge } } };
 
   const items = d.items.map((i, n) => {
     const p = byId.get(i.productId)!;
@@ -125,12 +135,13 @@ async function lockQuotation(tx: Prisma.TransactionClient, id: string) {
 export async function createQuotation(input: unknown): Promise<QuotationResult> {
   const a = await authorize();
   if ("error" in a) return a.error;
-  const v = parse(input);
+  const t = a.t;
+  const v = parse(input, t);
   if (!v.ok) return v.error;
   const d = v.data;
   const currency = await getDefaultCurrency();
-  if (!currency) return { ok: false, message: NO_CURRENCY };
-  const p = await prepare(d);
+  if (!currency) return { ok: false, message: t.quotations.err.noCurrency };
+  const p = await prepare(d, t);
   if (!p.ok) return p.error;
 
   try {
@@ -160,9 +171,9 @@ export async function createQuotation(input: unknown): Promise<QuotationResult> 
       return { id: q0.id, reference };
     });
     revalidate(created.id);
-    return { ok: true, message: `Quotation ${created.reference} created as Draft`, id: created.id };
+    return { ok: true, message: tr(t, "quotations.ok.created", { ref: created.reference }), id: created.id };
   } catch (e) {
-    if (isKnown(e, "P2003", "P2025")) return { ok: false, message: "A selected customer, warehouse or product no longer exists. Refresh and try again." };
+    if (isKnown(e, "P2003", "P2025")) return { ok: false, message: t.quotations.err.refsGone };
     throw e;
   }
 }
@@ -171,19 +182,20 @@ export async function createQuotation(input: unknown): Promise<QuotationResult> 
 export async function updateQuotation(id: unknown, input: unknown): Promise<QuotationResult> {
   const a = await authorize();
   if ("error" in a) return a.error;
+  const t = a.t;
   const qid = idSchema.safeParse(id);
-  if (!qid.success) return { ok: false, message: "Quotation not found" };
-  const v = parse(input);
+  if (!qid.success) return { ok: false, message: t.quotations.err.notFound };
+  const v = parse(input, t);
   if (!v.ok) return v.error;
   const d = v.data;
-  const p = await prepare(d);
+  const p = await prepare(d, t);
   if (!p.ok) return p.error;
 
   try {
     const ref = await db.$transaction(async (tx) => {
       const q = await lockQuotation(tx, qid.data);
-      if (!q) throw new QuotationError("Quotation not found");
-      if (q.status !== "DRAFT") throw new QuotationError(`Quotation ${q.reference} is ${QUOTATION_STATUS_LABEL[q.status]} and can no longer be edited. Only draft quotations can be edited.`);
+      if (!q) throw new QuotationError("quotations.err.notFound");
+      if (q.status !== "DRAFT") throw new QuotationError("quotations.err.noEdit", { ref: q.reference, status: tr(a.t, `quotations.status.${q.status}`) });
       await tx.quotationItem.deleteMany({ where: { quotationId: q.id } });
       await tx.quotation.update({
         where: { id: q.id },
@@ -204,10 +216,10 @@ export async function updateQuotation(id: unknown, input: unknown): Promise<Quot
       return q.reference;
     });
     revalidate(qid.data);
-    return { ok: true, message: `Quotation ${ref} updated`, id: qid.data };
+    return { ok: true, message: tr(t, "quotations.ok.updated", { ref }), id: qid.data };
   } catch (e) {
-    if (e instanceof QuotationError) return { ok: false, message: e.message };
-    if (isKnown(e, "P2003", "P2025")) return { ok: false, message: "A selected customer, warehouse or product no longer exists. Refresh and try again." };
+    if (e instanceof QuotationError) return { ok: false, message: errorMessage(a.t, e) };
+    if (isKnown(e, "P2003", "P2025")) return { ok: false, message: t.quotations.err.refsGone };
     throw e;
   }
 }
@@ -217,19 +229,19 @@ export async function deleteQuotation(id: unknown): Promise<QuotationResult> {
   const a = await authorize();
   if ("error" in a) return a.error;
   const qid = idSchema.safeParse(id);
-  if (!qid.success) return { ok: false, message: "Quotation not found" };
+  if (!qid.success) return { ok: false, message: a.t.quotations.err.notFound };
   try {
     const ref = await db.$transaction(async (tx) => {
       const q = await lockQuotation(tx, qid.data);
-      if (!q) throw new QuotationError("Quotation not found");
-      if (q.status !== "DRAFT") throw new QuotationError(`Quotation ${q.reference} is ${QUOTATION_STATUS_LABEL[q.status]} and can't be deleted. Only draft quotations can be deleted.`);
+      if (!q) throw new QuotationError("quotations.err.notFound");
+      if (q.status !== "DRAFT") throw new QuotationError("quotations.err.noDelete", { ref: q.reference, status: tr(a.t, `quotations.status.${q.status}`) });
       await tx.quotation.delete({ where: { id: q.id } }); // lines cascade
       return q.reference;
     });
     revalidate();
-    return { ok: true, message: `Quotation ${ref} deleted` };
+    return { ok: true, message: tr(a.t, "quotations.ok.deleted", { ref }) };
   } catch (e) {
-    if (e instanceof QuotationError) return { ok: false, message: e.message };
+    if (e instanceof QuotationError) return { ok: false, message: errorMessage(a.t, e) };
     throw e;
   }
 }
@@ -239,22 +251,22 @@ export async function changeQuotationStatus(id: unknown, to: unknown): Promise<Q
   const a = await authorize();
   if ("error" in a) return a.error;
   const qid = idSchema.safeParse(id);
-  if (!qid.success) return { ok: false, message: "Quotation not found" };
+  if (!qid.success) return { ok: false, message: a.t.quotations.err.notFound };
   const target = statusSchema.safeParse(to);
-  if (!target.success) return { ok: false, message: "Choose a valid status" };
+  if (!target.success) return { ok: false, message: a.t.quotations.err.chooseStatus };
   try {
     const r = await db.$transaction(async (tx) => {
       const q = await lockQuotation(tx, qid.data);
-      if (!q) throw new QuotationError("Quotation not found");
+      if (!q) throw new QuotationError("quotations.err.notFound");
       const from = q.status as QuotationStatusValue;
-      if (!canTransition(from, target.data)) throw new QuotationError(`A ${QUOTATION_STATUS_LABEL[from]} quotation can't be marked as ${QUOTATION_STATUS_LABEL[target.data]}.`);
+      if (!canTransition(from, target.data)) throw new QuotationError("quotations.err.badTransition", { from: tr(a.t, `quotations.status.${from}`), to: tr(a.t, `quotations.status.${target.data}`) });
       await tx.quotation.update({ where: { id: q.id }, data: { status: target.data, statusChangedAt: new Date(), statusChangedById: a.userId } });
       return q.reference;
     });
     revalidate(qid.data);
-    return { ok: true, message: `Quotation ${r} marked as ${QUOTATION_STATUS_LABEL[target.data]}` };
+    return { ok: true, message: tr(a.t, "quotations.ok.marked", { ref: r, status: tr(a.t, `quotations.status.${target.data}`) }) };
   } catch (e) {
-    if (e instanceof QuotationError) return { ok: false, message: e.message };
+    if (e instanceof QuotationError) return { ok: false, message: errorMessage(a.t, e) };
     throw e;
   }
 }

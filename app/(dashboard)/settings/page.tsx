@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { getCountryOptions } from "@/lib/countries";
+import { getLocale, getDict } from "@/lib/i18n/server";
 import { canManageSystemSettings } from "@/lib/roles";
 import { DATE_FORMATS, getCurrencyOptions, getSystemSettings, toSettingsValues } from "@/lib/settings";
 import SettingsForm from "@/components/settings/SettingsForm";
@@ -22,19 +23,23 @@ export default async function SettingsPage() {
   if (!session?.user?.id) redirect("/");
   if (!canManageSystemSettings(session.user.role)) redirect("/dashboard");
 
+  const locale = await getLocale();
+  const t = await getDict();
+  const regionNames = new Intl.DisplayNames([locale], { type: "region" });
   const [settings, currencies, customers] = await Promise.all([getSystemSettings(), getCurrencyOptions(), db.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } })]);
 
   return (
     <>
       <div className="sp-page-head">
         <h1 className="t-page-title" style={{ margin: 0 }}>
-          System Settings
+          {t.settings.title}
         </h1>
         <div style={{ display: "flex", gap: 12 }} />
       </div>
       <SettingsForm
         initial={toSettingsValues(settings)}
-        countries={getCountryOptions()}
+        // Country names are shown in the UI language; the stored value stays the ISO code.
+        countries={getCountryOptions().map((c) => ({ ...c, name: regionNames.of(c.code) ?? c.name }))}
         currencies={currencies}
         customers={customers.map((c) => ({ value: c.id, label: c.name }))}
         dateFormats={[...DATE_FORMATS]}

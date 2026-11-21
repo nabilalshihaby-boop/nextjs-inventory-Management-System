@@ -5,8 +5,11 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
+import { getDict } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n/config";
+import type { Dictionary } from "@/lib/i18n";
 import { canManageExpenseCategories } from "@/lib/roles";
-import { expenseCategorySchema } from "@/lib/expense-categories";
+import { makeExpenseCategorySchema } from "@/lib/expense-categories";
 
 // Expense Categories (Finance). OWNER/ADMIN only: auth() is re-read in every action and the role
 // never comes from the client. USER (and signed-out requests) get nothing.
@@ -14,60 +17,62 @@ import { expenseCategorySchema } from "@/lib/expense-categories";
 export type ExpenseCategoryResult = { ok: true; message: string } | { ok: false; message: string; fieldErrors?: { name?: string } };
 
 const idSchema = z.string().trim().min(1).max(64);
-const DUPLICATE = "An expense category with this name already exists";
 const PATH = "/expenses/categories";
 
 async function authorize(): Promise<ExpenseCategoryResult | null> {
   const session = await auth();
-  if (!session?.user?.id) return { ok: false, message: "Your session has expired. Please sign in again." };
-  if (!canManageExpenseCategories(session.user.role)) return { ok: false, message: "You don't have permission to change expense categories." };
+  const t = await getDict();
+  if (!session?.user?.id) return { ok: false, message: t.common.sessionExpired };
+  if (!canManageExpenseCategories(session.user.role)) return { ok: false, message: t.expenses.cat.err.noPermission };
   return null;
 }
 
-function parse(input: unknown): { ok: true; name: string } | { ok: false; error: ExpenseCategoryResult } {
-  const v = expenseCategorySchema.safeParse(input);
+function parse(input: unknown, t: Dictionary): { ok: true; name: string } | { ok: false; error: ExpenseCategoryResult } {
+  const v = makeExpenseCategorySchema(t.expenses.val).safeParse(input);
   if (v.success) return { ok: true, name: v.data.name };
-  const message = v.error.issues[0]?.message ?? "Name is required";
+  const message = v.error.issues[0]?.message ?? t.expenses.val.catNameRequired;
   return { ok: false, error: { ok: false, message, fieldErrors: { name: message } } };
 }
 const isUnique = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
-const duplicate = (): ExpenseCategoryResult => ({ ok: false, message: DUPLICATE, fieldErrors: { name: DUPLICATE } });
+const duplicate = (t: Dictionary): ExpenseCategoryResult => ({ ok: false, message: t.expenses.cat.err.duplicate, fieldErrors: { name: t.expenses.cat.err.duplicate } });
 
 export async function createExpenseCategory(input: unknown): Promise<ExpenseCategoryResult> {
   const denied = await authorize();
   if (denied) return denied;
-  const v = parse(input);
+    const t = await getDict();
+  const v = parse(input, t);
   if (!v.ok) return v.error;
   // Unique regardless of case (column collation); checked here for a clean message.
-  if (await db.expenseCategory.findUnique({ where: { name: v.name }, select: { id: true } })) return duplicate();
+  if (await db.expenseCategory.findUnique({ where: { name: v.name }, select: { id: true } })) return duplicate(t);
   try {
     await db.expenseCategory.create({ data: { name: v.name }, select: { id: true } });
   } catch (e) {
-    if (isUnique(e)) return duplicate();
+        if (isUnique(e)) return duplicate(t);
     throw e;
   }
   revalidatePath(PATH);
-  return { ok: true, message: "Expense category created" };
+  return { ok: true, message: t.expenses.cat.ok.created };
 }
 
 export async function updateExpenseCategory(id: unknown, input: unknown): Promise<ExpenseCategoryResult> {
   const denied = await authorize();
   if (denied) return denied;
+    const t = await getDict();
   const cid = idSchema.safeParse(id);
-  if (!cid.success) return { ok: false, message: "Expense category not found" };
-  const v = parse(input);
+  if (!cid.success) return { ok: false, message: t.expenses.cat.err.notFound };
+  const v = parse(input, t);
   if (!v.ok) return v.error;
   const existing = await db.expenseCategory.findUnique({ where: { id: cid.data }, select: { id: true } });
-  if (!existing) return { ok: false, message: "Expense category not found" };
-  if (await db.expenseCategory.findFirst({ where: { name: v.name, NOT: { id: existing.id } }, select: { id: true } })) return duplicate();
+    if (!existing) return { ok: false, message: t.expenses.cat.err.notFound };
+  if (await db.expenseCategory.findFirst({ where: { name: v.name, NOT: { id: existing.id } }, select: { id: true } })) return duplicate(t);
   try {
     await db.expenseCategory.update({ where: { id: existing.id }, data: { name: v.name }, select: { id: true } });
   } catch (e) {
-    if (isUnique(e)) return duplicate();
+        if (isUnique(e)) return duplicate(t);
     throw e;
   }
   revalidatePath(PATH);
-  return { ok: true, message: "Expense category updated" };
+  return { ok: true, message: t.expenses.cat.ok.updated };
 }
 
 /**
@@ -80,31 +85,33 @@ async function findExpenseCategoryReferences(categoryId: string): Promise<string
     db.expense.count({ where: { categoryId, deletedAt: { not: null } } }),
   ]);
   const blockers: string[] = [];
-  if (active) blockers.push(`${active} expense${active === 1 ? "" : "s"}`);
-  if (deleted) blockers.push(`${deleted} deleted expense${deleted === 1 ? "" : "s"} kept in the financial history`);
+    const E = (await getDict()).expenses.cat.err;
+  if (active) blockers.push(fmt(active === 1 ? E.expense : E.expenses, { n: active }));
+  if (deleted) blockers.push(fmt(deleted === 1 ? E.deletedKept : E.deletedKeptMany, { n: deleted }));
   return blockers;
 }
 
 export async function deleteExpenseCategory(id: unknown): Promise<ExpenseCategoryResult> {
   const denied = await authorize();
   if (denied) return denied;
+    const t = await getDict();
   const cid = idSchema.safeParse(id);
-  if (!cid.success) return { ok: false, message: "Expense category not found" };
+  if (!cid.success) return { ok: false, message: t.expenses.cat.err.notFound };
   const existing = await db.expenseCategory.findUnique({ where: { id: cid.data }, select: { id: true } });
-  if (!existing) return { ok: false, message: "Expense category not found" };
+  if (!existing) return { ok: false, message: t.expenses.cat.err.notFound };
 
   const blockers = await findExpenseCategoryReferences(existing.id);
-  if (blockers.length) return { ok: false, message: `This expense category can't be deleted because it is used by ${blockers.join(", ")}.` };
+  if (blockers.length) return { ok: false, message: fmt(t.expenses.cat.err.blockers, { list: blockers.join(t.expenses.cat.err.sep) }) };
 
   try {
     await db.expenseCategory.delete({ where: { id: existing.id } });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && (e.code === "P2003" || e.code === "P2014")) {
-      return { ok: false, message: "This expense category can't be deleted because expenses still use it." };
+      return { ok: false, message: t.expenses.cat.err.inUse };
     }
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") return { ok: false, message: "Expense category not found" };
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") return { ok: false, message: t.expenses.cat.err.notFound };
     throw e;
   }
   revalidatePath(PATH);
-  return { ok: true, message: "Expense category deleted" };
+  return { ok: true, message: t.expenses.cat.ok.deleted };
 }

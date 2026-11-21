@@ -5,9 +5,12 @@ import { auth } from "@/auth";
 import { canManageExpenses, canManageSystemSettings } from "@/lib/roles";
 import { getExpenseFormData } from "@/lib/expense-data";
 import { todayLocal } from "@/lib/cash-bank";
+import { getDict } from "@/lib/i18n/server";
 import ExpenseForm from "@/components/expenses/ExpenseForm";
 
-export const metadata: Metadata = { title: "Create Expense" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).expenses.form.createTitle };
+}
 
 export const instant = false;
 
@@ -18,5 +21,5 @@ export default async function CreateExpensePage() {
   if (!session?.user?.id) redirect("/");
   if (!canManageExpenses(session.user.role)) redirect("/dashboard");
 
-  return <ExpenseForm {...await getExpenseFormData()} today={todayLocal()} canOpenSettings={canManageSystemSettings(session.user.role)} />;
+  return <ExpenseForm {...await getExpenseFormData(await getDict())} today={todayLocal()} canOpenSettings={canManageSystemSettings(session.user.role)} />;
 }

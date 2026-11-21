@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Icon from "@/components/layout/Icon";
+import { useT } from "@/components/i18n/I18nProvider";
 
 /**
  * "Clear Cache" section (design card) + confirmation dialog (design Modal: .sp-overlay / .sp-modal).
@@ -12,19 +13,20 @@ import Icon from "@/components/layout/Icon";
  * personal theme) or uploaded files. Used on /settings and /preferences.
  */
 export default function ClearCacheSection() {
+  const t = useT();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   return (
     <>
       <h2 className="t-section-title" style={{ margin: "32px 0 16px" }}>
-        Clear Cache
+        {t.settings.clearCache}
       </h2>
       <div className="sp-card" style={{ padding: 24, display: "flex", alignItems: "center", gap: 16 }}>
         <button type="button" className="sp-btn sp-btn--secondary" onClick={() => setOpen(true)}>
           <Icon name="eraser" size={18} />
-          Clear Cache
+          {t.settings.clearCache}
         </button>
-        <span className="t-caption">Removes stored application data and reloads the latest settings.</span>
+        <span className="t-caption">{t.settings.clearCacheCaption}</span>
       </div>
       {open && <ClearCacheDialog onClose={() => setOpen(false)} onCleared={() => router.refresh()} />}
     </>
@@ -32,6 +34,7 @@ export default function ClearCacheSection() {
 }
 
 function ClearCacheDialog({ onClose, onCleared }: { onClose: () => void; onCleared: () => void }) {
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const confirmRef = useRef<HTMLButtonElement>(null);
 
@@ -57,10 +60,10 @@ function ClearCacheDialog({ onClose, onCleared }: { onClose: () => void; onClear
       }
       onClose();
       onCleared();
-      toast.success("Cache cleared", { id: "clear-cache" });
+      toast.success(t.settings.cacheCleared, { id: "clear-cache" });
     } catch {
       setBusy(false);
-      toast.error("Could not clear the cache", { id: "clear-cache" });
+      toast.error(t.settings.cacheFailed, { id: "clear-cache" });
     }
   }
 
@@ -69,24 +72,23 @@ function ClearCacheDialog({ onClose, onCleared }: { onClose: () => void; onClear
       <div className="sp-modal sp-modal--sm" role="dialog" aria-modal="true" aria-labelledby="clear-cache-title">
         <div className="sp-modal-head">
           <div className="t-section-title" id="clear-cache-title">
-            Clear Cache
+            {t.settings.clearCache}
           </div>
-          <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label="Close" onClick={onClose} disabled={busy}>
+          <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={t.common.close} onClick={onClose} disabled={busy}>
             <Icon name="x" size={16} />
           </button>
         </div>
         <div className="sp-modal-body">
           <p className="t-body" style={{ margin: 0 }}>
-            This removes temporary data stored by this app in your browser and reloads the latest settings. You
-            stay signed in, and saved settings, your saved appearance and uploaded files are not affected.
+            {t.settings.clearCacheBody}
           </p>
         </div>
         <div className="sp-modal-foot">
           <button type="button" className="sp-btn sp-btn--secondary" onClick={onClose} disabled={busy}>
-            Cancel
+            {t.common.cancel}
           </button>
           <button ref={confirmRef} type="button" className="sp-btn sp-btn--danger" onClick={clear} disabled={busy}>
-            {busy ? "Clearing…" : "Clear Cache"}
+            {busy ? t.settings.clearing : t.settings.clearCache}
           </button>
         </div>
       </div>

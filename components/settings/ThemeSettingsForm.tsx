@@ -5,6 +5,8 @@ import { useEffect, useRef, useState, useTransition, type CSSProperties, type Re
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Icon, { type IconName } from "@/components/layout/Icon";
+import { fmt } from "@/lib/i18n/config";
+import { useT } from "@/components/i18n/I18nProvider";
 import { resetTheme, saveTheme } from "@/app/(dashboard)/settings/theme/actions";
 import { resetPreference, savePreference } from "@/app/(dashboard)/preferences/actions";
 import {
@@ -78,6 +80,16 @@ export default function ThemeSettingsForm({
   children?: ReactNode;
 }) {
   const V = VARIANTS[variant];
+  const T = useT();
+  const personal = variant === "personal";
+  const tx = {
+    title: personal ? T.theme.titlePersonal : T.theme.title,
+    caption: personal ? T.theme.captionPersonal : T.theme.caption,
+    resetLabel: personal ? T.theme.resetLabelPersonal : T.theme.resetLabel,
+    resetTitle: personal ? T.theme.resetTitlePersonal : T.theme.resetTitle,
+    resetText: personal ? T.theme.resetTextPersonal : fmt(T.theme.resetText, { brand: brandName }),
+    saveText: personal ? T.theme.saveTextPersonal : T.theme.saveText,
+  };
   const router = useRouter();
   const [s, setS] = useState(saved);
   const [applied, setApplied] = useState(saved);
@@ -105,20 +117,20 @@ export default function ThemeSettingsForm({
     return r < 4.5 ? `${what} (${r.toFixed(1)}:1)` : "";
   };
   const warns: Partial<Record<ColorKey, string>> = {
-    primary: warnOn("primary", "#ffffff", "Low contrast with white button text"),
-    text1: warnOn("text1", s.surface, "Low contrast on card background"),
-    text2: warnOn("text2", s.surface, "Low contrast on card background"),
-    accent: ratio(s.accent, "#0b1215") < 4.5 ? "Low contrast with dark button text" : "",
-    danger: warnOn("danger", "#ffffff", "Low contrast with white button text"),
+    primary: warnOn("primary", "#ffffff", T.theme.lowWhite),
+    text1: warnOn("text1", s.surface, T.theme.lowCard),
+    text2: warnOn("text2", s.surface, T.theme.lowCard),
+    accent: ratio(s.accent, "#0b1215") < 4.5 ? T.theme.lowDark : "",
+    danger: warnOn("danger", "#ffffff", T.theme.lowWhite),
   };
 
   function requestSave() {
     if (bad) {
-      toast.error("Fix invalid hex codes before saving.", { id: "theme" });
+      toast.error(T.theme.fixHex, { id: "theme" });
       return;
     }
     if (!hasSettingsRecord) {
-      toast.error("Save System Settings first, then customize the theme.", { id: "theme" });
+      toast.error(T.theme.saveSettingsFirst, { id: "theme" });
       return;
     }
     setSaveAsk(true);
@@ -137,7 +149,7 @@ export default function ThemeSettingsForm({
         toast.success(r.message, { id: "theme" });
         router.refresh(); // re-render the shell with the new global theme
       } catch {
-        toast.error("Unable to save theme settings. Please try again.", { id: "theme" });
+        toast.error(T.theme.saveFailed, { id: "theme" });
       }
     });
   }
@@ -156,14 +168,14 @@ export default function ThemeSettingsForm({
         toast.success(r.message, { id: "theme" });
         router.refresh();
       } catch {
-        toast.error("Unable to reset the theme. Please try again.", { id: "theme" });
+        toast.error(T.theme.resetFailed, { id: "theme" });
       }
     });
   }
 
   const cancel = () => setS(applied);
 
-  const seg = <K extends "mode" | "sidebar" | "radius">(k: K, opts: readonly ThemeState[K][], onPick?: (o: ThemeState[K]) => void) => (
+  const seg = <K extends "mode" | "sidebar" | "radius">(k: K, opts: readonly ThemeState[K][], labels: Record<string, string>, onPick?: (o: ThemeState[K]) => void) => (
     <div className="th-seg">
       {opts.map((o) => (
         <button
@@ -173,7 +185,7 @@ export default function ThemeSettingsForm({
           aria-pressed={s[k] === o}
           onClick={() => (onPick ? onPick(o) : setS((p) => ({ ...p, [k]: o })))}
         >
-          {o}
+          {labels[o as string] ?? o}
         </button>
       ))}
     </div>
@@ -183,7 +195,7 @@ export default function ThemeSettingsForm({
     <>
       <div className="sp-page-head">
         <h1 className="t-page-title" style={{ margin: 0 }}>
-          {V.title}
+          {tx.title}
         </h1>
         <div style={{ display: "flex", gap: 12 }}>
           <label className="sp-switch">
@@ -194,16 +206,16 @@ export default function ThemeSettingsForm({
               disabled={pending}
               onChange={(e) => e.target.checked && setResetAsk(true)}
             />
-            {V.resetLabel}
+            {tx.resetLabel}
           </label>
           <Link href={V.back} className="sp-btn sp-btn--secondary">
             <Icon name="arrow-left" size={18} />
-            Back
+            {T.common.back}
           </Link>
         </div>
       </div>
       <p className="t-caption" style={{ margin: "-12px 0 20px" }}>
-        {V.caption}
+        {tx.caption}
       </p>
 
       <div className="th-grid">
@@ -211,9 +223,9 @@ export default function ThemeSettingsForm({
           <div className="sp-tabs" role="tablist">
             {(
               [
-                ["brand", "Brand Colors"],
-                ["sem", "Semantic Colors"],
-                ["ui", "Interface Preferences"],
+                ["brand", T.theme.tabBrand],
+                ["sem", T.theme.tabSemantic],
+                ["ui", T.theme.tabInterface],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -231,20 +243,20 @@ export default function ThemeSettingsForm({
           <div className="sp-card sp-form-card" aria-busy={pending}>
             <div className="sp-form-grid" style={{ "--cols": 2 } as CSSProperties}>
               {tab === "brand" &&
-                BRAND_KEYS.map(([k, label]) => <ColorRow key={k} k={k} label={label} value={s[k]} onPick={setC} warn={warns[k]} />)}
+                BRAND_KEYS.map(([k]) => <ColorRow key={k} k={k} label={T.theme.colors[k]} value={s[k]} onPick={setC} warn={warns[k]} />)}
               {tab === "sem" &&
-                SEMANTIC_KEYS.map(([k, label]) => (
+                SEMANTIC_KEYS.map(([k]) => (
                   <ColorRow
                     key={k}
                     k={k}
-                    label={label}
+                    label={T.theme.colors[k]}
                     value={s[k]}
                     onPick={setC}
                     warn={warns[k]}
                     badge={
                       <span className={`sp-badge sp-badge--${k}`}>
                         <i />
-                        {k[0].toUpperCase() + k.slice(1)}
+                        {T.theme.colorShort[k as "success" | "warning" | "danger" | "info"]}
                       </span>
                     }
                   />
@@ -253,39 +265,39 @@ export default function ThemeSettingsForm({
                 <>
                   <div className="sp-span-all">
                     <div className="sp-field">
-                      <span className="sp-label">Theme Mode</span>
-                      {seg("mode", MODES, setMode)}
+                      <span className="sp-label">{T.theme.themeMode}</span>
+                      {seg("mode", MODES, T.theme.modes, setMode)}
                     </div>
                   </div>
                   <div className="sp-span-all">
                     <div className="sp-field">
-                      <span className="sp-label">Sidebar Style</span>
-                      {seg("sidebar", SIDEBAR_STYLES)}
+                      <span className="sp-label">{T.theme.sidebarStyle}</span>
+                      {seg("sidebar", SIDEBAR_STYLES, T.theme.sidebars)}
                     </div>
                   </div>
                   <div className="sp-span-all">
                     <div className="sp-field">
-                      <span className="sp-label">Border Radius</span>
-                      {seg("radius", RADIUS_OPTIONS)}
+                      <span className="sp-label">{T.theme.borderRadius}</span>
+                      {seg("radius", RADIUS_OPTIONS, T.theme.radii)}
                     </div>
                   </div>
                 </>
               )}
-              {bad && <div className="sp-span-all sp-error">Fix invalid hex codes before saving.</div>}
+              {bad && <div className="sp-span-all sp-error">{T.theme.fixHex}</div>}
             </div>
             <div className="sp-form-actions">
               <button type="button" className="sp-btn sp-btn--secondary" onClick={cancel} disabled={pending}>
-                Cancel
+                {T.common.cancel}
               </button>
               <button type="button" className="sp-btn sp-btn--primary" onClick={requestSave} disabled={pending}>
-                {pending ? "Saving…" : "Save Changes"}
+                {pending ? T.common.saving : T.theme.saveChanges}
               </button>
             </div>
           </div>
         </div>
         <div className="th-sticky">
           <h2 className="t-section-title" style={{ margin: "0 0 12px" }}>
-            Live Preview
+            {T.theme.livePreview}
           </h2>
           <Preview s={s} brandName={brandName} />
         </div>
@@ -295,23 +307,23 @@ export default function ThemeSettingsForm({
 
       {saveAsk && (
         <Confirm
-          title="Save theme settings?"
-          confirmLabel="Save changes"
+          title={T.theme.confirmSaveTitle}
+          confirmLabel={T.theme.confirmSaveLabel}
           onCancel={() => setSaveAsk(false)}
           onConfirm={doSave}
         >
-          {V.saveText}
+          {tx.saveText}
         </Confirm>
       )}
       {resetAsk && (
         <Confirm
-          title={V.resetTitle}
-          confirmLabel="Reset Theme"
+          title={tx.resetTitle}
+          confirmLabel={T.theme.resetThemeLabel}
           danger
           onCancel={() => setResetAsk(false)}
           onConfirm={doReset}
         >
-          {V.resetText(brandName)}
+          {tx.resetText}
         </Confirm>
       )}
     </>
@@ -333,6 +345,7 @@ function ColorRow({
   warn?: string;
   badge?: ReactNode;
 }) {
+  const T = useT();
   // Local text so partially typed hex codes can be edited; re-synced when the value changes.
   const [t, setT] = useState(value);
   const [prev, setPrev] = useState(value);
@@ -341,7 +354,7 @@ function ColorRow({
     setT(value);
   }
   const bad = !HEX.test(t);
-  const error = bad ? "Enter a valid hex code, e.g. #0e7490" : warn;
+  const error = bad ? T.theme.invalidHex : warn;
   return (
     <div className={"sp-field" + (error ? " sp-field--error" : "")}>
       <label className="sp-label" htmlFor={`th-${k}`}>
@@ -350,7 +363,7 @@ function ColorRow({
       <div className="th-color">
         <input
           type="color"
-          aria-label={`${label} picker`}
+          aria-label={fmt(T.theme.picker, { label })}
           value={HEX.test(value) ? value : "#000000"}
           onChange={(e) => onPick(k, e.target.value)}
         />
@@ -359,7 +372,7 @@ function ColorRow({
           className="sp-input "
           value={t}
           maxLength={7}
-          aria-label={`${label} hex`}
+          aria-label={fmt(T.theme.hex, { label })}
           aria-invalid={bad}
           onChange={(e) => {
             let x = e.target.value.trim();
@@ -382,19 +395,20 @@ function initials(name: string) {
 }
 
 function Preview({ s, brandName }: { s: ThemeState; brandName: string }) {
+  const T = useT();
   const v = varsFor(s, ALL_DIFFERENT) as CSSProperties;
   const cmp = s.sidebar === "Compact";
   const kpi: [string, string, string, IconName][] = [
-    ["teal", "1,284", "Products", "package"],
-    ["green", "EGP 84.2K", "Sales", "shopping-cart"],
-    ["amber", "12", "Low stock", "triangle-alert"],
-    ["red", "EGP 3.1K", "Overdue", "wallet"],
+    ["teal", "1,284", T.theme.previewProducts, "package"],
+    ["green", "EGP 84.2K", T.theme.previewSales, "shopping-cart"],
+    ["amber", "12", T.theme.previewLowStock, "triangle-alert"],
+    ["red", "EGP 3.1K", T.theme.previewOverdue, "wallet"],
   ];
   const nav: [IconName, string, boolean][] = [
-    ["layout-dashboard", "Dashboard", true],
-    ["package", "Products", false],
-    ["shopping-cart", "Sales", false],
-    ["settings", "Settings", false],
+    ["layout-dashboard", T.theme.previewDashboard, true],
+    ["package", T.theme.previewProducts, false],
+    ["shopping-cart", T.theme.previewSales, false],
+    ["settings", T.theme.previewSettings, false],
   ];
   return (
     <div className="sp-card" style={{ overflow: "hidden" }} data-testid="theme-preview">
@@ -434,17 +448,17 @@ function Preview({ s, brandName }: { s: ThemeState; brandName: string }) {
         </div>
         <div style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
           <div style={{ height: 48, display: "flex", alignItems: "center", gap: 10, padding: "0 16px", background: "var(--bg-surface)", borderBottom: "1px solid var(--border)" }}>
-            <b style={{ fontFamily: "var(--font-display)", fontSize: 15 }}>Dashboard</b>
+            <b style={{ fontFamily: "var(--font-display)", fontSize: 15 }}>{T.theme.previewDashboard}</b>
             <span style={{ marginLeft: "auto" }} className="sp-avatar">
               A
             </span>
           </div>
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button type="button" className="sp-btn sp-btn--primary sp-btn--sm" tabIndex={-1}>Primary</button>
-              <button type="button" className="sp-btn sp-btn--secondary sp-btn--sm" tabIndex={-1}>Secondary</button>
-              <button type="button" className="sp-btn sp-btn--accent sp-btn--sm" tabIndex={-1}>Accent</button>
-              <button type="button" className="sp-btn sp-btn--danger sp-btn--sm" tabIndex={-1}>Danger</button>
+              <button type="button" className="sp-btn sp-btn--primary sp-btn--sm" tabIndex={-1}>{T.theme.previewPrimary}</button>
+              <button type="button" className="sp-btn sp-btn--secondary sp-btn--sm" tabIndex={-1}>{T.theme.previewSecondary}</button>
+              <button type="button" className="sp-btn sp-btn--accent sp-btn--sm" tabIndex={-1}>{T.theme.previewAccent}</button>
+              <button type="button" className="sp-btn sp-btn--danger sp-btn--sm" tabIndex={-1}>{T.theme.previewDanger}</button>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
               {kpi.map(([t, val, l, i]) => (
@@ -460,47 +474,47 @@ function Preview({ s, brandName }: { s: ThemeState; brandName: string }) {
               ))}
             </div>
             <div className="sp-field">
-              <span className="sp-label">Search product</span>
+              <span className="sp-label">{T.theme.previewSearch}</span>
               <div className="sp-group">
                 <Icon name="search" size={18} className="sp-input-icon" />
-                <input className="sp-input " placeholder="Type a name or SKU" tabIndex={-1} aria-label="Preview search" />
+                <input className="sp-input " placeholder={T.theme.previewTypeName} tabIndex={-1} aria-label={T.theme.previewSearchAria} />
               </div>
             </div>
             <div className="sp-table-card">
               <table className="sp-table">
                 <thead>
                   <tr>
-                    <th style={{ padding: "0 12px" }}>Product</th>
-                    <th style={{ padding: "0 12px" }}>Status</th>
+                    <th style={{ padding: "0 12px" }}>{T.theme.previewProduct}</th>
+                    <th style={{ padding: "0 12px" }}>{T.theme.previewStatus}</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
                     <td style={{ padding: "0 12px", height: 46 }}>Espresso Beans</td>
                     <td style={{ padding: "0 12px" }}>
-                      <span className="sp-badge sp-badge--success"><i />Paid</span>
+                      <span className="sp-badge sp-badge--success"><i />{T.theme.previewPaid}</span>
                     </td>
                   </tr>
                 </tbody>
               </table>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <span className="sp-badge sp-badge--success"><i />Success</span>
-              <span className="sp-badge sp-badge--warning"><i />Warning</span>
-              <span className="sp-badge sp-badge--danger"><i />Danger</span>
-              <span className="sp-badge sp-badge--info"><i />Info</span>
-              <span className="sp-badge sp-badge--primary"><i />Primary</span>
+              <span className="sp-badge sp-badge--success"><i />{T.theme.previewSuccess}</span>
+              <span className="sp-badge sp-badge--warning"><i />{T.theme.previewWarning}</span>
+              <span className="sp-badge sp-badge--danger"><i />{T.theme.previewDanger}</span>
+              <span className="sp-badge sp-badge--info"><i />{T.theme.previewInfo}</span>
+              <span className="sp-badge sp-badge--primary"><i />{T.theme.previewPrimary}</span>
             </div>
             <div style={{ background: "var(--overlay)", padding: 16, borderRadius: "var(--radius-lg)" }}>
               <div className="sp-modal sp-modal--sm" style={{ boxShadow: "var(--shadow-xl)" }}>
                 <div className="sp-modal-head" style={{ padding: "12px 16px" }}>
-                  <div className="t-section-title" style={{ fontSize: 15 }}>Delete Product?</div>
+                  <div className="t-section-title" style={{ fontSize: 15 }}>{T.theme.previewDeleteTitle}</div>
                   <Icon name="x" size={16} />
                 </div>
-                <div className="sp-modal-body" style={{ padding: 16, fontSize: 13, color: "var(--text-2)" }}>This action cannot be undone.</div>
+                <div className="sp-modal-body" style={{ padding: 16, fontSize: 13, color: "var(--text-2)" }}>{T.theme.previewDeleteBody}</div>
                 <div className="sp-modal-foot" style={{ padding: "10px 16px" }}>
-                  <button type="button" className="sp-btn sp-btn--secondary sp-btn--sm" tabIndex={-1}>Cancel</button>
-                  <button type="button" className="sp-btn sp-btn--danger sp-btn--sm" tabIndex={-1}>Delete</button>
+                  <button type="button" className="sp-btn sp-btn--secondary sp-btn--sm" tabIndex={-1}>{T.common.cancel}</button>
+                  <button type="button" className="sp-btn sp-btn--danger sp-btn--sm" tabIndex={-1}>{T.common.delete}</button>
                 </div>
               </div>
             </div>
@@ -527,6 +541,7 @@ function Confirm({
   onConfirm: () => void;
   children: ReactNode;
 }) {
+  const T = useT();
   const ref = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     ref.current?.focus();
@@ -539,7 +554,7 @@ function Confirm({
       <div className="sp-modal sp-modal--sm" role="dialog" aria-modal="true" aria-labelledby="th-confirm-title">
         <div className="sp-modal-head">
           <div className="t-section-title" id="th-confirm-title">{title}</div>
-          <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label="Close" onClick={onCancel}>
+          <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={T.common.close} onClick={onCancel}>
             <Icon name="x" size={16} />
           </button>
         </div>
@@ -547,7 +562,7 @@ function Confirm({
           <p style={{ margin: 0 }}>{children}</p>
         </div>
         <div className="sp-modal-foot">
-          <button type="button" className="sp-btn sp-btn--secondary" onClick={onCancel}>Cancel</button>
+          <button type="button" className="sp-btn sp-btn--secondary" onClick={onCancel}>{T.common.cancel}</button>
           <button ref={ref} type="button" className={"sp-btn " + (danger ? "sp-btn--danger" : "sp-btn--primary")} onClick={onConfirm}>
             {confirmLabel}
           </button>

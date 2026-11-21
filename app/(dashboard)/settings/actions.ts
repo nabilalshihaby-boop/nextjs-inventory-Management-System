@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
+import { getDict } from "@/lib/i18n/server";
+import type { Dictionary } from "@/lib/i18n";
 import { isCountryCode } from "@/lib/countries";
 import { canManageSystemSettings } from "@/lib/roles";
 import { deleteImage, saveImage, validateImage, type ValidImage } from "@/lib/image-upload";
@@ -16,10 +18,9 @@ export type SettingsState =
   | { status: "error"; message: string; fieldErrors: Partial<Record<SettingsField, string>> }
   | { status: "success"; message: string; values: SettingsValues };
 
-const optional = (max: number, label: string) =>
-  z.string().trim().max(max, `${label} is too long`);
+const optional = (max: number, tooLong: string) => z.string().trim().max(max, tooLong);
 
-const schema = z.object({
+const makeSchema = (t: Dictionary) => z.object({
   // A Currency record id; checked against the database below.
   defaultCurrencyId: z.string().trim().max(64),
   // Optional POS Walk-in Customer: "" clears it, otherwise a real Customer id (checked below).
@@ -28,19 +29,19 @@ const schema = z.object({
     .string()
     .trim()
     .toLowerCase()
-    .max(191, "Email is too long")
-    .refine((v) => v === "" || z.email().safeParse(v).success, "Enter a valid email"),
+    .max(191, t.profile.emailTooLong)
+    .refine((v) => v === "" || z.email().safeParse(v).success, t.settings.emailInvalid),
   currencyIconRight: z.boolean(),
-  companyName: z.string().trim().min(1, "Company name is required").max(120, "Company name is too long"),
-  companyPhone: optional(32, "Phone").refine((v) => v === "" || /^[0-9+()\-.\s]{6,32}$/.test(v), "Enter a valid phone number"),
-  developedBy: optional(120, "Developer name"),
-  footerText: optional(255, "Footer"),
-  country: z.string().refine(isCountryCode, "Choose a country"),
-  state: z.string().trim().min(1, "State is required").max(120, "State is too long"),
-  city: optional(120, "City"),
-  postalCode: optional(20, "Postal code"),
-  dateFormat: z.string().refine((v) => (DATE_FORMATS as readonly string[]).includes(v), "Choose a date format"),
-  address: optional(500, "Address"),
+  companyName: z.string().trim().min(1, t.settings.companyRequired).max(120, t.settings.companyTooLong),
+  companyPhone: optional(32, t.settings.phoneInvalid).refine((v) => v === "" || /^[0-9+()\-.\s]{6,32}$/.test(v), t.settings.phoneInvalid),
+  developedBy: optional(120, t.settings.companyTooLong),
+  footerText: optional(255, t.settings.companyTooLong),
+  country: z.string().refine(isCountryCode, t.settings.chooseCountry),
+  state: z.string().trim().min(1, t.settings.stateRequired).max(120, t.settings.companyTooLong),
+  city: optional(120, t.settings.companyTooLong),
+  postalCode: optional(20, t.settings.companyTooLong),
+  dateFormat: z.string().refine((v) => (DATE_FORMATS as readonly string[]).includes(v), t.settings.chooseDateFormat),
+  address: optional(500, t.settings.companyTooLong),
   showVersionInFooter: z.boolean(),
 });
 
@@ -51,10 +52,11 @@ export async function saveSettings(_prev: SettingsState, formData: FormData): Pr
   // Global settings: OWNER only. Re-checked here before reading the form or touching the
   // database/files — page gating is not a security boundary (actions are plain POST endpoints).
   const session = await auth();
-  if (!session?.user?.id) return { status: "error", message: "Your session has expired. Please sign in again.", fieldErrors: {} };
-  if (!canManageSystemSettings(session.user.role)) return { status: "error", message: "Only the owner can change system settings.", fieldErrors: {} };
+  const t = await getDict();
+  if (!session?.user?.id) return { status: "error", message: t.common.sessionExpired, fieldErrors: {} };
+  if (!canManageSystemSettings(session.user.role)) return { status: "error", message: t.settings.onlyOwner, fieldErrors: {} };
 
-  const parsed = schema.safeParse({
+  const parsed = makeSchema(t).safeParse({
     defaultCurrencyId: str(formData.get("defaultCurrencyId")),
     posWalkInCustomerId: str(formData.get("posWalkInCustomerId")),
     defaultEmail: str(formData.get("defaultEmail")),
@@ -84,15 +86,15 @@ export async function saveSettings(_prev: SettingsState, formData: FormData): Pr
     if (!found) {
       const anyCurrency = await db.currency.count();
       fieldErrors.defaultCurrencyId = anyCurrency
-        ? "Choose a default currency"
-        : "Create a currency first, then choose it as the default currency";
+        ? t.settings.chooseCurrency
+        : t.settings.createCurrencyFirst;
     }
   }
 
   // The Walk-in Customer must be an existing customer (never free text or a made-up id).
   if (parsed.success && parsed.data.posWalkInCustomerId) {
     const c = await db.customer.findUnique({ where: { id: parsed.data.posWalkInCustomerId }, select: { id: true } });
-    if (!c) fieldErrors.posWalkInCustomerId = "Choose an existing customer";
+    if (!c) fieldErrors.posWalkInCustomerId = t.settings.chooseExistingCustomer;
   }
 
   // Logo: an uploaded file only (never a URL), validated by content.
@@ -106,7 +108,7 @@ export async function saveSettings(_prev: SettingsState, formData: FormData): Pr
   }
 
   if (!parsed.success || Object.keys(fieldErrors).length) {
-    const first = Object.values(fieldErrors)[0] ?? "Please check the form";
+    const first = Object.values(fieldErrors)[0] ?? t.settings.fixForm;
     return { status: "error", message: first, fieldErrors };
   }
 
@@ -150,5 +152,5 @@ export async function saveSettings(_prev: SettingsState, formData: FormData): Pr
   revalidatePath("/");
   revalidatePath("/pos");
 
-  return { status: "success", message: "Settings saved", values: toSettingsValues(saved) };
+  return { status: "success", message: t.settings.saved, values: toSettingsValues(saved) };
 }

@@ -9,6 +9,8 @@ import { randomBytes } from "node:crypto";
 import { Prisma } from "@/app/generated/prisma/client";
 import { computeBalances, findNegativeRunningBalance } from "@/lib/cash-bank-server";
 import { formatDateOnly } from "@/lib/format";
+import { tr } from "@/lib/i18n/messages";
+import { en } from "@/lib/i18n/dictionaries/en";
 import { formatMoney } from "@/lib/money";
 import { getSystemSettings } from "@/lib/settings";
 import { formatTxReference, type TxTypeValue } from "@/lib/cash-bank";
@@ -20,13 +22,17 @@ export class LedgerError extends Error {
   constructor(
     message: string,
     readonly field?: string,
+    /** Optional dictionary key + values so localized modules can translate the message. */
+    readonly i18n?: { key: string; vars: Record<string, string | number> },
   ) {
     super(message);
   }
 }
-export const ledgerReject = (message: string, field?: string): never => {
-  throw new LedgerError(message, field);
+export const ledgerReject = (message: string, field?: string, i18n?: { key: string; vars: Record<string, string | number> }): never => {
+  throw new LedgerError(message, field, i18n);
 };
+/** Reject with a dictionary key: the English message is derived from en.ts (identical to before), the key lets localized callers translate it. */
+export const ledgerFail = (key: string, vars: Record<string, string | number> = {}, field?: string): never => ledgerReject(tr(en, key, vars), field, { key, vars });
 
 export type LockedAccount = { id: string; name: string; type: "CASH" | "BANK"; status: "ACTIVE" | "INACTIVE"; currencyId: string; currency: { symbol: string; code: string } };
 
@@ -54,7 +60,10 @@ export async function balanceOf(tx: Tx, accountId: string): Promise<Prisma.Decim
 /** Money out must be covered by the current balance. */
 export async function assertSufficient(tx: Tx, acc: LockedAccount, amount: Prisma.Decimal | string, field = "amount", label?: string) {
   const balance = await balanceOf(tx, acc.id);
-  if (balance.lt(amount)) ledgerReject(label ? `Insufficient balance in ${acc.name} (${await moneyText(balance, acc.currency.symbol)} available)` : `Insufficient balance (${await moneyText(balance, acc.currency.symbol)} available)`, field);
+  if (balance.lt(amount)) {
+    const bal = await moneyText(balance, acc.currency.symbol);
+    ledgerReject(label ? `Insufficient balance in ${acc.name} (${bal} available)` : `Insufficient balance (${bal} available)`, field, label ? { key: "finance.err.insufficientNamed", vars: { account: acc.name, balance: bal } } : { key: "finance.err.insufficient", vars: { balance: bal } });
+  }
 }
 
 /**
@@ -65,7 +74,8 @@ export async function assertChronology(tx: Tx, acc: LockedAccount, date: Date, d
   const hit = await findNegativeRunningBalance(tx, acc.id, { date, delta });
   if (!hit) return;
   const on = formatDateOnly(hit.date, (await getSystemSettings())?.dateFormat);
-  ledgerReject(`This date would make the account balance negative: ${acc.name} would drop to ${await moneyText(hit.balance, acc.currency.symbol)} on ${on}.`, field);
+  const bal = await moneyText(hit.balance, acc.currency.symbol);
+  ledgerReject(`This date would make the account balance negative: ${acc.name} would drop to ${bal} on ${on}.`, field, { key: "finance.err.chronology", vars: { account: acc.name, balance: bal, date: on } });
 }
 
 export const ledgerTxOptions = { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 15_000 } as const;

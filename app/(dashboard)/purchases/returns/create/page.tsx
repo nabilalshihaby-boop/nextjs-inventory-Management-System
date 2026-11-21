@@ -5,9 +5,12 @@ import { auth } from "@/auth";
 import { canManagePurchaseReturns } from "@/lib/roles";
 import { getReturnSources } from "@/lib/purchase-return-data";
 import { todayLocal } from "@/lib/cash-bank";
+import { getDict } from "@/lib/i18n/server";
 import PurchaseReturnForm from "@/components/purchases/PurchaseReturnForm";
 
-export const metadata: Metadata = { title: "Create Purchase Return" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).purchaseReturns.form.title };
+}
 
 export const instant = false;
 

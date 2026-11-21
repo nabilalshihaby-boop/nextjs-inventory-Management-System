@@ -9,6 +9,9 @@ import Modal, { ConfirmDeleteModal } from "@/components/ui/Modal";
 import { createQuotation, updateQuotation, type QuotationResult } from "@/app/(dashboard)/quotations/actions";
 import { formatMoney, formatQuantity } from "@/lib/money";
 import { fromUnits, isQuantity, toUnits } from "@/lib/transfers";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
+import { tr } from "@/lib/i18n/messages";
 import { calcQuotation, type QuotationCurrency, type QuotationDraft, type QuotationField, type QuotationLineInput, type QuotationOption, type QuotationProduct, type QuotationStockLevel } from "@/lib/quotations";
 
 // Port of design/Create Quotation.html: PageHeader (+ Back), FormCard with Date / Warehouse /
@@ -56,6 +59,9 @@ export default function QuotationForm({
   draft?: QuotationDraft;
 }) {
   const router = useRouter();
+  const T = useT();
+  const Q = T.quotations;
+  const F = Q.form;
   const editing = !!draft;
   // An existing draft keeps its own currency; new quotations use the default currency.
   const currency = draft?.currency ?? defaultCurrency;
@@ -80,10 +86,10 @@ export default function QuotationForm({
   const back = draft ? `/quotations/${encodeURIComponent(draft.id)}` : "/quotations";
 
   const missing: { key: string; text: ReactNode }[] = [];
-  if (!currency) missing.push({ key: "currency", text: canOpenSettings ? <>a default currency in <Link href="/settings">System Settings</Link></> : <>a default currency (ask the Owner to choose one in System Settings)</> });
-  if (!warehouses.length) missing.push({ key: "warehouse", text: <>a <Link href="/warehouse/create">warehouse</Link></> });
-  if (!customers.length) missing.push({ key: "customer", text: <>a <Link href="/customers/create">customer</Link></> });
-  if (!products.length) missing.push({ key: "product", text: <>a <Link href="/products/create">product</Link></> });
+  if (!currency) missing.push({ key: "currency", text: canOpenSettings ? <Link href="/settings">{F.setupCurrency}</Link> : <>{F.setupCurrencyAsk}</> });
+  if (!warehouses.length) missing.push({ key: "warehouse", text: <Link href="/warehouse/create">{F.setupWarehouse}</Link> });
+  if (!customers.length) missing.push({ key: "customer", text: <Link href="/customers/create">{F.setupCustomer}</Link> });
+  if (!products.length) missing.push({ key: "product", text: <Link href="/products/create">{F.setupProduct}</Link> });
   const blocked = missing.length > 0;
 
   const calc = calcQuotation(lines.map(safe), { orderTaxRate: okPct(orderTaxRate) ? orderTaxRate.trim() : "0", discount: okMoney(discount) ? discount.trim() : "0", shipping: okMoney(shipping) ? shipping.trim() : "0" });
@@ -97,7 +103,7 @@ export default function QuotationForm({
   };
   function add(p: QuotationProduct) {
     setQ("");
-    if (lines.some((l) => l.productId === p.productId)) return void toast(`${p.name} is already in the order items`, { id: "quotation", icon: "ℹ️" });
+    if (lines.some((l) => l.productId === p.productId)) return void toast(fmt(F.alreadyInItems, { name: p.name }), { id: "quotation", icon: "ℹ️" });
     setLines([...lines, { ...p, quantity: "1", unitPrice: p.price, discountType: "FIXED", discountValue: "0" }]);
     setE((x) => ({ ...x, items: "" }));
   }
@@ -109,10 +115,10 @@ export default function QuotationForm({
   };
 
   function lineProblem(l: Line): string {
-    if (!isQuantity(l.quantity)) return "Enter a quantity greater than 0 (up to 3 decimals)";
-    if (!okMoney(l.unitPrice)) return "Enter a valid product price";
-    if (!okPct(l.taxRate)) return "Tax must be a percentage between 0 and 100";
-    if (l.discountType === "FIXED" ? !okMoney(l.discountValue) : !okPct(l.discountValue)) return l.discountType === "FIXED" ? "Enter a valid discount amount" : "Discount percentage must be between 0 and 100";
+    if (!isQuantity(l.quantity)) return F.problemQty;
+    if (!okMoney(l.unitPrice)) return F.problemPrice;
+    if (!okPct(l.taxRate)) return F.problemTax;
+    if (l.discountType === "FIXED" ? !okMoney(l.discountValue) : !okPct(l.discountValue)) return l.discountType === "FIXED" ? F.problemDiscountAmount : F.problemDiscountPct;
     return "";
   }
 
@@ -120,20 +126,20 @@ export default function QuotationForm({
     if (blocked) return;
     const n: Partial<Record<QuotationField, string>> = {};
     const ie: Record<string, string> = {};
-    if (!date) n.quotationDate = "Date is required";
-    else if (date > today) n.quotationDate = "The date can't be in the future";
-    if (!warehouseId) n.warehouseId = "Choose a warehouse";
-    if (!customerId) n.customerId = "Choose a customer";
-    if (!lines.length) n.items = "Add at least one order item";
+    if (!date) n.quotationDate = Q.val.dateRequired;
+    else if (date > today) n.quotationDate = Q.val.dateFuture;
+    if (!warehouseId) n.warehouseId = Q.val.chooseWarehouse;
+    if (!customerId) n.customerId = Q.val.chooseCustomer;
+    if (!lines.length) n.items = Q.val.addItem;
     lines.forEach((l, i) => {
-      const p = lineProblem(l) || calc.lines[i]?.error || "";
+      const p = lineProblem(l) || (calc.lines[i]?.errorKey ? tr(T, calc.lines[i].errorKey!) : calc.lines[i]?.error) || "";
       if (p) ie[l.productId] = p;
     });
     if (Object.keys(ie).length) n.items ??= Object.values(ie)[0];
-    if (!okPct(orderTaxRate)) n.orderTaxRate = "Order tax must be a percentage between 0 and 100";
-    if (!okMoney(discount)) n.discount = "Enter a valid discount amount";
-    if (!okMoney(shipping)) n.shipping = "Enter a valid shipping amount";
-    if (!n.discount && calc.error && !Object.keys(ie).length) n.discount = calc.error;
+    if (!okPct(orderTaxRate)) n.orderTaxRate = F.orderTaxPct;
+    if (!okMoney(discount)) n.discount = F.discountAmount;
+    if (!okMoney(shipping)) n.shipping = F.shippingAmount;
+    if (!n.discount && calc.error && !Object.keys(ie).length) n.discount = calc.errorKey ? tr(T, calc.errorKey) : calc.error;
     setE(n);
     setItemErr(ie);
     if (Object.keys(n).length) return void toast.error(Object.values(n)[0]!, { id: "quotation" });
@@ -153,7 +159,7 @@ export default function QuotationForm({
       try {
         r = draft ? await updateQuotation(draft.id, payload) : await createQuotation(payload);
       } catch {
-        return void toast.error("Something went wrong. Please try again.", { id: "quotation" });
+        return void toast.error(T.common.somethingWrong, { id: "sale" });
       }
       if (!r.ok) {
         if (r.fieldErrors) setE(r.fieldErrors);
@@ -179,7 +185,7 @@ export default function QuotationForm({
   const sel = (k: QuotationField, value: string, onChange: (v: string) => void, placeholder: string, opts: QuotationOption[]) => (
     <select id={`qu-${k}`} className={"sp-select " + (value ? "" : "sp-select--placeholder")} value={value} disabled={!opts.length} onChange={(ev) => { onChange(ev.target.value); setE((x) => ({ ...x, [k]: "" })); }} aria-invalid={!!e[k] || undefined}>
       <option value="" disabled>
-        {opts.length ? placeholder : "None available yet"}
+        {opts.length ? placeholder : F.noneYet}
       </option>
       {opts.map((o) => (
         <option key={o.value} value={o.value}>
@@ -200,12 +206,12 @@ export default function QuotationForm({
     <>
       <div className="sp-page-head">
         <h1 className="t-page-title" style={{ margin: 0 }}>
-          {editing ? `Edit Quotation ${draft.reference}` : "Create Quotation"}
+          {editing ? fmt(F.editTitle, { ref: draft.reference }) : F.createTitle}
         </h1>
         <div style={{ display: "flex", gap: 12 }}>
           <Link href={back} className="sp-btn sp-btn--secondary">
             <Icon name="arrow-left" size={18} />
-            Back
+            {F.back}
           </Link>
         </div>
       </div>
@@ -214,7 +220,7 @@ export default function QuotationForm({
         <div className="sp-badge sp-badge--warning" role="status" data-testid="quotation-setup" style={{ height: "auto", padding: "10px 14px", whiteSpace: "normal", marginBottom: 16 }}>
           <Icon name="info" size={16} />
           <span>
-            Before creating a quotation, set up{" "}
+            {F.setupBefore}{" "}
             {missing.map((m, i) => (
               <Fragment key={m.key}>
                 {i > 0 && (i === missing.length - 1 ? " and " : ", ")}
@@ -230,14 +236,14 @@ export default function QuotationForm({
         <div className="sp-card sp-form-card">
           <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
             <div className="sp-form-grid" style={{ "--cols": 3 } as CSSProperties}>
-              {field("quotationDate", "Date", <input id="qu-quotationDate" type="date" className="sp-input " max={today} value={date} onChange={(ev) => { setDate(ev.target.value); setE((x) => ({ ...x, quotationDate: "" })); }} aria-invalid={!!e.quotationDate || undefined} />, true)}
-              {field("warehouseId", "Warehouse", sel("warehouseId", warehouseId, setWarehouseId, "Choose Warehouse", warehouses), true)}
-              {field("customerId", "Customer", sel("customerId", customerId, setCustomerId, "Choose Customer", customers), true)}
+              {field("quotationDate", F.date, <input id="qu-quotationDate" type="date" className="sp-input " max={today} value={date} onChange={(ev) => { setDate(ev.target.value); setE((x) => ({ ...x, quotationDate: "" })); }} aria-invalid={!!e.quotationDate || undefined} />, true)}
+              {field("warehouseId", F.warehouse, sel("warehouseId", warehouseId, setWarehouseId, F.chooseWarehouse, warehouses), true)}
+              {field("customerId", F.customer, sel("customerId", customerId, setCustomerId, F.chooseCustomer, customers), true)}
             </div>
 
             <div className="sp-field">
-              <label className="sp-label" htmlFor="qu-product">
-                Product
+              <label className="sp-label" htmlFor="sa-product">
+                {F.product}
               </label>
               <div style={{ position: "relative" }}>
                 <div className="sp-group">
@@ -245,7 +251,7 @@ export default function QuotationForm({
                   <input
                     id="qu-product"
                     className="sp-input "
-                    placeholder="Search Product by Code Name"
+                    placeholder={F.productSearch}
                     value={q}
                     autoComplete="off"
                     disabled={!products.length}
@@ -261,7 +267,7 @@ export default function QuotationForm({
                   />
                 </div>
                 {focus && needle && (
-                  <div className="sp-sug" role="listbox" aria-label="Products">
+                  <div className="sp-sug" role="listbox" aria-label={F.productsAria}>
                     {suggestions.length ? (
                       suggestions.map((p) => (
                         <button key={p.productId} type="button" role="option" aria-selected={false} className="sp-menu-item" onMouseDown={() => add(p)}>
@@ -271,7 +277,7 @@ export default function QuotationForm({
                       ))
                     ) : (
                       <div className="t-caption" style={{ padding: "8px 10px" }}>
-                        No products match “{q.trim()}”.
+                        {fmt(F.noMatch, { q: q.trim() })}
                       </div>
                     )}
                   </div>
@@ -281,28 +287,28 @@ export default function QuotationForm({
 
             <div className={"sp-field" + (e.items ? " sp-field--error" : "")}>
               <span className="sp-label">
-                Order items<i>*</i>
+                {F.orderItems}<i>*</i>
               </span>
               <div className="sp-table-card" style={{ boxShadow: "none" }}>
                 <div className="sp-table-scroll">
                   <table className="sp-table" data-testid="quotation-items">
                     <thead>
                       <tr>
-                        <th>Product</th>
-                        <th>Net Unit Price</th>
-                        <th>Stock</th>
-                        <th>Qty</th>
-                        <th>Discount</th>
-                        <th>Tax</th>
-                        <th>Subtotal</th>
-                        <th className="act">Action</th>
+                        <th>{F.colProduct}</th>
+                        <th>{F.colNet}</th>
+                        <th>{F.colStock}</th>
+                        <th>{F.colQty}</th>
+                        <th>{F.colDiscount}</th>
+                        <th>{F.colTax}</th>
+                        <th>{F.colSubtotal}</th>
+                        <th className="act">{F.colAction}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {lines.length === 0 && (
                         <tr>
                           <td colSpan={8} style={{ color: "var(--text-3)" }}>
-                            No order items
+                            {F.noItems}
                           </td>
                         </tr>
                       )}
@@ -314,7 +320,7 @@ export default function QuotationForm({
                               <div style={{ fontWeight: 600, marginBottom: 4 }}>{l.code}</div>
                               <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                 <span className="sp-badge sp-badge--success">{l.name}</span>
-                                <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={`Edit item ${l.name}`} onClick={() => setEdit({ ...l })}>
+                                <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={fmt(F.editItem, { name: l.name })} onClick={() => setEdit({ ...l })}>
                                   <Icon name="pencil" size={16} />
                                 </button>
                               </span>
@@ -326,17 +332,17 @@ export default function QuotationForm({
                             </td>
                             <td data-col="net">{money(c.netUnitCost)}</td>
                             <td>
-                              <span className="sp-badge sp-badge--warning" title="For reference only — quotations don't reserve stock">
+                              <span className="sp-badge sp-badge--warning" title={F.stockTitle}>
                                 {warehouseId ? `${formatQuantity(onHand.get(l.productId) ?? "0.000")} ${l.unit}` : "—"}
                               </span>
                             </td>
                             <td>
                               <span className="sp-qty">
-                                <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={`Decrease ${l.name}`} onClick={() => step(l, -1)}>
+                                <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={fmt(F.decrease, { name: l.name })} onClick={() => step(l, -1)}>
                                   <Icon name="minus" size={18} />
                                 </button>
-                                <input className="sp-input" aria-label={`Quantity of ${l.name}`} inputMode="decimal" value={l.quantity} onChange={(ev) => patch(l.productId, { quantity: ev.target.value })} />
-                                <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={`Increase ${l.name}`} onClick={() => step(l, 1)}>
+                                <input className="sp-input" aria-label={fmt(F.qtyOf, { name: l.name })} inputMode="decimal" value={l.quantity} onChange={(ev) => patch(l.productId, { quantity: ev.target.value })} />
+                                <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={fmt(F.increase, { name: l.name })} onClick={() => step(l, 1)}>
                                   <Icon name="plus" size={18} />
                                 </button>
                               </span>
@@ -345,7 +351,7 @@ export default function QuotationForm({
                             <td data-col="tax">{money(c.taxAmount)}</td>
                             <td data-col="subtotal">{money(c.subtotal)}</td>
                             <td className="act">
-                              <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={`Remove ${l.name}`} style={{ color: "var(--danger-500)" }} onClick={() => setRemove(l)}>
+                              <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={fmt(F.remove, { name: l.name })} style={{ color: "var(--danger-500)" }} onClick={() => setRemove(l)}>
                                 <Icon name="trash-2" size={16} />
                               </button>
                             </td>
@@ -361,51 +367,51 @@ export default function QuotationForm({
 
             <div className="sp-sum" data-testid="quotation-summary">
               <div>
-                <span>Order Tax</span>
+                <span>{F.orderTax}</span>
                 <span data-testid="sum-tax">
                   {money(calc.orderTaxAmount)} ({okPct(orderTaxRate) ? Number(orderTaxRate).toFixed(2) : "0.00"}) %
                 </span>
               </div>
               <div>
-                <span>Discount</span>
+                <span>{F.discount}</span>
                 <span data-testid="sum-discount">{money(okMoney(discount) ? discount.trim() : "0")}</span>
               </div>
               <div>
-                <span>Shipping</span>
+                <span>{F.shipping}</span>
                 <span data-testid="sum-shipping">{money(okMoney(shipping) ? shipping.trim() : "0")}</span>
               </div>
               <div>
-                <span>Grand Total</span>
+                <span>{F.grandTotal}</span>
                 <span data-testid="sum-grand">{money(calc.grandTotal)}</span>
               </div>
             </div>
 
             <div className="sp-form-grid" style={{ "--cols": 3 } as CSSProperties}>
-              {field("orderTaxRate", "Order Tax", addonInput("orderTaxRate", orderTaxRate, setOrderTaxRate, "%"))}
-              {field("discount", "Discount", addonInput("discount", discount, setDiscount, symbol))}
-              {field("shipping", "Shipping", addonInput("shipping", shipping, setShipping, symbol))}
+              {field("orderTaxRate", F.orderTax, addonInput("orderTaxRate", orderTaxRate, setOrderTaxRate, "%"))}
+              {field("discount", F.discount, addonInput("discount", discount, setDiscount, symbol))}
+              {field("shipping", F.shipping, addonInput("shipping", shipping, setShipping, symbol))}
             </div>
 
             {field(
               "status",
-              "Status",
+              F.status,
               <select id="qu-status" className="sp-select " value="DRAFT" disabled>
-                <option value="DRAFT">Draft</option>
+                <option value="DRAFT">{F.draft}</option>
               </select>,
               true,
               { width: "33%", minWidth: 260 },
-              editing ? "Only draft quotations can be edited." : "New quotations are saved as Draft. Mark it as Sent from the quotation details.",
+              editing ? F.statusEditHint : F.statusCreateHint,
             )}
 
-            {field("notes", "Notes", <textarea id="qu-notes" className="sp-textarea " rows={4} placeholder="Enter Notes" maxLength={2000} value={notes} onChange={(ev) => setNotes(ev.target.value)} />)}
-            <span className="t-caption">A quotation is an offer only: it doesn&apos;t reserve or move stock, and records no payment.</span>
+            {field("notes", F.notes, <textarea id="sa-notes" className="sp-textarea " rows={4} placeholder={F.notesPh} maxLength={2000} value={notes} onChange={(ev) => setNotes(ev.target.value)} />)}
+            <span className="t-caption">{F.offerNote}</span>
           </div>
           <div className="sp-form-actions">
             <button type="button" className="sp-btn sp-btn--secondary" onClick={() => router.push(back)} disabled={pending}>
-              Cancel
+              {F.cancel}
             </button>
-            <button type="submit" className="sp-btn sp-btn--primary" disabled={pending || blocked} title={blocked ? "Complete the setup above first" : undefined}>
-              {pending ? "Saving…" : "Save"}
+            <button type="submit" className="sp-btn sp-btn--primary" disabled={pending || blocked} title={blocked ? F.completeSetup : undefined}>
+              {pending ? F.saving : F.save}
             </button>
           </div>
         </div>
@@ -419,7 +425,7 @@ export default function QuotationForm({
           footer={
             <>
               <button type="button" className="sp-btn sp-btn--secondary" onClick={() => setEdit(null)}>
-                Cancel
+                {F.cancel}
               </button>
               <button
                 type="button"
@@ -431,7 +437,7 @@ export default function QuotationForm({
                   setEdit(null);
                 }}
               >
-                Save
+                {F.save}
               </button>
             </>
           }
@@ -439,26 +445,26 @@ export default function QuotationForm({
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }} data-testid="item-modal">
             <div className="sp-field">
               <label className="sp-label" htmlFor="qi-price">
-                Product Price<i>*</i>
+                {F.productPrice}<i>*</i>
               </label>
               <div className="sp-group">
                 <input id="qi-price" className="sp-input " inputMode="decimal" value={edit.unitPrice} onChange={(ev) => setEdit({ ...edit, unitPrice: ev.target.value })} />
                 <span className="sp-addon sp-addon--r">{symbol}</span>
               </div>
-              <span className="sp-hint">For this quotation only — the product&apos;s own price is not changed.</span>
+              <span className="sp-hint">{F.priceHint}</span>
             </div>
             <div className="sp-field">
               <label className="sp-label" htmlFor="qi-taxType">
-                Tax Type<i>*</i>
+                {F.taxType}<i>*</i>
               </label>
               <select id="qi-taxType" className="sp-select " value={edit.taxType} onChange={(ev) => setEdit({ ...edit, taxType: ev.target.value as Line["taxType"] })}>
-                <option value="INCLUSIVE">Inclusive</option>
-                <option value="EXCLUSIVE">Exclusive</option>
+                <option value="INCLUSIVE">{F.inclusive}</option>
+                <option value="EXCLUSIVE">{F.exclusive}</option>
               </select>
             </div>
             <div className="sp-field">
-              <label className="sp-label" htmlFor="qi-taxRate">
-                Order Tax
+              <label className="sp-label" htmlFor="si-taxRate">
+                {F.orderTax}
               </label>
               <div className="sp-group">
                 <input id="qi-taxRate" className="sp-input " inputMode="decimal" value={edit.taxRate} onChange={(ev) => setEdit({ ...edit, taxRate: ev.target.value })} />
@@ -467,16 +473,16 @@ export default function QuotationForm({
             </div>
             <div className="sp-field">
               <label className="sp-label" htmlFor="qi-discountType">
-                Discount Type<i>*</i>
+                {F.discountType}<i>*</i>
               </label>
               <select id="qi-discountType" className="sp-select " value={edit.discountType} onChange={(ev) => setEdit({ ...edit, discountType: ev.target.value as Line["discountType"] })}>
-                <option value="FIXED">Fixed</option>
-                <option value="PERCENTAGE">Percentage</option>
+                <option value="FIXED">{F.fixed}</option>
+                <option value="PERCENTAGE">{F.percentage}</option>
               </select>
             </div>
             <div className="sp-field">
               <label className="sp-label" htmlFor="qi-discountValue">
-                Discount<i>*</i>
+                {F.discount}<i>*</i>
               </label>
               <div className="sp-group">
                 <input id="qi-discountValue" className="sp-input " inputMode="decimal" value={edit.discountValue} onChange={(ev) => setEdit({ ...edit, discountValue: ev.target.value })} />
@@ -485,12 +491,12 @@ export default function QuotationForm({
             </div>
             <div className="sp-field">
               <label className="sp-label" htmlFor="qi-unit">
-                Sale Unit<i>*</i>
+                {F.saleUnit}<i>*</i>
               </label>
               <select id="qi-unit" className="sp-select " value="unit" disabled>
                 <option value="unit">{edit.unit}</option>
               </select>
-              <span className="sp-hint">The product&apos;s sale unit (unit conversion isn&apos;t available yet).</span>
+              <span className="sp-hint">{F.unitHint}</span>
             </div>
           </div>
         </Modal>
@@ -498,7 +504,7 @@ export default function QuotationForm({
 
       {remove && (
         <ConfirmDeleteModal
-          itemType="product"
+          itemType={T.sales.form.product.toLowerCase() === "product" ? "product" : F.product}
           itemName={remove.name}
           onCancel={() => setRemove(null)}
           onConfirm={() => {

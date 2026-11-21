@@ -6,10 +6,14 @@ import { auth } from "@/auth";
 import { todayLocal } from "@/lib/cash-bank";
 import { canManageSales, canManageSystemSettings } from "@/lib/roles";
 import { getSaleDraft, getSaleFormData } from "@/lib/sale-data";
+import { getDict } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n/config";
 import SaleForm from "@/components/sales/SaleForm";
 import Icon from "@/components/layout/Icon";
 
-export const metadata: Metadata = { title: "Edit Sale" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).sales.details.editTitle };
+}
 
 export const instant = false;
 
@@ -25,13 +29,14 @@ export default async function EditSalePage({ params }: PageProps<"/sales/[id]/ed
   const found = await getSaleDraft(id);
   if (!found) notFound();
   if (found.status !== "PENDING") {
+    const D = (await getDict()).sales.details;
     return (
       <div className="sp-card sp-empty" data-testid="sale-locked">
         <Icon name="file-text" size={36} />
-        <div className="t-section-title">Sale {found.reference} can&apos;t be edited</div>
-        <span>It is Completed — its stock has been deducted. Completed sales are final.</span>
+        <div className="t-section-title">{fmt(D.lockedTitle, { ref: found.reference })}</div>
+        <span>{D.lockedBody}</span>
         <Link href={`/sales/${encodeURIComponent(id)}`} className="sp-btn sp-btn--secondary">
-          View Sale
+          {D.viewSale}
         </Link>
       </div>
     );

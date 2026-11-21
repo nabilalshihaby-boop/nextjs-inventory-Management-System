@@ -2,10 +2,12 @@
 // Reads real Purchases, Purchase Returns and Supplier Payments only; nothing is written.
 import { db } from "@/lib/db";
 import { formatDateOnly } from "@/lib/format";
-import { PURCHASE_STATUS_LABEL } from "@/lib/purchases";
+import { fmt as fmtMsg } from "@/lib/i18n/config";
+import { tr } from "@/lib/i18n/messages";
+import type { Dictionary } from "@/lib/i18n";
 import { getDefaultCurrency, getSystemSettings } from "@/lib/settings";
 import { fromUnits, toUnits } from "@/lib/transfers";
-import { statementRangeError, type StatementCurrency, type StatementKind, type StatementRow, type SupplierStatement } from "@/lib/supplier-statement";
+import { statementRangeKey, type StatementCurrency, type StatementKind, type StatementRow, type SupplierStatement } from "@/lib/supplier-statement";
 
 const KIND_ORDER: Record<StatementKind, number> = { PURCHASE: 0, RETURN: 1, PAYMENT: 2 };
 type Entry = { key: string; date: Date; at: number; kind: StatementKind; reference: string; href: string; description: string; currencyId: string; debit: bigint; credit: bigint };
@@ -15,7 +17,7 @@ const money = (u: bigint) => (u < BigInt(0) ? "-" + fromUnits(-u, 2) : fromUnits
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
 /** Every ledger entry of one supplier (all currencies), in chronological order. */
-async function supplierEntries(supplierId: string): Promise<{ entries: Entry[]; currencies: Map<string, { id: string; code: string; symbol: string }> }> {
+async function supplierEntries(supplierId: string, t: Dictionary): Promise<{ entries: Entry[]; currencies: Map<string, { id: string; code: string; symbol: string }> }> {
   const [purchases, returns, payments] = await Promise.all([
     db.purchase.findMany({
       where: { supplierId },
@@ -39,18 +41,18 @@ async function supplierEntries(supplierId: string): Promise<{ entries: Entry[]; 
   const entries: Entry[] = [];
   for (const p of purchases) {
     currencies.set(p.currencyId, p.currency);
-    entries.push({ key: `p-${p.id}`, date: p.purchaseDate, at: p.createdAt.getTime(), kind: "PURCHASE", reference: p.reference, href: `/purchases/${encodeURIComponent(p.id)}`, description: `Purchase — ${p.warehouse.name} (${PURCHASE_STATUS_LABEL[p.status]})`, currencyId: p.currencyId, debit: BigInt(0), credit: cents(p.grandTotal) });
+    entries.push({ key: `p-${p.id}`, date: p.purchaseDate, at: p.createdAt.getTime(), kind: "PURCHASE", reference: p.reference, href: `/purchases/${encodeURIComponent(p.id)}`, description: fmtMsg(t.supplierStmt.descPurchase, { warehouse: p.warehouse.name, status: t.purchases.status[p.status] }), currencyId: p.currencyId, debit: BigInt(0), credit: cents(p.grandTotal) });
   }
   for (const r of returns) {
     currencies.set(r.currencyId, r.currency);
-    entries.push({ key: `r-${r.id}`, date: r.returnDate, at: r.createdAt.getTime(), kind: "RETURN", reference: r.reference, href: `/purchases/returns/${encodeURIComponent(r.id)}`, description: `Return of ${r.purchase.reference} — ${r.warehouse.name}`, currencyId: r.currencyId, debit: cents(r.grandTotal), credit: BigInt(0) });
+    entries.push({ key: `r-${r.id}`, date: r.returnDate, at: r.createdAt.getTime(), kind: "RETURN", reference: r.reference, href: `/purchases/returns/${encodeURIComponent(r.id)}`, description: fmtMsg(t.supplierStmt.descReturn, { purchase: r.purchase.reference, warehouse: r.warehouse.name }), currencyId: r.currencyId, debit: cents(r.grandTotal), credit: BigInt(0) });
   }
   for (const s of payments) {
     currencies.set(s.currencyId, s.currency);
     const applied = s.allocations.map((a) => a.purchase.reference).join(", ");
     entries.push({
       key: `s-${s.id}`, date: s.paymentDate, at: s.createdAt.getTime(), kind: "PAYMENT", reference: s.reference, href: `/supplier-payments?q=${encodeURIComponent(s.reference)}`,
-      description: `${s.paymentMethod} payment from ${s.cashBankAccount.name} — applied to ${applied}${s.externalReference ? ` (Ref ${s.externalReference})` : ""}`,
+      description: fmtMsg(s.externalReference ? t.supplierStmt.descPaymentExt : t.supplierStmt.descPayment, { method: (t.sales.methods as Record<string, string>)[s.paymentMethod] ?? s.paymentMethod, account: s.cashBankAccount.name, purchases: applied, ref: s.externalReference ?? "" }),
       currencyId: s.currencyId, debit: cents(s.amount), credit: BigInt(0),
     });
   }
@@ -65,25 +67,25 @@ export type StatementQuery = { supplier?: string; from?: string; to?: string; cu
  * back to defaults (first supplier, its first record date … today, default currency) and are
  * reported in `notice`. Returns null when there are no suppliers at all.
  */
-export async function getSupplierStatement(q: StatementQuery, today: string): Promise<{ statement: SupplierStatement; suppliers: { id: string; name: string }[]; notice: string | null } | null> {
+export async function getSupplierStatement(q: StatementQuery, today: string, t: Dictionary): Promise<{ statement: SupplierStatement; suppliers: { id: string; name: string }[]; notice: string | null } | null> {
   const suppliers = await db.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } });
   if (!suppliers.length) return null;
   const notices: string[] = [];
   let supplier = suppliers.find((s) => s.id === q.supplier);
   if (!supplier) {
-    if (q.supplier) notices.push("That supplier wasn't found — showing the first supplier instead.");
+    if (q.supplier) notices.push(t.supplierStmt.noticeSupplierNotFound);
     supplier = suppliers[0];
   }
-  const [{ entries, currencies }, settings, def] = await Promise.all([supplierEntries(supplier.id), getSystemSettings(), getDefaultCurrency()]);
+  const [{ entries, currencies }, settings, def] = await Promise.all([supplierEntries(supplier.id, t), getSystemSettings(), getDefaultCurrency()]);
   const right = !!settings?.currencyIconRight;
 
   // Period: defaults to the supplier's whole history up to today.
   const first = entries.length ? iso(entries[0].date) : today;
   let from = q.from ?? "", to = q.to ?? "";
   if (from || to) {
-    const err = statementRangeError(from, to);
-    if (err) {
-      notices.push(`${err} — showing the full history instead.`);
+    const errKey = statementRangeKey(from, to);
+    if (errKey) {
+      notices.push(fmtMsg(t.supplierStmt.noticeFallback, { error: tr(t, errKey) }));
       from = "";
       to = "";
     }
@@ -94,7 +96,7 @@ export async function getSupplierStatement(q: StatementQuery, today: string): Pr
   // Currency: requested → default currency → the first one the supplier uses.
   const list: StatementCurrency[] = [...currencies.values()].map((c) => ({ ...c, right })).sort((a, b) => a.code.localeCompare(b.code));
   let currency = list.find((c) => c.id === q.currency) ?? null;
-  if (!currency && q.currency) notices.push("That currency has no records for this supplier.");
+  if (!currency && q.currency) notices.push(t.supplierStmt.noticeCurrency);
   currency ??= list.find((c) => c.id === def?.id) ?? list[0] ?? (def ? { id: def.id, code: def.code, symbol: def.symbol, right } : null);
 
   let opening = BigInt(0), purchases = BigInt(0), returns = BigInt(0), paid = BigInt(0);

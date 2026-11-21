@@ -4,6 +4,7 @@ import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
 import { computeBalances } from "@/lib/cash-bank-server";
 import { formatDateOnly, formatDateTime } from "@/lib/format";
+import { getLocale } from "@/lib/i18n/server";
 import { getDefaultCurrency, getSystemSettings } from "@/lib/settings";
 import type { CustomerPaymentRow, PayableSale, PaymentCurrency, ReceivingAccount } from "@/lib/customer-payments";
 
@@ -66,6 +67,7 @@ export async function getCustomerPaymentFormData(): Promise<CustomerPaymentFormD
 
 /** Every recorded customer payment (newest first), with its allocations and linked ledger deposit. */
 export async function getCustomerPaymentRows(): Promise<CustomerPaymentRow[]> {
+  const locale = await getLocale();
   const [settings, def] = await Promise.all([getSystemSettings(), getDefaultCurrency()]);
   const rows = await db.customerPayment.findMany({
     orderBy: [{ paymentDate: "desc" }, { number: "desc" }],
@@ -95,7 +97,7 @@ export async function getCustomerPaymentRows(): Promise<CustomerPaymentRow[]> {
     notes: r.notes ?? "",
     ledgerReference: r.ledgerEntry?.reference ?? "—",
     createdBy: (r.createdById && users.get(r.createdById)) || "—",
-    createdOn: formatDateTime(r.createdAt, settings?.dateFormat),
+    createdOn: formatDateTime(r.createdAt, settings?.dateFormat, locale),
     currency: { code: r.currency.code, symbol: r.currency.symbol, right: !!settings?.currencyIconRight },
     inDefaultCurrency: !!def && r.currencyId === def.id,
   }));

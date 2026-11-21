@@ -6,9 +6,12 @@ import { db } from "@/lib/db";
 import { canManageCustomerPayments } from "@/lib/roles";
 import { getDefaultCurrency } from "@/lib/settings";
 import { getCustomerPaymentRows } from "@/lib/customer-payment-data";
+import { getDict } from "@/lib/i18n/server";
 import CustomerPaymentsTable from "@/components/customer-payments/CustomerPaymentsTable";
 
-export const metadata: Metadata = { title: "Customer Payments" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).custPay.list.title };
+}
 
 export const instant = false;
 

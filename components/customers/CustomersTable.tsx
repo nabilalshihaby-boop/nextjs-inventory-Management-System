@@ -9,16 +9,20 @@ import { ConfirmDeleteModal } from "@/components/ui/Modal";
 import Pagination, { paginate } from "@/components/ui/Pagination";
 import { deleteCustomer } from "@/app/(dashboard)/customers/actions";
 import type { CustomerRow } from "@/lib/customers";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
 
 // Port of design/Customers.html: TableToolbar (search + Import Customers + Create Customer),
 // DataTable (Customer = name + email / Phone Number / Created On / Action), Pagination and
 // ConfirmDeleteModal. Search/paging run over the server-loaded list. Rows don't link anywhere
 // Account Statement (OWNER/ADMIN) links to /customers/statement.
 // Deferred: Import Customers (CSV import not implemented) — shown disabled, "Coming soon".
-const IMPORT_SOON = "Import Customers is coming soon. CSV import isn't available yet.";
 
 export default function CustomersTable({ rows, canManage, canViewStatement }: { rows: CustomerRow[]; canManage: boolean; canViewStatement: boolean }) {
   const router = useRouter();
+  const T = useT();
+  const C = T.customers;
+  const IMPORT_SOON = C.importSoon;
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -45,7 +49,7 @@ export default function CustomersTable({ rows, canManage, canViewStatement }: { 
         toast.success(r.message, { id: "customer" });
         router.refresh();
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "customer" });
+        toast.error(T.common.somethingWrong, { id: "customer" });
       }
     });
   }
@@ -57,8 +61,8 @@ export default function CustomersTable({ rows, canManage, canViewStatement }: { 
           <Icon name="search" size={18} className="sp-input-icon" />
           <input
             className="sp-input "
-            placeholder="Search"
-            aria-label="Search customers"
+            placeholder={C.search}
+            aria-label={C.searchAria}
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
@@ -79,11 +83,11 @@ export default function CustomersTable({ rows, canManage, canViewStatement }: { 
               onClick={() => toast(IMPORT_SOON, { id: "customer-soon", icon: "ℹ️" })}
             >
               <Icon name="upload" size={18} />
-              Import Customers
+              {C.importBtn}
             </button>
             <Link href="/customers/create" className="sp-btn sp-btn--primary">
               <Icon name="plus" size={18} />
-              Create Customer
+              {C.create}
             </Link>
           </>
         )}
@@ -94,10 +98,10 @@ export default function CustomersTable({ rows, canManage, canViewStatement }: { 
           <table className="sp-table">
             <thead>
               <tr>
-                <th>Customer</th>
-                <th>Phone Number</th>
-                <th>Created On</th>
-                {showActions && <th className="num">Action</th>}
+                <th>{C.colCustomer}</th>
+                <th>{C.colPhone}</th>
+                <th>{C.colCreated}</th>
+                {showActions && <th className="num">{C.colAction}</th>}
               </tr>
             </thead>
             <tbody>
@@ -106,13 +110,13 @@ export default function CustomersTable({ rows, canManage, canViewStatement }: { 
                   <td>
                     <div style={{ padding: "6px 0" }}>
                       <div style={{ color: "var(--primary-700)", fontWeight: 600 }}>{r.name}</div>
-                      <div style={{ color: "var(--text-2)" }}>{r.email}</div>
+                      <div style={{ color: "var(--text-2)" }}><bdi dir="ltr">{r.email}</bdi></div>
                       <div style={{ color: "var(--text-3)", fontSize: 12.5 }} data-testid="customer-place">
                         {r.city}, {r.countryName}
                       </div>
                     </div>
                   </td>
-                  <td>{r.phoneNumber}</td>
+                  <td><bdi dir="ltr">{r.phoneNumber}</bdi></td>
                   <td>
                     <span className="sp-badge sp-badge--info">{r.createdOn}</span>
                   </td>
@@ -123,8 +127,8 @@ export default function CustomersTable({ rows, canManage, canViewStatement }: { 
                           <Link
                             href={`/customers/statement?customer=${encodeURIComponent(r.id)}`}
                             className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-                            aria-label={`Account Statement for ${r.name}`}
-                            title="Account Statement"
+                            aria-label={fmt(C.statementAria, { name: r.name })}
+                            title={C.statementTitle}
                             style={{ color: "var(--primary-600)" }}
                           >
                             <Icon name="file-text" size={16} />
@@ -135,7 +139,7 @@ export default function CustomersTable({ rows, canManage, canViewStatement }: { 
                         <Link
                           href={`/customers/${encodeURIComponent(r.id)}/edit`}
                           className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-                          aria-label={`Edit ${r.name}`}
+                          aria-label={fmt(C.editAria, { name: r.name })}
                           style={{ color: "var(--primary-600)" }}
                         >
                           <Icon name="pencil" size={16} />
@@ -143,7 +147,7 @@ export default function CustomersTable({ rows, canManage, canViewStatement }: { 
                         <button
                           type="button"
                           className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-                          aria-label={`Delete ${r.name}`}
+                          aria-label={fmt(C.deleteAria, { name: r.name })}
                           style={{ color: "var(--danger-500)" }}
                           onClick={() => setDel(r)}
                         >
@@ -161,11 +165,11 @@ export default function CustomersTable({ rows, canManage, canViewStatement }: { 
                   <td colSpan={cols} style={{ textAlign: "center", color: "var(--text-2)" }}>
                     {rows.length === 0 ? (
                       <span>
-                        <b style={{ color: "var(--text-1)" }}>No customers yet</b>
-                        {canManage ? " — use Create Customer to add your first customer." : "."}
+                        <b style={{ color: "var(--text-1)" }}>{C.emptyTitle}</b>
+                        {canManage ? C.emptyHint : C.emptyNoManage}
                       </span>
                     ) : (
-                      "No customers match your search."
+                      C.noMatch
                     )}
                   </td>
                 </tr>
@@ -189,7 +193,7 @@ export default function CustomersTable({ rows, canManage, canViewStatement }: { 
       </div>
 
       {del && canManage && (
-        <ConfirmDeleteModal itemType="customer" itemName={del.name} busy={pending} onCancel={() => setDel(null)} onConfirm={confirmDelete} />
+        <ConfirmDeleteModal itemType={C.deleteType} itemName={del.name} busy={pending} onCancel={() => setDel(null)} onConfirm={confirmDelete} />
       )}
     </>
   );

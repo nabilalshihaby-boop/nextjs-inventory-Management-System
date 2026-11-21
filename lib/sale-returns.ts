@@ -1,5 +1,7 @@
 import { z } from "zod";
-import { transactionDateSchema } from "@/lib/cash-bank";
+import { makeTxDate } from "@/lib/cash-bank";
+import { en } from "@/lib/i18n/dictionaries/en";
+import type { Dictionary } from "@/lib/i18n";
 import { toUnits, fromUnits } from "@/lib/transfers";
 
 // Shared Sales Return rules (client + server). The browser only sends the sale id, the sale-line
@@ -10,8 +12,6 @@ import { toUnits, fromUnits } from "@/lib/transfers";
 
 /** "SR_000001" — generated server-side from the AUTO_INCREMENT number (never reused). */
 export const formatSaleReturnReference = (n: number) => `SR_${String(n).padStart(6, "0")}`;
-export const SALE_RETURN_PDF_SOON = "Download PDF — coming soon";
-export const SALE_RETURN_IMMUTABLE = "Completed sales returns can't be edited or deleted";
 
 /**
  * A sale's effective Due:  max(0, Grand Total − Paid − Σ completed sales-return grand totals).
@@ -25,37 +25,41 @@ export function saleDue(grand: string, paid: string, returned: string): string {
 const QTY_RE = /^\d{1,11}(\.\d{1,3})?$/;
 const id = (msg: string) => z.string({ error: msg }).trim().min(1, msg).max(64, msg);
 
-export const saleReturnInputSchema = z
-  .object({
-    returnDate: transactionDateSchema,
-    saleId: id("Choose a completed sale"),
-    notes: z.string().trim().max(2000, "Notes are too long").optional().default(""),
-    items: z
-      .array(
-        z.object({
-          saleItemId: id("Choose a valid sale line"),
-          quantity: z
-            .string({ error: "Quantity is required" })
-            .trim()
-            .refine((v) => QTY_RE.test(v), "Quantity must be a number with up to 3 decimal places")
-            .refine((v) => !QTY_RE.test(v) || toUnits(v, 3) > BigInt(0), "Quantity must be greater than 0"),
-        }),
-        { error: "Add at least one return line" },
-      )
-      .min(1, "Enter a return quantity for at least one line")
-      .max(200, "Up to 200 lines per return"),
-  })
-  .strict()
-  .superRefine((v, ctx) => {
-    const seen = new Set<string>();
-    for (const i of v.items) {
-      if (seen.has(i.saleItemId)) {
-        ctx.addIssue({ code: "custom", path: ["items"], message: "Each sale line can appear only once" });
-        break;
+/** Return payload schema; messages are dictionary text (English by default). */
+export function makeSaleReturnSchema(m: Dictionary["salesReturns"]["val"] = en.salesReturns.val, d: Dictionary["sales"]["val"] = en.sales.val) {
+  return z
+    .object({
+      returnDate: makeTxDate({ required: d.dateRequired, invalid: d.dateInvalid, future: d.dateFuture }),
+      saleId: id(m.chooseSale),
+      notes: z.string().trim().max(2000, m.notesLong).optional().default(""),
+      items: z
+        .array(
+          z.object({
+            saleItemId: id(m.chooseLine),
+            quantity: z
+              .string({ error: m.qtyRequired })
+              .trim()
+              .refine((v) => QTY_RE.test(v), m.qtyFormat)
+              .refine((v) => !QTY_RE.test(v) || toUnits(v, 3) > BigInt(0), m.qtyPositive),
+          }),
+          { error: m.addLine },
+        )
+        .min(1, m.minLine)
+        .max(200, m.maxLines),
+    })
+    .strict()
+    .superRefine((v, ctx) => {
+      const seen = new Set<string>();
+      for (const i of v.items) {
+        if (seen.has(i.saleItemId)) {
+          ctx.addIssue({ code: "custom", path: ["items"], message: m.uniqueLine });
+          break;
+        }
+        seen.add(i.saleItemId);
       }
-      seen.add(i.saleItemId);
-    }
-  });
+    });
+}
+export const saleReturnInputSchema = makeSaleReturnSchema();
 
 export type SaleReturnInput = z.infer<typeof saleReturnInputSchema>;
 export type SaleReturnField = "returnDate" | "saleId" | "notes" | "items";

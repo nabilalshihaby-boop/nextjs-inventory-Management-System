@@ -1,6 +1,7 @@
 // Server-only loaders for the Sales pages (OWNER/ADMIN — callers check the role first).
 import { db } from "@/lib/db";
 import { formatDateOnly, formatDateTime } from "@/lib/format";
+import { getLocale } from "@/lib/i18n/server";
 import { getQuotationFormData, type QuotationFormData } from "@/lib/quotation-data";
 import { getDefaultCurrency, getSystemSettings } from "@/lib/settings";
 import { paymentStatus } from "@/lib/purchases";
@@ -81,6 +82,7 @@ export async function getSaleDraft(id: string): Promise<{ status: SaleStatusValu
 }
 
 export async function getSaleRows(): Promise<SaleRow[]> {
+  const locale = await getLocale();
   const [rows, settings, def] = await Promise.all([
     db.sale.findMany({
       orderBy: { number: "desc" },
@@ -116,7 +118,7 @@ export async function getSaleRows(): Promise<SaleRow[]> {
     paymentTypes: [...(types.get(r.id) ?? [])].sort(),
     returnBlocked: returnBlockedReason(r.status, due, st.fullyReturned),
     quotationRef: r.quotation?.reference ?? null,
-    createdOn: formatDateTime(r.createdAt, settings?.dateFormat),
+    createdOn: formatDateTime(r.createdAt, settings?.dateFormat, locale),
     currency: { code: r.currency.code, symbol: r.currency.symbol, right: !!settings?.currencyIconRight },
     inDefaultCurrency: !!def && r.currencyId === def.id,
     };

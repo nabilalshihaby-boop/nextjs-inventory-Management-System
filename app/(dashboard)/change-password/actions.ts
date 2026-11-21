@@ -4,6 +4,8 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { auth, updateSession } from "@/auth";
 import { db } from "@/lib/db";
+import { getDict } from "@/lib/i18n/server";
+import type { Dictionary } from "@/lib/i18n";
 import { createSessionGrant } from "@/lib/session-upgrade";
 
 export type PasswordField = "currentPassword" | "newPassword" | "confirmPassword";
@@ -14,20 +16,22 @@ export type ChangePasswordState =
   | { status: "error"; message: string; fieldErrors: Partial<Record<PasswordField, string>> }
   | { status: "success"; message: string };
 
-const schema = z
-  .object({
-    currentPassword: z.string().min(1, "Current password is required"),
-    newPassword: z
-      .string()
-      .min(8, "New password must be at least 8 characters")
-      // bcrypt only uses the first 72 bytes; refuse longer input instead of silently truncating it.
-      .refine((v) => new TextEncoder().encode(v).length <= 72, "New password must be 72 bytes or fewer"),
-    confirmPassword: z.string().min(1, "Confirm your new password"),
-  })
-  .refine((v) => v.newPassword === v.confirmPassword, {
-    path: ["confirmPassword"],
-    message: "Passwords do not match",
-  });
+// Messages come from the user's language dictionary (the schema is built per request).
+const schema = (t: Dictionary) =>
+  z
+    .object({
+      currentPassword: z.string().min(1, t.password.currentRequired),
+      newPassword: z
+        .string()
+        .min(8, t.password.newMin)
+        // bcrypt only uses the first 72 bytes; refuse longer input instead of silently truncating it.
+        .refine((v) => new TextEncoder().encode(v).length <= 72, t.password.newMax),
+      confirmPassword: z.string().min(1, t.password.confirmRequired),
+    })
+    .refine((v) => v.newPassword === v.confirmPassword, {
+      path: ["confirmPassword"],
+      message: t.password.mismatch,
+    });
 
 const str = (v: FormDataEntryValue | null) => (typeof v === "string" ? v : "");
 
@@ -35,9 +39,10 @@ export async function changePassword(_prev: ChangePasswordState, formData: FormD
   // Identity comes only from the session — any id sent by the client is never read.
   const session = await auth();
   const userId = session?.user?.id;
-  if (!userId) return { status: "error", message: "Your session has expired. Please sign in again.", fieldErrors: {} };
+  const t = await getDict();
+  if (!userId) return { status: "error", message: t.common.sessionExpired, fieldErrors: {} };
 
-  const parsed = schema.safeParse({
+  const parsed = schema(t).safeParse({
     currentPassword: str(formData.get("currentPassword")),
     newPassword: str(formData.get("newPassword")),
     confirmPassword: str(formData.get("confirmPassword")),
@@ -52,20 +57,20 @@ export async function changePassword(_prev: ChangePasswordState, formData: FormD
 
   // The hash is read here on the server only and never leaves this function.
   const user = await db.user.findUnique({ where: { id: userId }, select: { passwordHash: true } });
-  if (!user) return { status: "error", message: "Your account could not be found.", fieldErrors: {} };
+  if (!user) return { status: "error", message: t.password.notFound, fieldErrors: {} };
 
   if (!(await bcrypt.compare(currentPassword, user.passwordHash))) {
     return {
       status: "error",
-      message: "Current password is incorrect",
-      fieldErrors: { currentPassword: "Current password is incorrect" },
+      message: t.password.wrongCurrent,
+      fieldErrors: { currentPassword: t.password.wrongCurrent },
     };
   }
   if (await bcrypt.compare(newPassword, user.passwordHash)) {
     return {
       status: "error",
-      message: "New password must be different from the current password",
-      fieldErrors: { newPassword: "New password must be different from the current password" },
+      message: t.password.sameAsOld,
+      fieldErrors: { newPassword: t.password.sameAsOld },
     };
   }
 
@@ -82,5 +87,5 @@ export async function changePassword(_prev: ChangePasswordState, formData: FormD
   // All other old sessions (other browsers/devices) are invalidated.
   // (The grant isn't part of the Session type; auth.ts reads it from the update payload.)
   await updateSession({ grant: createSessionGrant(userId, updated.sessionVersion) } as unknown as Parameters<typeof updateSession>[0]);
-  return { status: "success", message: "Password updated. Other sessions have been signed out." };
+  return { status: "success", message: t.password.updated };
 }

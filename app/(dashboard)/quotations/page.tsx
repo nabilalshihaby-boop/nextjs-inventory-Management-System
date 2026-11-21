@@ -6,9 +6,12 @@ import { db } from "@/lib/db";
 import { canManageQuotations } from "@/lib/roles";
 import { getDefaultCurrency } from "@/lib/settings";
 import { getQuotationRows } from "@/lib/quotation-data";
+import { getDict } from "@/lib/i18n/server";
 import QuotationsTable from "@/components/quotations/QuotationsTable";
 
-export const metadata: Metadata = { title: "Quotations" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).quotations.list.title };
+}
 
 export const instant = false;
 

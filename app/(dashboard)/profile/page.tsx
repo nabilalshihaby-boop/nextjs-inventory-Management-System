@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
+import { getDict } from "@/lib/i18n/server";
 import { canUsePos, roleLabel } from "@/lib/roles";
 import Icon from "@/components/layout/Icon";
 import ProfileForm from "@/components/profile/ProfileForm";
@@ -30,20 +31,21 @@ export default async function ProfilePage() {
   if (!user) redirect("/");
 
   const { role, posPinHash, ...values } = user;
+  const t = await getDict();
   return (
     <>
       <div className="sp-page-head">
         <h1 className="t-page-title" style={{ margin: 0 }}>
-          Profile
+          {t.profile.title}
         </h1>
         <div style={{ display: "flex", gap: 12 }}>
           <Link href="/dashboard" className="sp-btn sp-btn--secondary">
             <Icon name="arrow-left" size={18} />
-            Back
+            {t.common.back}
           </Link>
         </div>
       </div>
-      <ProfileForm initial={values} roleLabel={roleLabel(role)} />
+      <ProfileForm initial={values} roleLabel={(t.roles as Record<string, string>)[role] ?? roleLabel(role)} />
       {canUsePos(role) && <PosPinForm hasPin={!!posPinHash} />}
     </>
   );

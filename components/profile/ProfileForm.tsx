@@ -3,6 +3,7 @@
 import { startTransition, useActionState, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Icon from "@/components/layout/Icon";
+import { useT } from "@/components/i18n/I18nProvider";
 import {
   updateProfile,
   type ProfileFieldErrors,
@@ -18,6 +19,7 @@ const ACCEPT = ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp";
 // Markup follows design/Create User.html (PageHeader + FormCard + Field/Input + avatar picker),
 // adapted to edit the signed-in user. No password fields: Change Password is a separate page.
 export default function ProfileForm({ initial, roleLabel }: { initial: ProfileValues; roleLabel: string }) {
+  const t = useT();
   const router = useRouter();
   const [state, formAction, pending] = useActionState<ProfileState, FormData>(updateProfile, { status: "idle" });
 
@@ -81,12 +83,12 @@ export default function ProfileForm({ initial, roleLabel }: { initial: ProfileVa
     if (!["jpg", "jpeg", "png", "webp"].includes(ext)) {
       ev.target.value = "";
       setPreview(null);
-      return setE({ ...e, avatar: "Use a JPG, PNG or WebP image" });
+      return setE({ ...e, avatar: t.profile.avatarType });
     }
     if (file.size > MAX_AVATAR_BYTES) {
       ev.target.value = "";
       setPreview(null);
-      return setE({ ...e, avatar: "Image must be 2 MB or smaller" });
+      return setE({ ...e, avatar: t.profile.avatarSize });
     }
     setRemoveAvatar(false);
     setImageFailed(false);
@@ -106,10 +108,10 @@ export default function ProfileForm({ initial, roleLabel }: { initial: ProfileVa
   function submit(ev: FormEvent<HTMLFormElement>) {
     ev.preventDefault();
     const n: ProfileFieldErrors = {};
-    if (!f.firstName.trim()) n.firstName = "First name is required";
-    if (!f.lastName.trim()) n.lastName = "Last name is required";
-    if (!/^\S+@\S+\.\S+$/.test(f.email.trim())) n.email = "Enter a valid email";
-    if (!f.phoneNumber.trim()) n.phoneNumber = "Phone number is required";
+    if (!f.firstName.trim()) n.firstName = t.profile.firstRequired;
+    if (!f.lastName.trim()) n.lastName = t.profile.lastRequired;
+    if (!/^\S+@\S+\.\S+$/.test(f.email.trim())) n.email = t.profile.emailInvalid;
+    if (!f.phoneNumber.trim()) n.phoneNumber = t.profile.phoneRequired;
     if (Object.keys(n).length) {
       setE(n);
       setNotice(null);
@@ -165,7 +167,7 @@ export default function ProfileForm({ initial, roleLabel }: { initial: ProfileVa
         <div className="sp-form-grid" style={{ "--cols": 2 } as React.CSSProperties}>
           <div className={"sp-field sp-span-all" + (e.avatar ? " sp-field--error" : "")}>
             <label className="sp-label" htmlFor="pf-avatar">
-              Change Image
+              {t.profile.changeImage}
             </label>
             <div style={{ position: "relative", width: 100 }}>
               <span
@@ -193,7 +195,7 @@ export default function ProfileForm({ initial, roleLabel }: { initial: ProfileVa
               <button
                 type="button"
                 className="sp-btn sp-btn--secondary sp-btn--sm sp-btn--icon"
-                aria-label="Change image"
+                aria-label={t.profile.changeImage}
                 style={{ position: "absolute", top: -6, right: -6, borderRadius: "50%" }}
                 onClick={() => fileRef.current?.click()}
               >
@@ -204,24 +206,24 @@ export default function ProfileForm({ initial, roleLabel }: { initial: ProfileVa
             {e.avatar ? (
               <span className="sp-error">{e.avatar}</span>
             ) : (
-              <span className="sp-hint">JPG, PNG or WebP, up to 2 MB.</span>
+              <span className="sp-hint">{t.profile.imageHint}</span>
             )}
             {saved.image && (
               <label className="sp-check" style={{ marginTop: 4 }}>
                 <input type="checkbox" name="removeAvatar" checked={removeAvatar} onChange={onRemove} />
-                Remove current avatar
+                {t.profile.removeAvatar}
               </label>
             )}
           </div>
 
-          {field("firstName", "First Name", "Enter First Name", "text", "given-name")}
-          {field("lastName", "Last Name", "Enter Last Name", "text", "family-name")}
-          {field("email", "Email", "Enter Email", "email", "email")}
-          {field("phoneNumber", "Phone Number", "Enter Phone Number", "tel", "tel")}
+          {field("firstName", t.profile.firstName, t.profile.firstNamePh, "text", "given-name")}
+          {field("lastName", t.profile.lastName, t.profile.lastNamePh, "text", "family-name")}
+          {field("email", t.profile.email, t.profile.emailPh, "email", "email")}
+          {field("phoneNumber", t.profile.phone, t.profile.phonePh, "tel", "tel")}
 
           <div className="sp-field">
             <label className="sp-label" htmlFor="pf-role">
-              Role
+              {t.profile.role}
             </label>
             {/* Read-only: self-profile updates must never modify role. The select is disabled and
                 unnamed, so it is not submitted; the server action ignores any role value anyway. */}
@@ -232,10 +234,10 @@ export default function ProfileForm({ initial, roleLabel }: { initial: ProfileVa
         </div>
         <div className="sp-form-actions">
           <button type="button" className="sp-btn sp-btn--secondary" onClick={() => router.push("/dashboard")}>
-            Cancel
+            {t.common.cancel}
           </button>
           <button type="submit" className="sp-btn sp-btn--primary" disabled={!ok || pending}>
-            {pending ? "Saving…" : "Save"}
+            {pending ? t.common.saving : t.common.save}
           </button>
         </div>
       </div>

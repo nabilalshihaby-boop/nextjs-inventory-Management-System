@@ -9,7 +9,6 @@
 // amounts in different currencies are never added together.
 
 export type StatementKind = "PURCHASE" | "RETURN" | "PAYMENT";
-export const STATEMENT_KIND_LABEL: Record<StatementKind, string> = { PURCHASE: "Purchase", RETURN: "Purchase Return", PAYMENT: "Payment" };
 /** Design badge tones: payment success, purchase warning (return: info). */
 export const STATEMENT_KIND_TONE: Record<StatementKind, string> = { PURCHASE: "warning", RETURN: "info", PAYMENT: "success" };
 
@@ -51,6 +50,14 @@ export function isStatementDate(v: string): boolean {
   if (!DATE_RE.test(v)) return false;
   const d = new Date(`${v}T00:00:00.000Z`);
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v && d.getUTCFullYear() >= 2000;
+}
+
+/** Same rules as statementRangeError, but returns a dictionary key (stmt.range*) so the message can be localized. */
+export function statementRangeKey(from: string, to: string): "stmt.rangeBoth" | "stmt.rangeInvalid" | "stmt.rangeOrder" | null {
+  if (!from || !to) return "stmt.rangeBoth";
+  if (!isStatementDate(from) || !isStatementDate(to)) return "stmt.rangeInvalid";
+  if (from > to) return "stmt.rangeOrder";
+  return null;
 }
 
 /** Validation shared by the filter form and the server (which falls back to defaults on errors). */

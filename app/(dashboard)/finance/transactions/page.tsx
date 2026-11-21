@@ -5,9 +5,12 @@ import { auth } from "@/auth";
 import { getLedgerView } from "@/lib/cash-bank-data";
 import { canRecordCashBankTransactions, canViewFinance } from "@/lib/roles";
 import { todayLocal } from "@/lib/cash-bank";
+import { getDict, getLocaleInfo } from "@/lib/i18n/server";
 import TransactionsView from "@/components/finance/TransactionsView";
 
-export const metadata: Metadata = { title: "Cash & Bank Transactions" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).finance.transactions.title };
+}
 
 export const instant = false;
 
@@ -19,8 +22,9 @@ export default async function CashBankTransactionsPage({ searchParams }: PagePro
   if (!session?.user?.id) redirect("/");
   if (!canViewFinance(session.user.role)) redirect("/dashboard");
 
-  const sp = await searchParams;
-  const data = await getLedgerView();
+    const sp = await searchParams;
+  const { dict, locale } = await getLocaleInfo();
+  const data = await getLedgerView(dict, locale);
   const wanted = typeof sp.account === "string" ? sp.account : "";
   const initialAccount = data.accounts.some((a) => a.id === wanted) ? wanted : "";
   return <TransactionsView {...data} initialAccount={initialAccount} today={todayLocal()} canRecord={canRecordCashBankTransactions(session.user.role)} />;

@@ -4,7 +4,10 @@ import { db } from "@/lib/db";
 import { formatDateOnly } from "@/lib/format";
 import { getDefaultCurrency, getSystemSettings } from "@/lib/settings";
 import { fromUnits, toUnits } from "@/lib/transfers";
-import { statementRangeError, type CustomerStatement, type CustomerStatementKind, type CustomerStatementRow, type StatementCurrency } from "@/lib/customer-statement";
+import { fmt as fmtMsg } from "@/lib/i18n/config";
+import { tr } from "@/lib/i18n/messages";
+import type { Dictionary } from "@/lib/i18n";
+import { statementRangeKey, type CustomerStatement, type CustomerStatementKind, type CustomerStatementRow, type StatementCurrency } from "@/lib/customer-statement";
 
 const KIND_ORDER: Record<CustomerStatementKind, number> = { SALE: 0, RETURN: 1, PAYMENT: 2 };
 type Entry = { key: string; date: Date; at: number; kind: CustomerStatementKind; reference: string; href: string; description: string; currencyId: string; debit: bigint; credit: bigint };
@@ -14,7 +17,7 @@ const money = (u: bigint) => (u < BigInt(0) ? "-" + fromUnits(-u, 2) : fromUnits
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
 /** Every ledger entry of one customer (all currencies), in chronological order. */
-async function customerEntries(customerId: string): Promise<{ entries: Entry[]; currencies: Map<string, { id: string; code: string; symbol: string }> }> {
+async function customerEntries(customerId: string, t: Dictionary): Promise<{ entries: Entry[]; currencies: Map<string, { id: string; code: string; symbol: string }> }> {
   const [sales, returns, payments] = await Promise.all([
     db.sale.findMany({
       where: { customerId, status: "COMPLETED" },
@@ -38,18 +41,18 @@ async function customerEntries(customerId: string): Promise<{ entries: Entry[]; 
   const entries: Entry[] = [];
   for (const s of sales) {
     currencies.set(s.currencyId, s.currency);
-    entries.push({ key: `s-${s.id}`, date: s.saleDate, at: s.createdAt.getTime(), kind: "SALE", reference: s.reference, href: `/sales/${encodeURIComponent(s.id)}`, description: `Sale — ${s.warehouse.name}`, currencyId: s.currencyId, debit: cents(s.grandTotal), credit: BigInt(0) });
+    entries.push({ key: `s-${s.id}`, date: s.saleDate, at: s.createdAt.getTime(), kind: "SALE", reference: s.reference, href: `/sales/${encodeURIComponent(s.id)}`, description: fmtMsg(t.stmt.descSale, { warehouse: s.warehouse.name }), currencyId: s.currencyId, debit: cents(s.grandTotal), credit: BigInt(0) });
   }
   for (const r of returns) {
     currencies.set(r.currencyId, r.currency);
-    entries.push({ key: `r-${r.id}`, date: r.returnDate, at: r.createdAt.getTime(), kind: "RETURN", reference: r.reference, href: `/sales/returns/${encodeURIComponent(r.id)}`, description: `Return of ${r.sale.reference} — ${r.warehouse.name}`, currencyId: r.currencyId, debit: BigInt(0), credit: cents(r.grandTotal) });
+    entries.push({ key: `r-${r.id}`, date: r.returnDate, at: r.createdAt.getTime(), kind: "RETURN", reference: r.reference, href: `/sales/returns/${encodeURIComponent(r.id)}`, description: fmtMsg(t.stmt.descReturn, { sale: r.sale.reference, warehouse: r.warehouse.name }), currencyId: r.currencyId, debit: BigInt(0), credit: cents(r.grandTotal) });
   }
   for (const p of payments) {
     currencies.set(p.currencyId, p.currency);
     const applied = p.allocations.map((a) => a.sale.reference).join(", ");
     entries.push({
       key: `p-${p.id}`, date: p.paymentDate, at: p.createdAt.getTime(), kind: "PAYMENT", reference: p.reference, href: `/customer-payments?q=${encodeURIComponent(p.reference)}`,
-      description: `${p.paymentMethod} payment into ${p.cashBankAccount.name} — applied to ${applied}${p.externalReference ? ` (Ref ${p.externalReference})` : ""}`,
+      description: fmtMsg(p.externalReference ? t.stmt.descPaymentExt : t.stmt.descPayment, { method: (t.sales.methods as Record<string, string>)[p.paymentMethod] ?? p.paymentMethod, account: p.cashBankAccount.name, sales: applied, ref: p.externalReference ?? "" }),
       currencyId: p.currencyId, debit: BigInt(0), credit: cents(p.amount),
     });
   }
@@ -66,7 +69,7 @@ export type CustomerStatementData = { statement: CustomerStatement; customers: {
  * `notice`. With no (or an unknown) customer nothing is loaded: `statement.customer` is null.
  * Returns null when there are no customers at all.
  */
-export async function getCustomerStatement(q: CustomerStatementQuery, today: string): Promise<CustomerStatementData | null> {
+export async function getCustomerStatement(q: CustomerStatementQuery, today: string, t: Dictionary): Promise<CustomerStatementData | null> {
   const customers = await db.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } });
   if (!customers.length) return null;
   const notices: string[] = [];
@@ -74,22 +77,22 @@ export async function getCustomerStatement(q: CustomerStatementQuery, today: str
   const fmt = (d: string) => formatDateOnly(new Date(`${d}T00:00:00.000Z`), settings?.dateFormat);
   const customer = customers.find((c) => c.id === q.customer) ?? null;
   if (!customer) {
-    if (q.customer) notices.push("That customer wasn't found — choose a customer below.");
+    if (q.customer) notices.push(t.stmt.noticeCustomerNotFound);
     return {
       customers,
       notice: notices.join(" ") || null,
       statement: { customer: null, from: "", to: "", fromLabel: "", toLabel: "", currency: null, currencies: [], opening: "0.00", totalSales: "0.00", totalReturns: "0.00", totalPaid: "0.00", closing: "0.00", rows: [] },
     };
   }
-  const [{ entries, currencies }, def] = await Promise.all([customerEntries(customer.id), getDefaultCurrency()]);
+  const [{ entries, currencies }, def] = await Promise.all([customerEntries(customer.id, t), getDefaultCurrency()]);
   const right = !!settings?.currencyIconRight;
 
   const first = entries.length ? iso(entries[0].date) : today;
   let from = q.from ?? "", to = q.to ?? "";
   if (from || to) {
-    const err = statementRangeError(from, to);
-    if (err) {
-      notices.push(`${err} — showing the full history instead.`);
+    const errKey = statementRangeKey(from, to);
+    if (errKey) {
+      notices.push(fmtMsg(t.stmt.noticeFallback, { error: tr(t, errKey) }));
       from = "";
       to = "";
     }
@@ -99,7 +102,7 @@ export async function getCustomerStatement(q: CustomerStatementQuery, today: str
 
   const list: StatementCurrency[] = [...currencies.values()].map((c) => ({ ...c, right })).sort((a, b) => a.code.localeCompare(b.code));
   let currency = list.find((c) => c.id === q.currency) ?? null;
-  if (!currency && q.currency) notices.push("That currency has no records for this customer.");
+  if (!currency && q.currency) notices.push(t.stmt.noticeCurrency);
   currency ??= list.find((c) => c.id === def?.id) ?? list[0] ?? (def ? { id: def.id, code: def.code, symbol: def.symbol, right } : null);
 
   let opening = BigInt(0), sales = BigInt(0), returns = BigInt(0), paid = BigInt(0);

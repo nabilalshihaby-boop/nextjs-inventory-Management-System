@@ -4,8 +4,8 @@ import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
 import { computeBalances } from "@/lib/cash-bank-server";
 import { formatDateOnly, formatDateTime } from "@/lib/format";
+import { getLocale } from "@/lib/i18n/server";
 import { getDefaultCurrency, getSystemSettings } from "@/lib/settings";
-import { PURCHASE_STATUS_LABEL } from "@/lib/purchases";
 import type { PayablePurchase, PayingAccount, PaymentCurrency, SupplierPaymentRow } from "@/lib/supplier-payments";
 
 export type SupplierPaymentFormData = {
@@ -45,7 +45,7 @@ export async function getSupplierPaymentFormData(): Promise<SupplierPaymentFormD
       reference: p.reference,
       date: p.purchaseDate.toISOString().slice(0, 10),
       dateLabel: formatDateOnly(p.purchaseDate, settings?.dateFormat),
-      status: PURCHASE_STATUS_LABEL[p.status],
+      status: p.status,
       currencyId: p.currencyId,
       grandTotal: p.grandTotal.toFixed(2),
       paid: p.paidAmount.toFixed(2),
@@ -63,6 +63,7 @@ export async function getSupplierPaymentFormData(): Promise<SupplierPaymentFormD
 
 /** Every recorded supplier payment (newest first), with its allocations and linked ledger row. */
 export async function getSupplierPaymentRows(): Promise<SupplierPaymentRow[]> {
+  const locale = await getLocale();
   const [settings, def] = await Promise.all([getSystemSettings(), getDefaultCurrency()]);
   const rows = await db.supplierPayment.findMany({
     orderBy: [{ paymentDate: "desc" }, { number: "desc" }],
@@ -92,7 +93,7 @@ export async function getSupplierPaymentRows(): Promise<SupplierPaymentRow[]> {
     notes: r.notes ?? "",
     ledgerReference: r.ledgerEntry?.reference ?? "—",
     createdBy: (r.createdById && users.get(r.createdById)) || "—",
-    createdOn: formatDateTime(r.createdAt, settings?.dateFormat),
+    createdOn: formatDateTime(r.createdAt, settings?.dateFormat, locale),
     currency: { code: r.currency.code, symbol: r.currency.symbol, right: !!settings?.currencyIconRight },
     inDefaultCurrency: !!def && r.currencyId === def.id,
   }));

@@ -10,18 +10,22 @@ import { formatMoney, formatQuantity } from "@/lib/money";
 import { canManageSaleReturns } from "@/lib/roles";
 import { getSystemSettings } from "@/lib/settings";
 import Icon, { type IconName } from "@/components/layout/Icon";
+import { getDict, getLocaleInfo } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n/config";
 
-export const metadata: Metadata = { title: "Sale Return Details" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).salesReturns.details.title };
+}
 
 export const instant = false;
 
 // Sale Return details — the design's list links "View Sale Return" to Sale Details.html, so this
 // reuses that layout (Customer / Company / Return Info bands, Order Summary, totals). Read-only:
 // returns are immutable. OWNER/ADMIN only.
-const L = ({ i, children }: { i: IconName; children: React.ReactNode }) => (
+const L = ({ i, d = "auto", children }: { i: IconName; d?: "ltr" | "auto"; children: React.ReactNode }) => (
   <span>
     <Icon name={i} size={16} className="sp-icon" />
-    {children}
+    <bdi dir={d}>{children}</bdi>
   </span>
 );
 
@@ -32,6 +36,8 @@ export default async function SaleReturnDetailsPage({ params }: PageProps<"/sale
   if (!canManageSaleReturns(session.user.role)) redirect("/dashboard");
 
   const { id } = await params;
+  const { locale, dict: T } = await getLocaleInfo();
+  const D = T.salesReturns.details;
   const r = await db.saleReturn.findUnique({
     where: { id },
     include: {
@@ -46,7 +52,7 @@ export default async function SaleReturnDetailsPage({ params }: PageProps<"/sale
   const settings = await getSystemSettings();
   const cur = { code: r.currency.code, symbol: r.currency.symbol, right: !!settings?.currencyIconRight };
   const m = (v: { toFixed: (n: number) => string }) => formatMoney(v.toFixed(2), cur);
-  const country = new Map<string, string>(getCountryOptions().map((c) => [c.code, c.name]));
+  const country = new Map<string, string>(getCountryOptions(locale).map((c) => [c.code, c.name]));
   const creator = r.createdById ? await db.user.findUnique({ where: { id: r.createdById }, select: { firstName: true, lastName: true } }) : null;
   const company = [settings?.address, settings?.city, settings?.state, settings?.country ? (country.get(settings.country) ?? settings.country) : ""].filter(Boolean).join(", ");
 
@@ -54,87 +60,87 @@ export default async function SaleReturnDetailsPage({ params }: PageProps<"/sale
     <>
       <div className="sp-page-head">
         <h1 className="t-page-title" style={{ margin: 0 }}>
-          Sale Return Details
+          {D.title}
         </h1>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <Link href="/sales/returns" className="sp-btn sp-btn--secondary">
             <Icon name="arrow-left" size={18} />
-            Back
+            {D.back}
           </Link>
           <Link href={`/sales/${encodeURIComponent(r.sale.id)}`} className="sp-btn sp-btn--secondary">
             <Icon name="eye" size={18} />
-            View {r.sale.reference}
+            {fmt(D.viewSale, { ref: r.sale.reference })}
           </Link>
         </div>
       </div>
 
       <div className="sp-card" style={{ padding: 32 }} data-testid="return-details">
         <h2 className="t-section-title" style={{ textAlign: "center", margin: "0 0 24px" }}>
-          Sale Return Details : {r.reference}
+          {fmt(D.headline, { ref: r.reference })}
         </h2>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 24 }}>
           <div data-testid="customer-info">
-            <div className="sp-band">Customer Info</div>
+            <div className="sp-band">{D.customerInfo}</div>
             <div className="sp-info">
               <L i="user">{r.customer.name}</L>
-              <L i="mail">{r.customer.email}</L>
-              <L i="smartphone">{r.customer.phoneNumber}</L>
+              <L i="mail" d="ltr">{r.customer.email}</L>
+              <L i="smartphone" d="ltr">{r.customer.phoneNumber}</L>
               <L i="map-pin">{[r.customer.address, r.customer.city, country.get(r.customer.countryCode) ?? r.customer.countryCode].filter(Boolean).join(", ")}</L>
             </div>
           </div>
           <div data-testid="company-info">
-            <div className="sp-band">Company Info</div>
+            <div className="sp-band">{D.companyInfo}</div>
             <div className="sp-info">
               <L i="user">{settings?.companyName || "—"}</L>
-              <L i="mail">{settings?.defaultEmail || "—"}</L>
-              <L i="smartphone">{settings?.companyPhone || "—"}</L>
+              <L i="mail" d="ltr">{settings?.defaultEmail || "—"}</L>
+              <L i="smartphone" d="ltr">{settings?.companyPhone || "—"}</L>
               <L i="map-pin">{company || "—"}</L>
             </div>
           </div>
           <div data-testid="return-info">
-            <div className="sp-band">Return Info</div>
+            <div className="sp-band">{D.returnInfo}</div>
             <div className="sp-info">
               <span>
-                Reference : <b style={{ fontWeight: 600 }}>{r.reference}</b>
+                {D.reference} : <b style={{ fontWeight: 600 }} dir="ltr">{r.reference}</b>
               </span>
               <span>
-                Sale :{" "}
+                {D.sale} :{" "}
                 <Link href={`/sales/${encodeURIComponent(r.sale.id)}`} style={{ fontWeight: 600 }}>
                   {r.sale.reference}
                 </Link>
               </span>
               <span>
-                Status :{" "}
+                {D.status} :{" "}
                 <span className="sp-badge sp-badge--success">
                   <i />
-                  Completed
+                  {D.completed}
                 </span>
               </span>
               <span>
-                Warehouse : <b style={{ fontWeight: 600 }}>{r.warehouse.name}</b>
+                {D.warehouse} : <b style={{ fontWeight: 600 }}>{r.warehouse.name}</b>
               </span>
               <span>
-                Date : <b style={{ fontWeight: 600 }}>{formatDateOnly(r.returnDate, settings?.dateFormat)}</b>
+                {D.date} : <b style={{ fontWeight: 600 }}>{formatDateOnly(r.returnDate, settings?.dateFormat)}</b>
               </span>
             </div>
           </div>
         </div>
 
         <div className="sp-band" style={{ margin: "32px 0 16px" }}>
-          Order Summary
+          {D.orderSummary}
         </div>
         <div className="sp-table-card" style={{ boxShadow: "none" }}>
           <div className="sp-table-scroll">
             <table className="sp-table" data-testid="order-summary">
               <thead>
                 <tr>
-                  <th>Product</th>
-                  <th className="num">Net Unit Price</th>
-                  <th className="num">Quantity</th>
-                  <th className="num">Unit Price</th>
-                  <th className="num">Discount</th>
-                  <th className="num">Tax</th>
-                  <th className="num">Subtotal</th>
+                  <th>{D.colProduct}</th>
+                  <th className="num">{D.colNet}</th>
+                  <th className="num">{D.colQuantity}</th>
+                  <th className="num">{D.colUnitPrice}</th>
+                  <th className="num">{D.colDiscount}</th>
+                  <th className="num">{D.colTax}</th>
+                  <th className="num">{D.colSubtotal}</th>
                 </tr>
               </thead>
               <tbody>
@@ -160,31 +166,29 @@ export default async function SaleReturnDetailsPage({ params }: PageProps<"/sale
 
         <div className="sp-sum" style={{ marginTop: 32 }} data-testid="details-summary">
           <div>
-            <span>Order Tax</span>
+            <span>{D.orderTax}</span>
             <span>{m(r.orderTaxAmount)}</span>
           </div>
           <div>
-            <span>Discount</span>
+            <span>{D.discount}</span>
             <span>{m(r.discount)}</span>
           </div>
           <div>
-            <span>Shipping</span>
+            <span>{D.shipping}</span>
             <span>{m(r.shipping)}</span>
           </div>
           <div>
-            <span>Grand Total</span>
+            <span>{D.grandTotal}</span>
             <span data-testid="details-grand">{m(r.grandTotal)}</span>
           </div>
         </div>
 
         <div className="t-caption" style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 4 }}>
           <span>
-            Created by {creator ? `${creator.firstName} ${creator.lastName}` : "—"} · {formatDateTime(r.createdAt, settings?.dateFormat)}
+            {fmt(D.createdBy, { by: creator ? `${creator.firstName} ${creator.lastName}` : "—", on: formatDateTime(r.createdAt, settings?.dateFormat, locale) })}
           </span>
-          <span>
-            The returned quantities were added back to {r.warehouse.name}, and this amount reduced the due of {r.sale.reference}. Order tax and discount are shared out from the original sale; shipping is not returned. No cash/bank, refund or payment was recorded.
-          </span>
-          {r.notes && <span>Reason / notes: {r.notes}</span>}
+          <span>{fmt(D.note, { warehouse: r.warehouse.name, sale: r.sale.reference })}</span>
+          {r.notes && <span>{fmt(D.reason, { notes: r.notes })}</span>}
         </div>
       </div>
     </>

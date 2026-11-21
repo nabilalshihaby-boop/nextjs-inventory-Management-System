@@ -1,6 +1,7 @@
 // Server-only loaders for the Quotations pages (OWNER/ADMIN — callers check the role first).
 import { db } from "@/lib/db";
 import { formatDateOnly, formatDateTime } from "@/lib/format";
+import { getLocale } from "@/lib/i18n/server";
 import { getDefaultCurrency, getSystemSettings } from "@/lib/settings";
 import type { QuotationCurrency, QuotationDraft, QuotationOption, QuotationProduct, QuotationRow, QuotationStatusValue, QuotationStockLevel } from "@/lib/quotations";
 
@@ -76,6 +77,7 @@ export async function getQuotationDraft(id: string): Promise<{ status: Quotation
 }
 
 export async function getQuotationRows(): Promise<QuotationRow[]> {
+  const locale = await getLocale();
   const [rows, settings, def] = await Promise.all([
     db.quotation.findMany({
       orderBy: { number: "desc" },
@@ -94,7 +96,7 @@ export async function getQuotationRows(): Promise<QuotationRow[]> {
     date: r.quotationDate.toISOString().slice(0, 10),
     dateLabel: formatDateOnly(r.quotationDate, settings?.dateFormat),
     grandTotal: r.grandTotal.toFixed(2),
-    createdOn: formatDateTime(r.createdAt, settings?.dateFormat),
+    createdOn: formatDateTime(r.createdAt, settings?.dateFormat, locale),
     sale: r.sale,
     currency: { code: r.currency.code, symbol: r.currency.symbol, right: !!settings?.currencyIconRight },
     inDefaultCurrency: !!def && r.currencyId === def.id,

@@ -6,9 +6,12 @@ import { db } from "@/lib/db";
 import { canManageExpenses, canManageSystemSettings } from "@/lib/roles";
 import { getExpenseFormData } from "@/lib/expense-data";
 import { todayLocal } from "@/lib/cash-bank";
+import { getDict } from "@/lib/i18n/server";
 import ExpenseForm from "@/components/expenses/ExpenseForm";
 
-export const metadata: Metadata = { title: "Update Expense" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).expenses.form.updateTitle };
+}
 
 export const instant = false;
 
@@ -28,7 +31,7 @@ export default async function UpdateExpensePage({ params }: PageProps<"/expenses
 
   return (
     <ExpenseForm
-      {...await getExpenseFormData()}
+      {...await getExpenseFormData(await getDict())}
       today={todayLocal()} canOpenSettings={canManageSystemSettings(session.user.role)}
       expenseId={e.id}
       reference={e.reference}

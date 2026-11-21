@@ -1,0 +1,62 @@
+// Default Arabic for the Customers list/actions and dashboard tiles. Must match en-customers.ts exactly (typed).
+import type { Dictionary } from "@/lib/i18n/dictionaries/en";
+
+export const arCustomers: Dictionary["customers"] = {
+  search: "بحث",
+  searchAria: "البحث في العملاء",
+  importSoon: "استيراد العملاء قريبًا. الاستيراد من ملف CSV غير متاح بعد.",
+  importBtn: "استيراد العملاء",
+  create: "إنشاء عميل",
+  colCustomer: "العميل",
+  colPhone: "رقم الهاتف",
+  colCreated: "تاريخ الإنشاء",
+  colAction: "الإجراء",
+  statementAria: "كشف حساب {name}",
+  statementTitle: "كشف الحساب",
+  editAria: "تعديل {name}",
+  deleteAria: "حذف {name}",
+  emptyTitle: "لا يوجد عملاء بعد",
+  emptyHint: " — استخدم «إنشاء عميل» لإضافة أول عميل.",
+  emptyNoManage: ".",
+  noMatch: "لا يوجد عملاء يطابقون بحثك.",
+  deleteType: "العميل",
+  err: {
+    noPermission: "ليست لديك صلاحية لتغيير بيانات العملاء.",
+    notFound: "لم يتم العثور على العميل",
+    walkIn: "هذا العميل هو عميل نقطة البيع العابر. اختر عميلًا آخر (أو لا أحد) في إعدادات النظام قبل حذفه.",
+    blockers: "لا يمكن حذف هذا العميل لأنه ما زال لديه {list}.",
+    inUse: "لا يمكن حذف هذا العميل لأن سجلات أخرى ما زالت تستخدمه.",
+    sep: "، ",
+    quotation: "{n} عرض سعر",
+    quotations: "{n} عروض أسعار",
+    sale: "{n} عملية بيع",
+    sales: "{n} عمليات بيع",
+    saleReturn: "{n} مرتجع مبيعات",
+    saleReturns: "{n} مرتجعات مبيعات",
+    payment: "{n} دفعة عميل",
+    payments: "{n} دفعات عملاء",
+  },
+  ok: { deleted: "تم حذف العميل" },
+};
+
+export const arDash: Dictionary["dash"] = {
+  tiles: {
+    sales: "المبيعات",
+    purchases: "المشتريات",
+    salesReturns: "مرتجعات المبيعات",
+    purchasesReturns: "مرتجعات المشتريات",
+    todaySales: "إجمالي مبيعات اليوم",
+    todayReceived: "إجمالي المقبوض اليوم (المبيعات)",
+    todayPurchases: "إجمالي مشتريات اليوم",
+    todayExpense: "إجمالي مصروفات اليوم",
+  },
+  receivables: {
+    title: "مستحقات العملاء",
+    total: "إجمالي الحسابات المدينة",
+    totalNote: "المبيعات − التحصيلات − المرتجعات",
+    collections: "إجمالي تحصيلات العملاء",
+    collectionsNote: "الدفعات المستلمة",
+    outstanding: "أرصدة العملاء المستحقة",
+    outstandingNote: "{n} عملاء لديهم كشوف حساب مفتوحة",
+  },
+};

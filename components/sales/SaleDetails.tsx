@@ -7,8 +7,11 @@ import toast from "react-hot-toast";
 import Icon, { type IconName } from "@/components/layout/Icon";
 import Modal, { ConfirmDeleteModal } from "@/components/ui/Modal";
 import { completeSale, deleteSale } from "@/app/(dashboard)/sales/actions";
-import { PAYMENT_STATUS_LABEL, PAYMENT_STATUS_TONE, type PaymentStatusValue } from "@/lib/purchases";
-import { SALE_PDF_SOON, SALE_STATUS_LABEL, SALE_STATUS_TONE, type SaleStatusValue } from "@/lib/sales";
+import { PAYMENT_STATUS_TONE, type PaymentStatusValue } from "@/lib/purchases";
+import { SALE_STATUS_TONE, type SaleStatusValue } from "@/lib/sales";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
+import { tr } from "@/lib/i18n/messages";
 
 // Port of design/Sale Details.html: PageHeader (+ Back), card with "Sale Details : <ref>", Customer
 // Info / Company Info / Invoice Info bands (Reference, Status, Warehouse, Payment Status), Order
@@ -46,15 +49,19 @@ type Details = {
 };
 type Party = { name: string; email: string; phone: string; address: string };
 
-const L = ({ i, children }: { i: IconName; children: ReactNode }) => (
+// `d`: ltr for emails/phones (always readable left-to-right, even in Arabic), auto for names/addresses.
+const L = ({ i, d = "auto", children }: { i: IconName; d?: "ltr" | "auto"; children: ReactNode }) => (
   <span>
     <Icon name={i} size={16} className="sp-icon" />
-    {children}
+    <bdi dir={d}>{children}</bdi>
   </span>
 );
 
 export default function SaleDetails({ sale: s, customer, company }: { sale: Details; customer: Party; company: Party }) {
   const router = useRouter();
+  const T = useT();
+  const S = T.sales;
+  const D = S.details;
   const [confirm, setConfirm] = useState(false);
   const [del, setDel] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -69,7 +76,7 @@ export default function SaleDetails({ sale: s, customer, company }: { sale: Deta
         else toast.success(r.message, { id: "sale" });
         router.refresh();
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "sale" });
+        toast.error(T.common.somethingWrong, { id: "sale" });
       }
     });
   }
@@ -86,7 +93,7 @@ export default function SaleDetails({ sale: s, customer, company }: { sale: Deta
         router.push("/sales");
         router.refresh();
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "sale" });
+        toast.error(T.common.somethingWrong, { id: "sale" });
       }
     });
   }
@@ -101,54 +108,54 @@ export default function SaleDetails({ sale: s, customer, company }: { sale: Deta
     <>
       <div className="sp-page-head">
         <h1 className="t-page-title" style={{ margin: 0 }}>
-          Sale Details
+          {D.title}
         </h1>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }} data-testid="sale-actions">
           <Link href="/sales" className="sp-btn sp-btn--secondary">
             <Icon name="arrow-left" size={18} />
-            Back
+            {D.back}
           </Link>
           {open && (
             <Link href={`/sales/${encodeURIComponent(s.id)}/edit`} className="sp-btn sp-btn--secondary">
               <Icon name="pencil" size={18} />
-              Edit
+              {D.edit}
             </Link>
           )}
           {open && (
             <button type="button" className="sp-btn sp-btn--primary" onClick={() => setConfirm(true)} disabled={pending}>
               <Icon name="circle-check" size={18} />
-              Mark as Completed
+              {D.markCompleted}
             </button>
           )}
           {s.paymentBlocked ? (
-            soon("Record Payment", "wallet", s.paymentBlocked)
+            soon(D.recordPayment, "wallet", tr(T, s.paymentBlocked))
           ) : (
             <Link href={`/customer-payments/record?sale=${encodeURIComponent(s.id)}`} className="sp-btn sp-btn--primary">
               <Icon name="wallet" size={18} />
-              Record Payment
+              {D.recordPayment}
             </Link>
           )}
           {s.payments.length ? (
             <Link href={`/customer-payments?q=${encodeURIComponent(s.reference)}`} className="sp-btn sp-btn--secondary">
               <Icon name="dollar-sign" size={18} />
-              Show Payments
+              {D.showPayments}
             </Link>
           ) : (
-            soon("Show Payments", "dollar-sign", "No payments recorded for this sale yet")
+            soon(D.showPayments, "dollar-sign", S.block.noPayments)
           )}
           {s.returnBlocked ? (
-            soon("Create Sale Return", "undo-2", s.returnBlocked)
+            soon(D.createReturn, "undo-2", tr(T, s.returnBlocked))
           ) : (
             <Link href={`/sales/returns/create?sale=${encodeURIComponent(s.id)}`} className="sp-btn sp-btn--secondary">
               <Icon name="undo-2" size={18} />
-              Create Sale Return
+              {D.createReturn}
             </Link>
           )}
-          {soon("Download PDF", "file-down", SALE_PDF_SOON)}
+          {soon(D.downloadPdf, "file-down", S.pdfSoon)}
           {open && (
             <button type="button" className="sp-btn sp-btn--secondary" style={{ color: "var(--danger-500)" }} onClick={() => setDel(true)} disabled={pending}>
               <Icon name="trash-2" size={18} />
-              Delete
+              {D.delete}
             </button>
           )}
         </div>
@@ -156,64 +163,64 @@ export default function SaleDetails({ sale: s, customer, company }: { sale: Deta
 
       <div className="sp-card" style={{ padding: 32 }} data-testid="sale-details">
         <h2 className="t-section-title" style={{ textAlign: "center", margin: "0 0 24px" }}>
-          Sale Details : {s.reference}
+          {fmt(D.headline, { ref: s.reference })}
         </h2>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 24 }}>
           <div data-testid="customer-info">
-            <div className="sp-band">Customer Info</div>
+            <div className="sp-band">{D.customerInfo}</div>
             <div className="sp-info">
               <L i="user">{customer.name}</L>
-              <L i="mail">{customer.email}</L>
-              <L i="smartphone">{customer.phone}</L>
+              <L i="mail" d="ltr">{customer.email}</L>
+              <L i="smartphone" d="ltr">{customer.phone}</L>
               <L i="map-pin">{customer.address}</L>
             </div>
           </div>
           <div data-testid="company-info">
-            <div className="sp-band">Company Info</div>
+            <div className="sp-band">{D.companyInfo}</div>
             <div className="sp-info">
               <L i="user">{company.name}</L>
-              <L i="mail">{company.email}</L>
-              <L i="smartphone">{company.phone}</L>
+              <L i="mail" d="ltr">{company.email}</L>
+              <L i="smartphone" d="ltr">{company.phone}</L>
               <L i="map-pin">{company.address}</L>
             </div>
           </div>
           <div data-testid="invoice-info">
-            <div className="sp-band">Invoice Info</div>
+            <div className="sp-band">{D.invoiceInfo}</div>
             <div className="sp-info">
               <span>
-                Reference : <b style={{ fontWeight: 600 }}>{s.reference}</b>
+                {D.reference} : <b style={{ fontWeight: 600 }} dir="ltr">{s.reference}</b>
               </span>
               <span>
-                Status :{" "}
+                {D.status} :{" "}
                 <span className={`sp-badge sp-badge--${SALE_STATUS_TONE[s.status]}`} data-status={s.status}>
                   <i />
-                  {SALE_STATUS_LABEL[s.status]}
+                  {S.status[s.status]}
                 </span>
               </span>
               <span>
-                Warehouse : <b style={{ fontWeight: 600 }}>{s.warehouse}</b>
+                {D.warehouse} : <b style={{ fontWeight: 600 }}>{s.warehouse}</b>
               </span>
               <span>
-                Payment Status :{" "}
+                {D.paymentStatus} :{" "}
                 <span className={`sp-badge sp-badge--${PAYMENT_STATUS_TONE[s.paymentStatus]}`} data-payment={s.paymentStatus}>
                   <i />
-                  {PAYMENT_STATUS_LABEL[s.paymentStatus]}
+                  {S.payStatus[s.paymentStatus]}
                 </span>
               </span>
               <span>
-                Date : <b style={{ fontWeight: 600 }}>{s.date}</b>
+                {D.date} : <b style={{ fontWeight: 600 }}>{s.date}</b>
               </span>
               <span>
-                Paid : <b style={{ fontWeight: 600 }}>{s.paid}</b> · Due : <b style={{ fontWeight: 600 }}>{s.due}</b>
+                {D.paid} : <b style={{ fontWeight: 600 }}>{s.paid}</b> · {D.due} : <b style={{ fontWeight: 600 }}>{s.due}</b>
               </span>
               {s.returns.length > 0 && (
                 <span>
-                  Returned : <b style={{ fontWeight: 600 }}>{s.returned}</b>
+                  {D.returned} : <b style={{ fontWeight: 600 }}>{s.returned}</b>
                 </span>
               )}
               {s.quotation && (
                 <span>
-                  Quotation :{" "}
+                  {D.quotation} :{" "}
                   <Link href={`/quotations/${encodeURIComponent(s.quotation.id)}`} className="sp-code">
                     {s.quotation.reference}
                   </Link>
@@ -224,20 +231,20 @@ export default function SaleDetails({ sale: s, customer, company }: { sale: Deta
         </div>
 
         <div className="sp-band" style={{ margin: "32px 0 16px" }}>
-          Order Summary
+          {D.orderSummary}
         </div>
         <div className="sp-table-card" style={{ boxShadow: "none" }}>
           <div className="sp-table-scroll">
             <table className="sp-table" data-testid="order-summary">
               <thead>
                 <tr>
-                  <th>Product</th>
-                  <th className="num">Net Unit Price</th>
-                  <th className="num">Quantity</th>
-                  <th className="num">Unit Price</th>
-                  <th className="num">Discount</th>
-                  <th className="num">Tax</th>
-                  <th className="num">Subtotal</th>
+                  <th>{D.colProduct}</th>
+                  <th className="num">{D.colNet}</th>
+                  <th className="num">{D.colQuantity}</th>
+                  <th className="num">{D.colUnitPrice}</th>
+                  <th className="num">{D.colDiscount}</th>
+                  <th className="num">{D.colTax}</th>
+                  <th className="num">{D.colSubtotal}</th>
                 </tr>
               </thead>
               <tbody>
@@ -259,19 +266,19 @@ export default function SaleDetails({ sale: s, customer, company }: { sale: Deta
 
         <div className="sp-sum" style={{ marginTop: 32 }} data-testid="details-summary">
           <div>
-            <span>Order Tax</span>
+            <span>{D.orderTax}</span>
             <span>{s.orderTax}</span>
           </div>
           <div>
-            <span>Discount</span>
+            <span>{D.discount}</span>
             <span>{s.discount}</span>
           </div>
           <div>
-            <span>Shipping</span>
+            <span>{D.shipping}</span>
             <span>{s.shipping}</span>
           </div>
           <div>
-            <span>Grand Total</span>
+            <span>{D.grandTotal}</span>
             <span data-testid="details-grand">{s.grandTotal}</span>
           </div>
         </div>
@@ -279,15 +286,15 @@ export default function SaleDetails({ sale: s, customer, company }: { sale: Deta
         {s.returns.length > 0 && (
           <>
             <div className="sp-band" style={{ margin: "32px 0 16px" }}>
-              Sales Returns
+              {D.salesReturns}
             </div>
             <div className="sp-table-card" style={{ boxShadow: "none" }}>
               <table className="sp-table" data-testid="sale-returns">
                 <thead>
                   <tr>
-                    <th>Reference</th>
-                    <th>Date</th>
-                    <th className="num">Grand Total</th>
+                    <th>{D.colReference}</th>
+                    <th>{D.colDate}</th>
+                    <th className="num">{D.grandTotal}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -311,17 +318,17 @@ export default function SaleDetails({ sale: s, customer, company }: { sale: Deta
         {s.payments.length > 0 && (
           <>
             <div className="sp-band" style={{ margin: "32px 0 16px" }}>
-              Customer Payments
+              {D.payments}
             </div>
             <div className="sp-table-card" style={{ boxShadow: "none" }}>
               <table className="sp-table" data-testid="sale-payments">
                 <thead>
                   <tr>
-                    <th>Reference</th>
-                    <th>Date</th>
-                    <th>Method</th>
-                    <th>Deposited To</th>
-                    <th className="num">Applied</th>
+                    <th>{D.colReference}</th>
+                    <th>{D.colDate}</th>
+                    <th>{D.colMethod}</th>
+                    <th>{D.colDepositedTo}</th>
+                    <th className="num">{D.colApplied}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -331,7 +338,7 @@ export default function SaleDetails({ sale: s, customer, company }: { sale: Deta
                         <span className="sp-code">{r.reference}</span>
                       </td>
                       <td>{r.date}</td>
-                      <td>{r.method}</td>
+                      <td>{(S.methods as Record<string, string>)[r.method] ?? r.method}</td>
                       <td>{r.account}</td>
                       <td className="num">{r.amount}</td>
                     </tr>
@@ -345,7 +352,7 @@ export default function SaleDetails({ sale: s, customer, company }: { sale: Deta
         {s.notes && (
           <div style={{ marginTop: 24 }} data-testid="sale-notes">
             <div className="sp-band" style={{ marginBottom: 8 }}>
-              Notes
+              {D.notes}
             </div>
             <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{s.notes}</p>
           </div>
@@ -353,33 +360,31 @@ export default function SaleDetails({ sale: s, customer, company }: { sale: Deta
 
         <div className="t-caption" style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 4 }}>
           <span>
-            Created by {s.createdBy} · {s.createdOn}
+            {fmt(D.createdBy, { by: s.createdBy, on: s.createdOn })}
           </span>
-          {s.completedOn ? <span>Completed {s.completedOn} — stock deducted from {s.warehouse}</span> : <span>Pending — no stock has been deducted from {s.warehouse} yet.</span>}
+          {s.completedOn ? <span>{fmt(D.completedLine, { on: s.completedOn, warehouse: s.warehouse })}</span> : <span>{fmt(D.pendingLine, { warehouse: s.warehouse })}</span>}
         </div>
       </div>
 
       {confirm && (
         <Modal
-          title="Mark as Completed?"
+          title={D.confirmTitle}
           onClose={() => setConfirm(false)}
           footer={
             <>
               <button type="button" className="sp-btn sp-btn--secondary" onClick={() => setConfirm(false)} disabled={pending}>
-                Cancel
+                {D.cancel}
               </button>
               <button type="button" className="sp-btn sp-btn--primary" onClick={complete} disabled={pending} data-testid="confirm-complete">
-                {pending ? "Saving…" : "Mark as Completed"}
+                {pending ? D.saving : D.markCompleted}
               </button>
             </>
           }
         >
-          <p style={{ margin: 0 }}>
-            Complete sale <b>{s.reference}</b>? The quantities will be deducted from <b>{s.warehouse}</b> now. Completed sales can&apos;t be edited or deleted.
-          </p>
+          <p style={{ margin: 0 }}>{fmt(D.confirmBody, { ref: s.reference, warehouse: s.warehouse })}</p>
         </Modal>
       )}
-      {del && <ConfirmDeleteModal itemType="sale" itemName={s.reference} busy={pending} onCancel={() => setDel(false)} onConfirm={remove} />}
+      {del && <ConfirmDeleteModal itemType={S.list.deleteType} itemName={s.reference} busy={pending} onCancel={() => setDel(false)} onConfirm={remove} />}
     </>
   );
 }

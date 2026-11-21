@@ -1,5 +1,7 @@
 "use client";
 
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
 import Link from "next/link";
 import { Fragment, useState, useTransition, type CSSProperties, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -42,7 +44,9 @@ export default function ExpenseForm({
   activeTransaction?: string | null;
   initial?: ExpenseFormValues;
 }) {
-  const router = useRouter();
+    const router = useRouter();
+  const T = useT();
+  const F = T.expenses.form;
   const editing = !!expenseId;
   const [f, setF] = useState<ExpenseFormValues>(initial ?? { ...EMPTY, expenseDate: today });
   const [e, setE] = useState<Partial<Record<ExpenseField, string>>>({});
@@ -50,10 +54,10 @@ export default function ExpenseForm({
 
   const usable = accounts.filter((a) => a.active && a.inDefaultCurrency);
   const missing: { key: string; text: ReactNode }[] = [];
-  if (!currency) missing.push({ key: "currency", text: canOpenSettings ? <>a default currency in <Link href="/settings">System Settings</Link></> : <>a default currency (ask the Owner to choose one in System Settings)</> });
-  if (!warehouses.length) missing.push({ key: "warehouse", text: <>a <Link href="/warehouse/create">warehouse</Link></> });
-  if (!categories.length) missing.push({ key: "category", text: <>an <Link href="/expenses/categories">expense category</Link></> });
-  if (!usable.length) missing.push({ key: "account", text: <>an active <Link href="/finance/accounts">cash or bank account</Link>{currency ? ` in ${currency.code}` : ""}</> });
+  if (!currency) missing.push({ key: "currency", text: canOpenSettings ? <Link href="/settings">{F.setupCurrency}</Link> : <>{F.setupCurrencyAsk}</> });
+  if (!warehouses.length) missing.push({ key: "warehouse", text: <Link href="/warehouse/create">{F.setupWarehouse}</Link> });
+  if (!categories.length) missing.push({ key: "category", text: <Link href="/expenses/categories">{F.setupCategory}</Link> });
+  if (!usable.length) missing.push({ key: "account", text: <><Link href="/finance/accounts">{F.setupAccount}</Link>{currency ? fmt(F.setupAccountIn, { currency: currency.code }) : ""}</> });
   const blocked = missing.length > 0;
 
   const set = (k: ExpenseField) => (ev: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -68,16 +72,16 @@ export default function ExpenseForm({
   function save() {
     if (blocked) return;
     const n: Partial<Record<ExpenseField, string>> = {};
-    if (!f.expenseDate) n.expenseDate = "Date is required";
-    else if (f.expenseDate > today) n.expenseDate = "The date can't be in the future";
-    if (!f.title.trim()) n.title = "Expense title is required";
-    if (!f.warehouseId) n.warehouseId = "Choose a warehouse";
-    if (!f.categoryId) n.categoryId = "Choose an expense category";
-    if (!f.cashBankAccountId) n.cashBankAccountId = "Choose the account the expense is paid from";
+    if (!f.expenseDate) n.expenseDate = F.errDateRequired;
+    else if (f.expenseDate > today) n.expenseDate = F.errDateFuture;
+    if (!f.title.trim()) n.title = T.expenses.val.titleRequired;
+    if (!f.warehouseId) n.warehouseId = T.expenses.val.chooseWarehouse;
+    if (!f.categoryId) n.categoryId = T.expenses.val.chooseCategory;
+    if (!f.cashBankAccountId) n.cashBankAccountId = T.expenses.val.chooseAccount;
     const amt = f.amount.trim();
-    if (!amt) n.amount = "Amount is required";
-    else if (!MONEY_RE.test(amt) || !/[1-9]/.test(amt)) n.amount = "Enter an amount greater than 0 (up to 2 decimals)";
-    else if (available !== null && toUnits(amt, 2) > toUnits(available, 2)) n.amount = `Insufficient balance (${money(available)} available)`;
+    if (!amt) n.amount = F.errAmountRequired;
+    else if (!MONEY_RE.test(amt) || !/[1-9]/.test(amt)) n.amount = F.errAmountInvalid;
+    else if (available !== null && toUnits(amt, 2) > toUnits(available, 2)) n.amount = fmt(F.errInsufficient, { balance: money(available) });
     setE(n);
     if (Object.keys(n).length) return void toast.error(Object.values(n)[0]!, { id: "expense" });
     const payload = { ...f, amount: amt }; // ids, date, amount and text only — never balances or references
@@ -86,7 +90,7 @@ export default function ExpenseForm({
       try {
         r = editing ? await updateExpense(expenseId, payload) : await createExpense(payload);
       } catch {
-        return void toast.error("Something went wrong. Please try again.", { id: "expense" });
+        return void toast.error(T.common.somethingWrong, { id: "expense" });
       }
       if (!r.ok) {
         if (r.fieldErrors) setE(r.fieldErrors);
@@ -113,7 +117,7 @@ export default function ExpenseForm({
   const select = (k: ExpenseField, placeholder: string, opts: { value: string; label: string; disabled?: boolean }[]) => (
     <select id={`ex-${k}`} className={"sp-select " + (f[k] ? "" : "sp-select--placeholder")} value={f[k]} onChange={set(k)} disabled={!opts.length} aria-invalid={!!e[k] || undefined}>
       <option value="" disabled>
-        {opts.length ? placeholder : "None available yet"}
+        {opts.length ? placeholder : F.noneYet}
       </option>
       {opts.map((o) => (
         <option key={o.value} value={o.value} disabled={o.disabled}>
@@ -127,13 +131,13 @@ export default function ExpenseForm({
     <>
       <div className="sp-page-head">
         <h1 className="t-page-title" style={{ margin: 0 }}>
-          {editing ? "Update Expense" : "Create Expense"}
+          {editing ? F.updateTitle : F.createTitle}
         </h1>
         <div style={{ display: "flex", gap: 12 }}>
           <Link href="/expenses" className="sp-btn sp-btn--secondary">
-            <Icon name="arrow-left" size={18} />
-            Back
-          </Link>
+                        <Icon name="arrow-left" size={18} />
+            {F.back}
+</Link>
         </div>
       </div>
 
@@ -141,10 +145,10 @@ export default function ExpenseForm({
         <div className="sp-badge sp-badge--warning" role="status" data-testid="expense-setup" style={{ height: "auto", padding: "10px 14px", whiteSpace: "normal", marginBottom: 16 }}>
           <Icon name="info" size={16} />
           <span>
-            Before {editing ? "updating" : "recording"} an expense, set up{" "}
+                        {editing ? F.beforeUpdating : F.beforeRecording}{" "}
             {missing.map((m, i) => (
               <Fragment key={m.key}>
-                {i > 0 && (i === missing.length - 1 ? " and " : ", ")}
+                {i > 0 && (i === missing.length - 1 ? F.setupAnd : F.setupSep)}
                 <span data-missing={m.key}>{m.text}</span>
               </Fragment>
             ))}
@@ -156,8 +160,8 @@ export default function ExpenseForm({
         <div className="sp-badge sp-badge--info" role="note" style={{ height: "auto", padding: "10px 14px", whiteSpace: "normal", marginBottom: 16 }}>
           <Icon name="info" size={16} />
           <span>
-            {reference}: changing the date, amount or Paid From account keeps the ledger append-only — the original payment{activeTransaction ? ` (${activeTransaction})` : ""} is reversed and a new withdrawal is recorded.
-          </span>
+                        {fmt(F.reversalNote, { reference: reference ?? "", tx: activeTransaction ? ` (${activeTransaction})` : "" })}
+</span>
         </div>
       )}
 
@@ -171,39 +175,39 @@ export default function ExpenseForm({
       >
         <div className="sp-card sp-form-card">
           <div className="sp-form-grid" style={{ "--cols": 2 } as CSSProperties}>
-            {field("expenseDate", "Date", <input id="ex-expenseDate" type="date" className="sp-input " max={today} value={f.expenseDate} onChange={set("expenseDate")} aria-invalid={!!e.expenseDate || undefined} />)}
-            {field("title", "Expense Title", <input id="ex-title" className="sp-input " placeholder="Enter Expense Title" maxLength={191} value={f.title} onChange={set("title")} aria-invalid={!!e.title || undefined} />)}
-            {field("warehouseId", "Warehouse", select("warehouseId", "Choose Warehouse", warehouses))}
-            {field("categoryId", "Expense Category", select("categoryId", "Choose Expense Category", categories))}
+            {field("expenseDate", F.date, <input id="ex-expenseDate" type="date" className="sp-input " max={today} value={f.expenseDate} onChange={set("expenseDate")} aria-invalid={!!e.expenseDate || undefined} />)}
+            {field("title", F.title, <input id="ex-title" className="sp-input " placeholder={F.titlePh} maxLength={191} value={f.title} onChange={set("title")} aria-invalid={!!e.title || undefined} />)}
+            {field("warehouseId", F.warehouse, select("warehouseId", F.chooseWarehouse, warehouses))}
+            {field("categoryId", F.category, select("categoryId", F.chooseCategory, categories))}
             {field(
-              "amount",
-              "Amount",
+                            "amount",
+              F.amount,
               <div className="sp-group">
-                <input id="ex-amount" className="sp-input " inputMode="decimal" placeholder="Enter Amount" value={f.amount} onChange={set("amount")} aria-invalid={!!e.amount || undefined} />
+                <input id="ex-amount" className="sp-input " inputMode="decimal" placeholder={F.amountPh} dir="ltr" value={f.amount} onChange={set("amount")} aria-invalid={!!e.amount || undefined} />
                 <span className="sp-addon sp-addon--r">{currency?.symbol ?? "—"}</span>
               </div>,
               true,
-              available !== null ? `Available in ${selected!.label.split(" — ")[0]}: ${money(available)}${editing && initial && selected!.value === initial.cashBankAccountId ? " (after reversing this expense)" : ""}` : undefined,
+              available !== null ? fmt(F.available, { name: selected!.name, balance: money(available) }) + (editing && initial && selected!.value === initial.cashBankAccountId ? F.afterReversing : "") : undefined,
             )}
             {field(
-              "cashBankAccountId",
-              "Paid From",
+                            "cashBankAccountId",
+              F.paidFrom,
               select(
                 "cashBankAccountId",
-                "Choose Cash / Bank Account",
+                F.chooseAccount,
                 accounts
                   .filter((a) => (a.active && a.inDefaultCurrency) || a.value === f.cashBankAccountId)
-                  .map((a) => ({ value: a.value, label: a.active ? a.label : `${a.label.split(" — ")[0]} (inactive)`, disabled: !(a.active && a.inDefaultCurrency) })),
+                  .map((a) => ({ value: a.value, label: a.active ? a.label : `${a.name}${F.inactiveSuffix}`, disabled: !(a.active && a.inDefaultCurrency) })),
               ),
             )}
-            {field("details", "Details", <textarea id="ex-details" className="sp-textarea " rows={4} placeholder="Enter Details" maxLength={2000} value={f.details} onChange={set("details")} />, false)}
+            {field("details", F.details, <textarea id="ex-details" className="sp-textarea " rows={4} placeholder={F.detailsPh} maxLength={2000} value={f.details} onChange={set("details")} />, false)}
           </div>
           <div className="sp-form-actions">
             <button type="button" className="sp-btn sp-btn--secondary" onClick={() => router.push("/expenses")} disabled={pending}>
-              Cancel
-            </button>
-            <button type="submit" className="sp-btn sp-btn--primary" disabled={pending || blocked} title={blocked ? "Complete the setup above first" : undefined}>
-              {pending ? "Saving…" : editing ? "Update" : "Save"}
+              {F.cancel}
+</button>
+            <button type="submit" className="sp-btn sp-btn--primary" disabled={pending || blocked} title={blocked ? F.completeSetup : undefined}>
+              {pending ? F.saving : editing ? F.update : F.save}
             </button>
           </div>
         </div>

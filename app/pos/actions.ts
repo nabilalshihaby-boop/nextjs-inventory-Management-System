@@ -6,9 +6,11 @@ import { auth } from "@/auth";
 import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
 import { todayLocal } from "@/lib/cash-bank";
-import { LedgerError, appendLedgerRow, dateOnly, ledgerTxOptions, lockAccounts } from "@/lib/cash-bank-ledger";
+import { LedgerError, ledgerFail, appendLedgerRow, dateOnly, ledgerTxOptions, lockAccounts } from "@/lib/cash-bank-ledger";
 import { CUSTOMER_PAYMENT_PURPOSE, formatCustomerPaymentReference } from "@/lib/customer-payments";
 import { posCheckoutSchema } from "@/lib/pos";
+import { getDict } from "@/lib/i18n/server";
+import { errorMessage, tr } from "@/lib/i18n/messages";
 import { canUsePos } from "@/lib/roles";
 import { calcSale, formatSaleReference } from "@/lib/sales";
 import { SaleError, deductStock } from "@/lib/sale-stock";
@@ -43,20 +45,20 @@ export type PosCheckoutResult =
 
 const isKnown = (e: unknown, ...codes: string[]) => e instanceof Prisma.PrismaClientKnownRequestError && codes.includes(e.code);
 const MAX_TOTAL = toUnits("999999999999.99", 2);
-const reject = (message: string, field?: string): never => {
-  throw new LedgerError(message, field);
-};
+// Rejects with a dictionary key (English text derived from en.ts); the catch block translates it.
+const reject = (key: string, vars: Record<string, string | number> = {}, field?: string): never => ledgerFail(key, vars, field);
 
 export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
   const session = await auth();
-  if (!session?.user?.id) return { ok: false, message: "Your session has expired. Please sign in again." };
-  if (!canUsePos(session.user.role)) return { ok: false, message: "You don't have permission to use the POS." };
+  const dict = await getDict();
+  if (!session?.user?.id) return { ok: false, message: dict.common.sessionExpired };
+  if (!canUsePos(session.user.role)) return { ok: false, message: dict.pos.noPermission };
   const userId = session.user.id;
 
   const v = posCheckoutSchema.safeParse(input);
   if (!v.success) {
     const fieldErrors: Record<string, string> = {};
-    for (const i of v.error.issues) fieldErrors[String(i.path[0] ?? "items")] ??= i.code === "unrecognized_keys" ? "Unexpected fields were sent" : i.message;
+    for (const i of v.error.issues) fieldErrors[String(i.path[0] ?? "items")] ??= i.code === "unrecognized_keys" ? dict.common.unexpectedFields : i.message.startsWith("posTx.") ? tr(dict, i.message) : i.message;
     return { ok: false, message: Object.values(fieldErrors)[0] ?? "Please check the checkout", fieldErrors };
   }
   const d = v.data;
@@ -65,14 +67,14 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
   const replay = async (): Promise<PosCheckoutResult | null> => {
     const s = await db.sale.findUnique({ where: { posCheckoutKey: d.checkoutKey }, select: { id: true, reference: true, createdById: true } });
     if (!s) return null;
-    if (s.createdById !== userId) return { ok: false, message: "This checkout key is invalid. Refresh the POS and try again." };
-    return { ok: true, message: `Sale ${s.reference} was already completed — nothing was charged again`, saleId: s.id, reference: s.reference, replayed: true };
+    if (s.createdById !== userId) return { ok: false, message: dict.posTx.checkout.keyInvalid };
+    return { ok: true, message: tr(dict, "posTx.checkout.replay", { ref: s.reference }), saleId: s.id, reference: s.reference, replayed: true };
   };
   const again = await replay();
   if (again) return again;
 
   const currency = await getDefaultCurrency();
-  if (!currency) return { ok: false, message: "No default currency is configured. The Owner must choose one in System Settings." };
+  if (!currency) return { ok: false, message: dict.posTx.checkout.noCurrency };
 
   for (let attempt = 1; ; attempt++) {
     try {
@@ -82,15 +84,15 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
           tx.warehouse.findUnique({ where: { id: d.warehouseId }, select: { id: true } }),
           tx.product.findMany({ where: { id: { in: d.items.map((i) => i.productId) } }, select: { id: true, code: true, name: true, price: true, taxType: true, orderTax: true, saleUnit: { select: { name: true } } } }),
         ]);
-        if (!customer) return reject("Choose a valid customer", "customerId");
+        if (!customer) return reject("posTx.checkout.chooseCustomer", {}, "customerId");
         if (d.walkIn) {
           // Walk-in checkout: the setting is re-read here; it must still name exactly this customer.
           const cfg = await tx.systemSettings.findUnique({ where: { id: 1 }, select: { posWalkInCustomerId: true } });
-          if (!cfg?.posWalkInCustomerId || cfg.posWalkInCustomerId !== customer.id) return reject("The Walk-in Customer setting has changed. Refresh the POS and choose the customer again.", "customerId");
+          if (!cfg?.posWalkInCustomerId || cfg.posWalkInCustomerId !== customer.id) return reject("posTx.checkout.walkInChanged", {}, "customerId");
         }
-        if (!warehouse) return reject("Choose a valid warehouse", "warehouseId");
+        if (!warehouse) return reject("posTx.checkout.chooseWarehouse", {}, "warehouseId");
         const byId = new Map(products.map((p) => [p.id, p]));
-        if (d.items.some((i) => !byId.has(i.productId))) return reject("A product in the cart no longer exists", "items");
+        if (d.items.some((i) => !byId.has(i.productId))) return reject("posTx.checkout.productGone", {}, "items");
 
         // Authoritative totals from the STORED product values (same exact calculation as Sales).
         const lines = d.items.map((i) => {
@@ -99,10 +101,10 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
         });
         const totals = calcSale(lines, { orderTaxRate: "0.00", discount: "0.00", shipping: "0.00" });
         const bad = totals.lines.find((l) => l.error);
-        if (bad || totals.error) return reject(bad?.error ?? totals.error ?? "Invalid totals", "items");
+        if (bad || totals.error) return reject(bad?.errorKey ?? totals.errorKey ?? "posTx.checkout.invalidTotals", {}, "items");
         const grand = toUnits(totals.grandTotal, 2);
-        if (grand <= BigInt(0)) return reject("The total must be greater than zero", "items");
-        if (grand > MAX_TOTAL || toUnits(totals.subtotal, 2) > MAX_TOTAL) return reject("The sale total is too large", "items");
+        if (grand <= BigInt(0)) return reject("posTx.checkout.totalZero", {}, "items");
+        if (grand > MAX_TOTAL || toUnits(totals.subtotal, 2) > MAX_TOTAL) return reject("posTx.checkout.totalLarge", {}, "items");
 
         const today = dateOnly(todayLocal());
         // 1. The sale — FIRST statement: claims the unique checkout key (a duplicate blocks here).
@@ -157,7 +159,7 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
         // a second concurrent checkout of the same order blocks on the row, then fails and rolls back).
         if (d.heldOrderId) {
           const used = await tx.posHeldOrder.updateMany({ where: { id: d.heldOrderId, createdById: userId, status: "HELD" }, data: { status: "CONSUMED", consumedSaleId: s0.id } });
-          if (used.count !== 1) reject("This held order was already used, discarded or no longer exists.", "heldOrderId");
+          if (used.count !== 1) reject("posTx.checkout.heldUsed", {}, "heldOrderId");
         }
 
         // 2. Stock — conditional, once, all-or-nothing.
@@ -166,12 +168,12 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
         // 3. Tender check — the payments must add up to EXACTLY the server-calculated Grand Total
         // (no partial, no change). Every receiving account is locked (id order), ACTIVE and in the sale currency.
         const tenderSum = d.tenders.reduce((n, t) => n + toUnits(t.amount, 2), BigInt(0));
-        if (tenderSum !== grand) return reject(`The payments add up to ${fromUnits(tenderSum, 2)} but the sale total is ${totals.grandTotal}. They must match exactly.`, "tenders");
+        if (tenderSum !== grand) return reject("posTx.checkout.tendersSum", { paid: fromUnits(tenderSum, 2), total: totals.grandTotal }, "tenders");
         const accounts = await lockAccounts(tx, d.tenders.map((t) => t.cashBankAccountId));
         for (const t of d.tenders) {
-          const acc = accounts.get(t.cashBankAccountId) ?? reject("Choose a valid cash/bank account", "tenders");
-          if (acc.status !== "ACTIVE") reject(`${acc.name} is inactive and can't be used for new transactions.`, "tenders");
-          if (acc.currencyId !== currency.id) reject(`${acc.name} uses a different currency from the sale.`, "tenders");
+          const acc = accounts.get(t.cashBankAccountId) ?? reject("posTx.checkout.chooseCashBank", {}, "tenders");
+          if (acc.status !== "ACTIVE") reject("finance.err.inactiveUse", { name: acc.name }, "tenders");
+          if (acc.currencyId !== currency.id) reject("posTx.checkout.differentCurrency", { name: acc.name }, "tenders");
         }
         // 3b. Register sessions: every CASH tender must go into a CASH account that has an OPEN register.
         // The session row is locked (checkout and Close Register serialize on it), so a session that is
@@ -180,10 +182,10 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
         for (const t of d.tenders) {
           if (t.paymentMethod !== "Cash") continue;
           const acc = accounts.get(t.cashBankAccountId)!;
-          if (acc.type !== "CASH") reject(`Cash payments must be deposited to a Cash account — ${acc.name} is a bank account.`, "tenders");
+          if (acc.type !== "CASH") reject("posTx.checkout.cashOnly", { name: acc.name }, "tenders");
           if (!sessionOf.has(acc.id)) {
             const rows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM cash_register_sessions WHERE cashBankAccountId = ${acc.id} AND status = 'OPEN' FOR UPDATE`;
-            if (!rows.length) reject(`Open a register for ${acc.name} first — cash payments need an open register session.`, "tenders");
+            if (!rows.length) reject("posTx.checkout.openRegister", { name: acc.name }, "tenders");
             sessionOf.set(acc.id, rows[0].id);
           }
         }
@@ -232,10 +234,16 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
       revalidatePath("/finance/accounts");
       revalidatePath("/finance/transactions");
       revalidatePath("/products"); // In Stock
-      return { ok: true, message: `Sale ${created.reference} completed — payment ${created.payRef} recorded (${created.ledger})`, saleId: created.id, reference: created.reference, replayed: false };
+      return { ok: true, message: tr(dict, "posTx.checkout.done", { ref: created.reference, pay: created.payRef, ledger: created.ledger }), saleId: created.id, reference: created.reference, replayed: false };
     } catch (e) {
-      if (e instanceof LedgerError) return { ok: false, message: e.message, fieldErrors: e.field ? { [e.field]: e.message } : undefined };
-      if (e instanceof SaleError) return { ok: false, message: e.message, fieldErrors: { items: e.message } };
+            if (e instanceof LedgerError) {
+        const message = e.i18n ? tr(dict, e.i18n.key, e.i18n.vars) : e.message;
+        return { ok: false, message, fieldErrors: e.field ? { [e.field]: message } : undefined };
+      }
+      if (e instanceof SaleError) {
+        const m = errorMessage(dict, e);
+        return { ok: false, message: m, fieldErrors: { items: m } };
+      }
       if (isKnown(e, "P2002")) {
         // A concurrent request with the same checkout key committed first → replay it.
         const r = await replay();
@@ -243,7 +251,7 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
         throw e;
       }
       if (attempt < 4 && isKnown(e, "P2034")) continue; // deadlock / write conflict → retry
-      if (isKnown(e, "P2003")) return { ok: false, message: "A selected customer, warehouse, product or account no longer exists. Refresh and try again." };
+      if (isKnown(e, "P2003")) return { ok: false, message: dict.posTx.checkout.refsGone };
       throw e;
     }
   }

@@ -12,13 +12,14 @@ import StatCard from "@/components/ui/StatCard";
 import { Field } from "@/components/finance/AccountsView";
 import { createDeposit, createTransfer, createWithdrawal, type FinanceResult } from "@/app/(dashboard)/finance/actions";
 import { formatMoney } from "@/lib/money";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
 import { fromUnits, toUnits } from "@/lib/transfers";
 import {
   DEFERRED_DEPOSIT_SOURCES,
   DEFERRED_WITHDRAWAL_PURPOSES,
   DEPOSIT_SOURCES,
   PAYMENT_METHODS,
-  TX_LABEL,
   TX_PREFIX,
   TX_TONE,
   WITHDRAWAL_PURPOSES,
@@ -56,7 +57,12 @@ export default function TransactionsView({
   today: string;
   canRecord: boolean;
 }) {
-  const router = useRouter();
+    const router = useRouter();
+  const T = useT();
+  const F = T.finance;
+  const X = F.transactions;
+  const meth = (m: string) => (T.sales.methods as Record<string, string>)[m] ?? m;
+  const purp = (p: string) => (F.purposes as Record<string, string>)[p] ?? p;
   const start: Filters = { ...NO_FILTERS, acct: initialAccount || "ALL" };
   const [draft, setDraft] = useState<Filters>(start);
   const [ap, setAp] = useState<Filters>(start);
@@ -95,7 +101,7 @@ export default function TransactionsView({
   const filtered = !!needle || JSON.stringify(ap) !== JSON.stringify(NO_FILTERS);
 
   const apply = () => {
-    if (draft.from && draft.to && draft.from > draft.to) return setFerr("From Date must be before To Date");
+    if (draft.from && draft.to && draft.from > draft.to) return setFerr(X.rangeError);
     setFerr("");
     setAp(draft);
     setPage(1);
@@ -110,7 +116,7 @@ export default function TransactionsView({
   };
 
   const open = (k: "DEPOSIT" | "WITHDRAWAL" | "TRANSFER") => {
-    if (!activeAccounts.length) return void toast.error("There are no active cash or bank accounts yet.", { id: "cash-tx" });
+    if (!activeAccounts.length) return void toast.error(X.noActive, { id: "cash-tx" });
     setE({});
     setF(k === "TRANSFER" ? { transactionDate: today, fromAccountId: "", toAccountId: "", amount: "", notes: "" } : { transactionDate: today, accountId: initialAccount && byId.get(initialAccount)?.active ? initialAccount : "", amount: "", purpose: "", paymentMethod: "Cash", notes: "" });
     setFlow(k);
@@ -123,21 +129,21 @@ export default function TransactionsView({
   function save() {
     if (!flow) return;
     const n: Partial<Record<TxField, string>> = {};
-    if (!f.transactionDate) n.transactionDate = "Date is required";
-    else if (f.transactionDate > today) n.transactionDate = "The date can't be in the future";
+    if (!f.transactionDate) n.transactionDate = X.errDateRequired;
+    else if (f.transactionDate > today) n.transactionDate = X.errDateFuture;
     const amountOk = MONEY_RE.test((f.amount ?? "").trim()) && /[1-9]/.test(f.amount);
-    if (!amountOk) n.amount = "Enter an amount greater than 0 (up to 2 decimals)";
+    if (!amountOk) n.amount = X.errAmount;
     const sourceId = flow === "TRANSFER" ? f.fromAccountId : f.accountId;
     if (flow === "TRANSFER") {
-      if (!f.fromAccountId) n.fromAccountId = "Choose the source account";
-      if (!f.toAccountId) n.toAccountId = "Choose the destination account";
-      else if (f.fromAccountId === f.toAccountId) n.toAccountId = "Source and destination must differ";
+      if (!f.fromAccountId) n.fromAccountId = X.errChooseSource;
+      if (!f.toAccountId) n.toAccountId = X.errChooseDest;
+      else if (f.fromAccountId === f.toAccountId) n.toAccountId = X.errDiffer;
     } else {
-      if (!f.accountId) n.accountId = "Account is required";
-      if (!f.purpose) n.purpose = flow === "DEPOSIT" ? "Deposit source is required" : "Withdrawal purpose is required";
+      if (!f.accountId) n.accountId = X.errAccount;
+      if (!f.purpose) n.purpose = flow === "DEPOSIT" ? X.errDepSource : X.errWdPurpose;
     }
     const src = sourceId ? byId.get(sourceId) : undefined;
-    if (amountOk && src && flow !== "DEPOSIT" && toUnits(f.amount, 2) > toUnits(src.balance, 2)) n.amount = `Insufficient balance (${money(src.balance, src.currency)} available)`;
+    if (amountOk && src && flow !== "DEPOSIT" && toUnits(f.amount, 2) > toUnits(src.balance, 2)) n.amount = fmt(X.errInsufficient, { balance: money(src.balance, src.currency) });
     setE(n);
     if (Object.keys(n).length) return void toast.error(Object.values(n)[0]!, { id: "cash-tx" });
     const payload = { ...f, amount: f.amount.trim() };
@@ -146,7 +152,7 @@ export default function TransactionsView({
       try {
         r = flow === "DEPOSIT" ? await createDeposit(payload) : flow === "WITHDRAWAL" ? await createWithdrawal(payload) : await createTransfer(payload);
       } catch {
-        return void toast.error("Something went wrong. Please try again.", { id: "cash-tx" });
+        return void toast.error(T.common.somethingWrong, { id: "cash-tx" });
       }
       if (!r.ok) {
         if (r.fieldErrors) setE(r.fieldErrors);
@@ -163,14 +169,14 @@ export default function TransactionsView({
   const accountSelect = (k: "accountId" | "fromAccountId" | "toAccountId", exclude?: string) => (
     <select id={`ft-${k}`} className={"sp-select " + (f[k] ? "" : "sp-select--placeholder")} value={f[k] ?? ""} onChange={set(k)}>
       <option value="" disabled>
-        Choose Account
+                {X.chooseAccount}
       </option>
       {accounts
         .filter((a) => a.id !== exclude)
         .map((a) => (
           <option key={a.id} value={a.id} disabled={!a.active}>
             {a.name}
-            {a.active ? "" : " (inactive)"}
+            {a.active ? "" : X.inactiveSuffix}
           </option>
         ))}
     </select>
@@ -188,17 +194,17 @@ export default function TransactionsView({
     return (
       <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 2, whiteSpace: "nowrap", font: "400 13px/18px var(--font-body)" }} data-side="both">
         <span data-side="source">
-          <span style={{ color: "var(--text-3)" }}>Source: </span>
+          <span style={{ color: "var(--text-3)" }}>{X.sourceLabel} </span>
           <b>{money(t.balanceAfter, t.currency)}</b>
         </span>
         <span data-side="destination">
-          <span style={{ color: "var(--text-3)" }}>Destination: </span>
+          <span style={{ color: "var(--text-3)" }}>{X.destLabel} </span>
           <b>{money(t.toBalanceAfter, t.currency)}</b>
         </span>
       </span>
     );
   };
-  const kindBadge = (t: TxTypeValue) => <span className={`sp-badge sp-badge--${TX_TONE[t]}`} data-type={t}>{TX_LABEL[t]}</span>;
+  const kindBadge = (t: TxTypeValue) => <span className={`sp-badge sp-badge--${TX_TONE[t]}`} data-type={t}>{F.tx[t]}</span>;
   const sourceOf = flow === "TRANSFER" ? f.fromAccountId : f.accountId;
   const srcAcc = sourceOf ? byId.get(sourceOf) : undefined;
   const symbol = srcAcc?.currency.symbol ?? defaultCurrency?.symbol ?? "—";
@@ -208,18 +214,18 @@ export default function TransactionsView({
     <>
       <div className="sp-page-head">
         <h1 className="t-page-title" style={{ margin: 0 }}>
-          Cash &amp; Bank Transactions
+                    {X.title}
         </h1>
         {canRecord && (
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             {(
               [
-                ["TRANSFER", "Transfer Between Accounts", "arrow-left-right", "secondary"],
-                ["WITHDRAWAL", "New Withdrawal", "plus", "secondary"],
-                ["DEPOSIT", "New Deposit", "plus", "primary"],
+                ["TRANSFER", X.newTransfer, "arrow-left-right", "secondary"],
+                ["WITHDRAWAL", X.newWithdrawal, "plus", "secondary"],
+                ["DEPOSIT", X.newDeposit, "plus", "primary"],
               ] as const
             ).map(([k, label, icon, variant]) => (
-              <button key={k} type="button" className={`sp-btn sp-btn--${variant}`} onClick={() => open(k)} disabled={noAccounts || (k === "TRANSFER" && activeAccounts.length < 2)} title={noAccounts ? "Add an active cash or bank account first" : k === "TRANSFER" && activeAccounts.length < 2 ? "A transfer needs two active accounts" : undefined}>
+              <button key={k} data-testid={`tx-new-${k.toLowerCase()}`} type="button" className={`sp-btn sp-btn--${variant}`} onClick={() => open(k)} disabled={noAccounts || (k === "TRANSFER" && activeAccounts.length < 2)} title={noAccounts ? X.addAccountFirst : k === "TRANSFER" && activeAccounts.length < 2 ? X.needTwo : undefined}>
                 <Icon name={icon} size={18} />
                 {label}
               </button>
@@ -228,36 +234,36 @@ export default function TransactionsView({
         )}
       </div>
       <p className="t-body" style={{ margin: "-8px 0 24px", color: "var(--text-2)" }}>
-        Monitor cash movements, bank transactions, deposits, withdrawals, and account transfers.
-      </p>
+                {X.subtitle}
+</p>
 
       {accounts.length === 0 && (
         <div className="sp-badge sp-badge--warning" role="status" data-testid="no-accounts" style={{ height: "auto", padding: "10px 14px", whiteSpace: "normal", marginBottom: 24 }}>
           <Icon name="info" size={16} />
           <span>
-            No cash or bank accounts exist yet. Transactions need an account — see <Link href="/finance/accounts">Cash &amp; Bank Accounts</Link>.
+            {X.noAccountsBanner} <Link href="/finance/accounts">{X.accountsLink}</Link>.
           </span>
         </div>
       )}
 
       <div className="sp-kpi-grid bp-fin-kpis" style={{ marginBottom: 24 }}>
-        <StatCard tone="green" icon="arrow-down-to-line" value={money(fromUnits(moneyIn, 2))} label="Total Money In" testId="kpi-in" />
-        <StatCard tone="red" icon="arrow-up-from-line" value={money(fromUnits(moneyOut, 2))} label="Total Money Out" testId="kpi-out" />
-        <StatCard tone="blue" icon="chart-column" value={money(fromUnits(moneyIn - moneyOut, 2))} label="Net Cash Movement" note="Transfers excluded" testId="kpi-net" />
-        <StatCard tone="violet" icon="list" value={String(rows.length)} label="Total Transactions" note="Includes transfers" testId="kpi-count" />
+        <StatCard tone="green" icon="arrow-down-to-line" value={money(fromUnits(moneyIn, 2))} label={X.kpiIn} testId="kpi-in" />
+        <StatCard tone="red" icon="arrow-up-from-line" value={money(fromUnits(moneyOut, 2))} label={X.kpiOut} testId="kpi-out" />
+        <StatCard tone="blue" icon="chart-column" value={money(fromUnits(moneyIn - moneyOut, 2))} label={X.kpiNet} note={X.kpiNetNote} testId="kpi-net" />
+        <StatCard tone="violet" icon="list" value={String(rows.length)} label={X.kpiCount} note={X.kpiCountNote} testId="kpi-count" />
       </div>
 
       <div className="sp-card" style={{ padding: 24, marginBottom: 24 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5,minmax(0,1fr))", gap: 20 }}>
-          <Field label="From Date" htmlFor="fl-from">
+          <Field label={X.fromDate} htmlFor="fl-from">
             <input id="fl-from" type="date" className="sp-input " value={draft.from} onChange={(ev) => setDraft({ ...draft, from: ev.target.value })} />
           </Field>
-          <Field label="To Date" htmlFor="fl-to">
+          <Field label={X.toDate} htmlFor="fl-to">
             <input id="fl-to" type="date" className="sp-input " value={draft.to} onChange={(ev) => setDraft({ ...draft, to: ev.target.value })} />
           </Field>
-          <Field label="Account" htmlFor="fl-acct">
+          <Field label={X.account} htmlFor="fl-acct">
             <select id="fl-acct" className="sp-select " value={draft.acct} onChange={(ev) => setDraft({ ...draft, acct: ev.target.value })}>
-              <option value="ALL">All Accounts</option>
+              <option value="ALL">{X.allAccounts}</option>
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name}
@@ -265,20 +271,20 @@ export default function TransactionsView({
               ))}
             </select>
           </Field>
-          <Field label="Transaction Type" htmlFor="fl-kind">
+          <Field label={X.txType} htmlFor="fl-kind">
             <select id="fl-kind" className="sp-select " value={draft.kind} onChange={(ev) => setDraft({ ...draft, kind: ev.target.value as Filters["kind"] })}>
-              <option value="ALL">All Transactions</option>
-              <option value="DEPOSIT">Deposit</option>
-              <option value="WITHDRAWAL">Withdrawal</option>
-              <option value="TRANSFER">Transfer</option>
+              <option value="ALL">{X.allTx}</option>
+              <option value="DEPOSIT">{F.tx.DEPOSIT}</option>
+              <option value="WITHDRAWAL">{F.tx.WITHDRAWAL}</option>
+              <option value="TRANSFER">{F.tx.TRANSFER}</option>
             </select>
           </Field>
-          <Field label="Payment Method" htmlFor="fl-method">
+          <Field label={X.method} htmlFor="fl-method">
             <select id="fl-method" className="sp-select " value={draft.method} onChange={(ev) => setDraft({ ...draft, method: ev.target.value })}>
-              <option value="ALL">All Methods</option>
+              <option value="ALL">{X.allMethods}</option>
               {PAYMENT_METHODS.map((m) => (
                 <option key={m} value={m}>
-                  {m}
+                  {meth(m)}
                 </option>
               ))}
             </select>
@@ -287,11 +293,11 @@ export default function TransactionsView({
         <div style={{ display: "flex", gap: 12, marginTop: 20, alignItems: "center", flexWrap: "wrap" }}>
           <button type="button" className="sp-btn sp-btn--primary" onClick={apply}>
             <Icon name="filter" size={18} />
-            Apply Filters
-          </button>
+                        {X.apply}
+</button>
           <button type="button" className="sp-btn sp-btn--secondary" onClick={reset}>
             <Icon name="rotate-ccw" size={18} />
-            Reset Filters
+                        {X.resetFilters}
           </button>
           {ferr && <span className="sp-error">{ferr}</span>}
         </div>
@@ -300,14 +306,14 @@ export default function TransactionsView({
       <div className="sp-toolbar">
         <div className="sp-group">
           <Icon name="search" size={18} className="sp-input-icon" />
-          <input className="sp-input " placeholder="Search by reference or description" aria-label="Search transactions" value={q} onChange={(ev) => { setQ(ev.target.value); setPage(1); }} />
+          <input className="sp-input " placeholder={X.searchPh} aria-label={X.searchAria} value={q} onChange={(ev) => { setQ(ev.target.value); setPage(1); }} />
         </div>
         <div style={{ width: 220 }}>
-          <select className="sp-select " aria-label="Sort by" value={sort} onChange={(ev) => { setSort(ev.target.value as typeof sort); setPage(1); }}>
-            <option value="new">Newest first</option>
-            <option value="old">Oldest first</option>
-            <option value="in">Money In (high to low)</option>
-            <option value="out">Money Out (high to low)</option>
+          <select className="sp-select " aria-label={X.sortAria} value={sort} onChange={(ev) => { setSort(ev.target.value as typeof sort); setPage(1); }}>
+            <option value="new">{X.sortNew}</option>
+            <option value="old">{X.sortOld}</option>
+            <option value="in">{X.sortIn}</option>
+            <option value="out">{X.sortOut}</option>
           </select>
         </div>
       </div>
@@ -315,13 +321,13 @@ export default function TransactionsView({
       {rows.length === 0 ? (
         <div className="sp-card sp-empty" data-testid="tx-empty">
           <Icon name="inbox" size={36} />
-          <div className="t-section-title">{filtered ? "No transactions match your filters" : "No transactions yet"}</div>
+          <div className="t-section-title">{filtered ? X.emptyFiltered : X.emptyNone}</div>
           {filtered ? (
             <button type="button" className="sp-btn sp-btn--secondary" onClick={reset}>
-              Reset Filters
+                            {X.resetFilters}
             </button>
           ) : (
-            <span>{canRecord && !noAccounts ? "Record a deposit, withdrawal or transfer to get started." : "Transactions appear here once accounts are set up and money is recorded."}</span>
+            <span>{canRecord && !noAccounts ? X.emptyHintRecord : X.emptyHintOther}</span>
           )}
         </div>
       ) : (
@@ -330,16 +336,16 @@ export default function TransactionsView({
             <table className="sp-table">
               <thead>
                 <tr>
-                  <th>Date &amp; Time</th>
-                  <th>Reference</th>
-                  <th>Account</th>
-                  <th>Type</th>
-                  <th>Description</th>
-                  <th className="num">Money In</th>
-                  <th className="num">Money Out</th>
-                  <th className="num">Balance After</th>
-                  <th>Status</th>
-                  <th className="act">Action</th>
+                  <th>{X.colWhen}</th>
+                  <th>{X.colReference}</th>
+                  <th>{X.colAccount}</th>
+                  <th>{X.colType}</th>
+                  <th>{X.colDescription}</th>
+                  <th className="num">{X.colIn}</th>
+                  <th className="num">{X.colOut}</th>
+                  <th className="num">{X.colAfter}</th>
+                  <th>{X.colStatus}</th>
+                  <th className="act">{X.colAction}</th>
                 </tr>
               </thead>
               <tbody>
@@ -363,7 +369,7 @@ export default function TransactionsView({
                     <td>{kindBadge(t.type)}</td>
                     <td className="primary-cell">
                       <div>{t.description}</div>
-                      {t.type === "TRANSFER" && <div style={{ color: "var(--primary-700)", fontWeight: 600, fontSize: 13 }}>{money(t.amount, t.currency)} transferred</div>}
+                      {t.type === "TRANSFER" && <div style={{ color: "var(--primary-700)", fontWeight: 600, fontSize: 13 }}>{fmt(X.transferred, { amount: money(t.amount, t.currency) })}</div>}
                     </td>
                     <td className="num" data-col="in">{t.moneyIn ? <span style={{ color: "var(--success-700)", fontWeight: 600 }}>{money(t.moneyIn, t.currency)}</span> : "—"}</td>
                     <td className="num" data-col="out">{t.moneyOut ? <span style={{ color: "var(--danger-500)", fontWeight: 600 }}>{money(t.moneyOut, t.currency)}</span> : "—"}</td>
@@ -373,11 +379,11 @@ export default function TransactionsView({
                     <td>
                       <span className="sp-badge sp-badge--success">
                         <i />
-                        Completed
+                                                {X.completed}
                       </span>
                     </td>
                     <td className="act">
-                      <RowMenu label={t.reference} items={[{ label: "View Details", icon: "eye", onClick: () => setView(t) }, { label: "View Account", icon: "landmark", href: "/finance/accounts" }]} />
+                      <RowMenu label={t.reference} items={[{ label: X.viewDetails, icon: "eye", onClick: () => setView(t) }, { label: X.viewAccount, icon: "landmark", href: "/finance/accounts" }]} />
                     </td>
                   </tr>
                 ))}
@@ -388,73 +394,73 @@ export default function TransactionsView({
         </div>
       )}
       <p className="t-caption" style={{ marginTop: 12 }}>
-        Balance After shows the account&apos;s running balance in date order. For transfers it shows the filtered account&apos;s side, or both the source and destination balances when all accounts are shown. Transfers move money between internal accounts and are not counted as Money In or Money Out. Transactions are append-only.
-      </p>
+                {X.note}
+</p>
 
       {(flow === "DEPOSIT" || flow === "WITHDRAWAL") && (
         <Modal
           size="md"
-          title={flow === "DEPOSIT" ? "Record Cash / Bank Deposit" : "Record Cash / Bank Withdrawal"}
+          title={flow === "DEPOSIT" ? X.depTitle : X.wdTitle}
           onClose={() => !pending && setFlow(null)}
           footer={
             <>
               <button type="button" className="sp-btn sp-btn--secondary" onClick={() => setFlow(null)} disabled={pending}>
-                Cancel
-              </button>
+                {X.cancel}
+</button>
               <button type="button" className="sp-btn sp-btn--primary" onClick={save} disabled={pending}>
-                {pending ? "Saving…" : flow === "DEPOSIT" ? "Save Deposit" : "Save Withdrawal"}
+                {pending ? X.saving : flow === "DEPOSIT" ? X.saveDeposit : X.saveWithdrawal}
               </button>
             </>
           }
         >
           <div className="sp-form-grid">
-            <Field label={flow === "DEPOSIT" ? "Deposit Source" : "Withdrawal Purpose"} required error={e.purpose} htmlFor="ft-purpose">
+            <Field label={flow === "DEPOSIT" ? X.depSource : X.wdPurpose} required error={e.purpose} htmlFor="ft-purpose">
               <select id="ft-purpose" className={"sp-select " + (f.purpose ? "" : "sp-select--placeholder")} value={f.purpose ?? ""} onChange={set("purpose")}>
                 <option value="" disabled>
-                  {flow === "DEPOSIT" ? "Choose Deposit Source" : "Choose Withdrawal Purpose"}
+                  {flow === "DEPOSIT" ? X.chooseDepSource : X.chooseWdPurpose}
                 </option>
                 {(flow === "DEPOSIT" ? DEPOSIT_SOURCES : WITHDRAWAL_PURPOSES).map((o) => (
                   <option key={o} value={o}>
-                    {o}
+                                        {purp(o)}
                   </option>
                 ))}
                 {(flow === "DEPOSIT" ? DEFERRED_DEPOSIT_SOURCES : DEFERRED_WITHDRAWAL_PURPOSES).map((o) => (
-                  <option key={o.label} value={`deferred:${o.label}`} disabled title={o.reason}>
-                    {o.label} — {o.reason}
+                  <option key={o.label} value={`deferred:${o.label}`} disabled title={(F.deferred as Record<string, string>)[o.label] ?? o.reason}>
+                    {purp(o.label)} — {(F.deferred as Record<string, string>)[o.label] ?? o.reason}
                   </option>
                 ))}
               </select>
             </Field>
-            <Field label={flow === "DEPOSIT" ? "Destination Account" : "Source Account"} required error={e.accountId} htmlFor="ft-accountId">
+            <Field label={flow === "DEPOSIT" ? X.destAccount : X.srcAccount} required error={e.accountId} htmlFor="ft-accountId">
               {accountSelect("accountId")}
             </Field>
-            <Field label="Amount" required error={e.amount} htmlFor="ft-amount" hint={flow === "WITHDRAWAL" && srcAcc ? `Available: ${money(srcAcc.balance, srcAcc.currency)}` : undefined}>
+            <Field label={X.amount} required error={e.amount} htmlFor="ft-amount" hint={flow === "WITHDRAWAL" && srcAcc ? fmt(X.available, { balance: money(srcAcc.balance, srcAcc.currency) }) : undefined}>
               <div className="sp-group">
                 <input id="ft-amount" className="sp-input " inputMode="decimal" placeholder="0.00" value={f.amount ?? ""} onChange={set("amount")} />
                 <span className="sp-addon sp-addon--r">{symbol}</span>
               </div>
             </Field>
-            <Field label={flow === "DEPOSIT" ? "Deposit Date" : "Withdrawal Date"} required error={e.transactionDate} htmlFor="ft-transactionDate">
+            <Field label={flow === "DEPOSIT" ? X.depDate : X.wdDate} required error={e.transactionDate} htmlFor="ft-transactionDate">
               <input id="ft-transactionDate" type="date" className="sp-input " max={today} value={f.transactionDate ?? ""} onChange={set("transactionDate")} />
             </Field>
-            <Field label="Payment Method" htmlFor="ft-paymentMethod" error={e.paymentMethod}>
+            <Field label={X.paymentMethod} htmlFor="ft-paymentMethod" error={e.paymentMethod}>
               <select id="ft-paymentMethod" className="sp-select " value={f.paymentMethod ?? "Cash"} onChange={set("paymentMethod")}>
                 {PAYMENT_METHODS.map((m) => (
                   <option key={m} value={m}>
-                    {m}
+                    {meth(m)}
                   </option>
                 ))}
               </select>
             </Field>
-            <Field label="Transaction Reference" htmlFor="ft-ref" hint="Generated by the server when saved.">
-              <input id="ft-ref" className="sp-input " value={`Auto: ${TX_PREFIX[flow]}_…`} readOnly disabled />
+            <Field label={X.txRef} htmlFor="ft-ref" hint={X.refHint}>
+              <input id="ft-ref" className="sp-input " value={fmt(X.autoRef, { prefix: TX_PREFIX[flow] })} dir="ltr" readOnly disabled />
             </Field>
-            <Field label="Description / Notes" htmlFor="ft-notes" className="sp-span-all" error={e.notes}>
-              <textarea id="ft-notes" className="sp-textarea " rows={3} placeholder="Enter Notes" value={f.notes ?? ""} onChange={set("notes")} />
+            <Field label={X.notes} htmlFor="ft-notes" className="sp-span-all" error={e.notes}>
+              <textarea id="ft-notes" className="sp-textarea " rows={3} placeholder={X.notesPh} value={f.notes ?? ""} onChange={set("notes")} />
             </Field>
             <span className="t-caption sp-span-all">
-              Customer collections, POS sales, supplier payments and operating expenses will be recorded from their own modules once Sales, Purchases and Expenses are built.
-            </span>
+                            {X.deferredNote}
+</span>
           </div>
         </Modal>
       )}
@@ -462,38 +468,38 @@ export default function TransactionsView({
       {flow === "TRANSFER" && (
         <Modal
           size="md"
-          title="Transfer Between Accounts"
+          title={X.transferTitle}
           onClose={() => !pending && setFlow(null)}
           footer={
             <>
               <button type="button" className="sp-btn sp-btn--secondary" onClick={() => setFlow(null)} disabled={pending}>
-                Cancel
-              </button>
+                {X.cancel}
+</button>
               <button type="button" className="sp-btn sp-btn--primary" onClick={save} disabled={pending}>
-                {pending ? "Saving…" : "Confirm Transfer"}
+                {pending ? X.saving : X.confirmTransfer}
               </button>
             </>
           }
         >
           <div className="sp-form-grid">
-            <Field label="Transfer Date" required error={e.transactionDate} htmlFor="ft-transactionDate">
+            <Field label={X.transferDate} required error={e.transactionDate} htmlFor="ft-transactionDate">
               <input id="ft-transactionDate" type="date" className="sp-input " max={today} value={f.transactionDate ?? ""} onChange={set("transactionDate")} />
             </Field>
             <div />
-            <Field label="From Account" required error={e.fromAccountId} htmlFor="ft-fromAccountId">
+            <Field label={X.fromAccount} required error={e.fromAccountId} htmlFor="ft-fromAccountId">
               {accountSelect("fromAccountId", f.toAccountId)}
             </Field>
-            <Field label="To Account" required error={e.toAccountId} htmlFor="ft-toAccountId">
+            <Field label={X.toAccount} required error={e.toAccountId} htmlFor="ft-toAccountId">
               {accountSelect("toAccountId", f.fromAccountId)}
             </Field>
-            <Field label="Amount" required error={e.amount} htmlFor="ft-amount" hint={srcAcc ? `Available in source: ${money(srcAcc.balance, srcAcc.currency)}` : undefined}>
+            <Field label={X.amount} required error={e.amount} htmlFor="ft-amount" hint={srcAcc ? fmt(X.availableSource, { balance: money(srcAcc.balance, srcAcc.currency) }) : undefined}>
               <div className="sp-group">
                 <input id="ft-amount" className="sp-input " inputMode="decimal" placeholder="0.00" value={f.amount ?? ""} onChange={set("amount")} />
                 <span className="sp-addon sp-addon--r">{symbol}</span>
               </div>
             </Field>
-            <Field label="Transfer Reference" htmlFor="ft-ref" hint="Generated by the server when saved.">
-              <input id="ft-ref" className="sp-input " value="Auto: TRF_…" readOnly disabled />
+            <Field label={X.transferRef} htmlFor="ft-ref" hint={X.refHint}>
+              <input id="ft-ref" className="sp-input " value={fmt(X.autoRef, { prefix: "TRF_" })} readOnly disabled />
             </Field>
             {f.fromAccountId && f.toAccountId && (
               <div className="sp-span-all" data-testid="transfer-preview" style={{ background: "var(--primary-50)", border: "1px solid var(--primary-100)", borderRadius: "var(--radius-md)", padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", font: "600 14px/20px var(--font-body)" }}>
@@ -503,31 +509,31 @@ export default function TransactionsView({
                 <span style={{ marginLeft: "auto", color: "var(--primary-700)" }}>{MONEY_RE.test(f.amount ?? "") && /[1-9]/.test(f.amount) ? money(f.amount, srcAcc?.currency ?? defaultCurrency) : ""}</span>
               </div>
             )}
-            <Field label="Notes" htmlFor="ft-notes" className="sp-span-all" error={e.notes}>
-              <textarea id="ft-notes" className="sp-textarea " rows={3} placeholder="Enter Notes" value={f.notes ?? ""} onChange={set("notes")} />
+            <Field label={X.notesShort} htmlFor="ft-notes" className="sp-span-all" error={e.notes}>
+              <textarea id="ft-notes" className="sp-textarea " rows={3} placeholder={X.notesPh} value={f.notes ?? ""} onChange={set("notes")} />
             </Field>
           </div>
         </Modal>
       )}
 
       {view && (
-        <Modal size="md" title={`Transaction ${view.reference}`} onClose={() => setView(null)} footer={<button type="button" className="sp-btn sp-btn--secondary" onClick={() => setView(null)}>Close</button>}>
+        <Modal size="md" title={fmt(X.detTitle, { ref: view.reference })} onClose={() => setView(null)} footer={<button type="button" className="sp-btn sp-btn--secondary" onClick={() => setView(null)}>{X.detClose}</button>}>
           <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "12px 24px", font: "400 14px/20px var(--font-body)" }} data-testid="tx-details">
             {(
               [
-                ["Reference", <span key="r" className="sp-code" style={{ justifySelf: "start" }}>{view.reference}</span>],
-                ["Date & Time", view.when],
-                ["Type", kindBadge(view.type)],
-                [view.type === "DEPOSIT" ? "Destination Account" : "Source Account", view.accountName],
-                ...(view.type === "TRANSFER" ? ([["Destination Account", view.toAccountName ?? ""]] as const) : []),
-                ["Amount", <b key="a" style={{ color: view.type === "DEPOSIT" ? "var(--success-700)" : view.type === "WITHDRAWAL" ? "var(--danger-500)" : "var(--primary-700)" }}>{money(view.amount, view.currency)}</b>],
-                ["Description", view.description],
-                ...(view.paymentMethod ? ([["Payment Method", view.paymentMethod]] as const) : []),
-                ...(view.purpose ? ([[view.type === "DEPOSIT" ? "Deposit Source" : "Purpose", view.purpose]] as const) : []),
-                [view.type === "TRANSFER" ? "Source Balance After" : "Balance After", money(view.balanceAfter, view.currency)],
-                ...(view.type === "TRANSFER" && view.toBalanceAfter ? ([["Destination Balance After", money(view.toBalanceAfter, view.currency)]] as const) : []),
-                ["Status", <span key="s" className="sp-badge sp-badge--success"><i />Completed</span>],
-                ["Notes", view.notes || "—"],
+                [X.detReference, <span key="r" className="sp-code" style={{ justifySelf: "start" }}>{view.reference}</span>],
+                [X.detWhen, view.when],
+                [X.detType, kindBadge(view.type)],
+                [view.type === "DEPOSIT" ? X.detDest : X.detSource, view.accountName],
+                ...(view.type === "TRANSFER" ? ([[X.detDest, view.toAccountName ?? ""]] as const) : []),
+                [X.detAmount, <b key="a" style={{ color: view.type === "DEPOSIT" ? "var(--success-700)" : view.type === "WITHDRAWAL" ? "var(--danger-500)" : "var(--primary-700)" }}>{money(view.amount, view.currency)}</b>],
+                [X.detDescription, view.description],
+                ...(view.paymentMethod ? ([[X.detMethod, meth(view.paymentMethod)]] as const) : []),
+                ...(view.purpose ? ([[view.type === "DEPOSIT" ? X.detDepSource : X.detPurpose, purp(view.purpose)]] as const) : []),
+                [view.type === "TRANSFER" ? X.detSrcAfter : X.detAfter, money(view.balanceAfter, view.currency)],
+                ...(view.type === "TRANSFER" && view.toBalanceAfter ? ([[X.detDstAfter, money(view.toBalanceAfter, view.currency)]] as const) : []),
+                [X.detStatus, <span key="s" className="sp-badge sp-badge--success"><i />{X.completed}</span>],
+                [X.detNotes, view.notes || "—"],
               ] as [string, React.ReactNode][]
             ).map(([k, v]) => (
               <Fragment key={k}>

@@ -295,3 +295,60 @@ svg.sp-icon{background:none;-webkit-mask:none;mask:none}
 .pos-lock-card{width:380px;max-width:92vw;background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);padding:32px 32px 28px;display:flex;flex-direction:column;align-items:center;gap:16px}
 .pos-lock-brand{font:700 22px/28px var(--font-heading,var(--font-body));color:var(--primary-700)}
 .pos-lock-icon{width:84px;height:84px;border-radius:50%;background:var(--primary-100);color:var(--primary-700);display:grid;place-items:center}
+
+/* ===== Localization: right-to-left (Arabic) =====
+   <html dir="rtl"> is set by the root layout. Flex/grid layouts mirror by themselves; the rules below fix the
+   physical left/right properties of the design system. Numbers, codes, emails and phones stay left-to-right. */
+html[dir="rtl"]{--font-display:"Noto Sans Arabic","Segoe UI",Tahoma,"Public Sans",system-ui,sans-serif;--font-body:"Noto Sans Arabic","Segoe UI",Tahoma,"Public Sans",system-ui,sans-serif}
+html[dir="rtl"] .t-page-title,html[dir="rtl"] .t-section-title,html[dir="rtl"] .t-kpi{letter-spacing:0}
+html[dir="rtl"] .sp-icon.sp-flip{transform:scaleX(-1)}
+html[dir="rtl"] .sp-label i{margin-left:0;margin-right:2px}
+html[dir="rtl"] .sp-select{padding-right:14px;padding-left:40px;background-position:left 12px center}
+html[dir="rtl"] .sp-input-icon{left:auto;right:14px}
+html[dir="rtl"] .sp-input-icon+.sp-input{padding-left:14px;padding-right:42px}
+html[dir="rtl"] .sp-switch input::after{left:auto;right:3px}
+html[dir="rtl"] .sp-switch input:checked::after{transform:translateX(-18px)}
+html[dir="rtl"] .sp-addon--r{border-left:1px solid var(--border-strong);border-right:0;border-radius:var(--radius-md) 0 0 var(--radius-md)}
+html[dir="rtl"] .sp-addon--l{border-right:1px solid var(--border-strong);border-left:0;border-radius:0 var(--radius-md) var(--radius-md) 0}
+html[dir="rtl"] .sp-table th{text-align:right}
+html[dir="rtl"] .sp-table .num{text-align:left}
+html[dir="rtl"] .sp-table .act{text-align:left}
+html[dir="rtl"] .sp-pager .sp-select{padding-left:10px;padding-right:10px}
+html[dir="rtl"] .sp-menu{right:auto;left:0;text-align:right}
+html[dir="rtl"] .sp-menu-item{text-align:right}
+html[dir="rtl"] .bp-sidebar{border-right:0;border-left:1px solid var(--border)}
+html[dir="rtl"] .sp-brand .sp-btn{margin-left:0;margin-right:auto}
+html[dir="rtl"] .sp-nav-item{text-align:right}
+html[dir="rtl"] .sp-nav-item[aria-current="page"]::before{left:auto;right:-12px;border-radius:4px 0 0 4px}
+html[dir="rtl"] .sp-nav-item .sp-chev{margin-left:0;margin-right:auto}
+html[dir="rtl"] .sp-nav-sub .sp-nav-item{padding-left:14px;padding-right:50px}
+html[dir="rtl"] .bp-topbar .sp-crumb{margin-right:0;margin-left:8px}
+html[dir="rtl"] .sp-topbar-r{margin-left:0;margin-right:auto}
+html[dir="rtl"] .sp-user-btn{padding:0 6px 0 10px;text-align:right}
+html[dir="rtl"] .bp-dashboard .sp-card .sp-table th:first-child,html[dir="rtl"] .bp-dashboard .sp-card .sp-table td:first-child{padding-left:20px;padding-right:24px}
+html[dir="rtl"] .si-eye{right:auto;left:6px}
+html[dir="rtl"] .bp-report-titlebox{text-align:left}
+html[dir="rtl"] .bp-report-table th,html[dir="rtl"] .bp-report-table td{text-align:right}
+html[dir="rtl"] .bp-report-table .num{text-align:left}
+html[dir="rtl"] input[type="email"],html[dir="rtl"] input[type="tel"],html[dir="rtl"] input[inputmode="email"],html[dir="rtl"] input[inputmode="numeric"],html[dir="rtl"] input[inputmode="decimal"],html[dir="rtl"] .sp-code{direction:ltr;text-align:right}
+html[dir="rtl"] .si-box,html[dir="rtl"] .si{direction:rtl}
+html[dir="rtl"] .pos-cart th{text-align:right}
+html[dir="rtl"] .pos-sum{text-align:left}
+html[dir="rtl"] .pos-step button{font-family:var(--font-body)}
+@media (max-width:1279px){
+  html[dir="rtl"] .bp-sidebar{left:auto;right:0;transform:translateX(100%)}
+  html[dir="rtl"] .bp-app[data-drawer="true"] .bp-sidebar{transform:none}
+}
+/* Language switch (Sign In page and Preferences) */
+.bp-lang{display:inline-flex;gap:4px;padding:3px;border:1px solid var(--border);border-radius:var(--radius-full);background:var(--bg-surface)}
+.bp-lang button{border:0;background:none;padding:6px 14px;border-radius:var(--radius-full);font:600 13px/1 var(--font-body);color:var(--text-2);cursor:pointer}
+.bp-lang button[aria-pressed="true"]{background:var(--primary-600);color:#fff}
+
+/* Translation management (Settings > Languages) */
+.tr-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.tr-key{direction:ltr;unicode-bidi:isolate;color:var(--text-2);word-break:break-all}
+.tr-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start}
+.tr-ro{min-height:44px;padding:10px 12px;background:var(--neutral-50);border:1px solid var(--border);border-radius:var(--radius-md);font:400 14px/20px var(--font-body);color:var(--text-2);white-space:pre-wrap;overflow-wrap:anywhere}
+.tr-row .sp-textarea{min-height:44px}
+.tr-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;flex-wrap:wrap}
+@media (max-width:900px){.tr-grid{grid-template-columns:minmax(0,1fr)}}

@@ -4,9 +4,12 @@ import { connection } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { canManageExpenseCategories } from "@/lib/roles";
+import { getDict } from "@/lib/i18n/server";
 import ExpenseCategoriesTable from "@/components/expenses/ExpenseCategoriesTable";
 
-export const metadata: Metadata = { title: "Expense Categories" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).expenses.cat.title };
+}
 
 export const instant = false;
 

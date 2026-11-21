@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { transactionDateSchema } from "@/lib/cash-bank";
+import { makeTxDate } from "@/lib/cash-bank";
+import { fmt } from "@/lib/i18n/config";
+import { en } from "@/lib/i18n/dictionaries/en";
+import type { Dictionary } from "@/lib/i18n";
+import { moneyOf, pctOf } from "@/lib/quotations";
 import { toUnits } from "@/lib/transfers";
 
 // Shared Purchase rules (client + server). Decimal values stay strings; totals are always
@@ -36,60 +40,61 @@ export function purchaseDue(grand: string, paid: string, returned: string): stri
 export const formatPurchaseReference = (n: number) => `PU_${String(n).padStart(6, "0")}`;
 export const MAX_PURCHASE_ITEMS = 200;
 
-const MONEY_RE = /^\d{1,12}(\.\d{1,2})?$/;
 const QTY_RE = /^\d{1,11}(\.\d{1,3})?$/;
 const PCT_RE = /^\d{1,3}(\.\d{1,2})?$/;
-const money = (label: string) => z.string({ error: `${label} is required` }).trim().refine((v) => MONEY_RE.test(v), `${label} must be a number with up to 2 decimal places`);
-const pct = (label: string) =>
-  z
-    .string({ error: `${label} is required` })
-    .trim()
-    .refine((v) => PCT_RE.test(v) && Number(v) <= 100, `${label} must be a percentage between 0 and 100`);
 const id = (msg: string) => z.string({ error: msg }).trim().min(1, msg).max(64, msg);
 
-export const purchaseItemSchema = z
-  .object({
-    productId: id("Choose a valid product"),
-    quantity: z
-      .string({ error: "Quantity is required" })
-      .trim()
-      .refine((v) => QTY_RE.test(v), "Quantity must be a number with up to 3 decimal places")
-      .refine((v) => !QTY_RE.test(v) || toUnits(v, 3) > BigInt(0), "Quantity must be greater than 0"),
-    unitCost: money("Product cost"),
-    taxType: z.enum(["EXCLUSIVE", "INCLUSIVE"], { error: "Choose a tax type" }),
-    taxRate: pct("Tax"),
-    discountType: z.enum(["FIXED", "PERCENTAGE"], { error: "Choose a discount type" }),
-    discountValue: money("Discount"),
-  })
-  .superRefine((v, ctx) => {
-    if (v.discountType === "PERCENTAGE" && !(PCT_RE.test(v.discountValue) && Number(v.discountValue) <= 100)) {
-      ctx.addIssue({ code: "custom", path: ["discountValue"], message: "Discount percentage must be between 0 and 100" });
-    }
-  });
-
-/** Create payload. Only ids, line inputs, order inputs, status, date and notes are accepted. */
-export const purchaseInputSchema = z
-  .object({
-    purchaseDate: transactionDateSchema,
-    warehouseId: id("Choose a warehouse"),
-    supplierId: id("Choose a supplier"),
-    status: z.enum(PURCHASE_STATUSES, { error: "Choose a valid status" }),
-    orderTaxRate: pct("Order tax"),
-    discount: money("Discount"),
-    shipping: money("Shipping"),
-    notes: z.string().trim().max(2000, "Notes are too long").optional().default(""),
-    items: z.array(purchaseItemSchema, { error: "Add at least one order item" }).min(1, "Add at least one order item").max(MAX_PURCHASE_ITEMS, `Up to ${MAX_PURCHASE_ITEMS} products per purchase`),
-  })
-  .superRefine((v, ctx) => {
-    const seen = new Set<string>();
-    for (const i of v.items) {
-      if (seen.has(i.productId)) {
-        ctx.addIssue({ code: "custom", path: ["items"], message: "Each product can appear only once" });
-        break;
+type PurchaseVal = Dictionary["purchases"]["val"];
+/** Line schema built with a message set (dictionary text; English by default). */
+export function makePurchaseItemSchema(m: PurchaseVal = en.purchases.val) {
+  return z
+    .object({
+      productId: id(m.chooseProduct),
+      quantity: z
+        .string({ error: m.qtyRequired })
+        .trim()
+        .refine((v) => QTY_RE.test(v), m.qtyFormat)
+        .refine((v) => !QTY_RE.test(v) || toUnits(v, 3) > BigInt(0), m.qtyPositive),
+      unitCost: moneyOf(m, m.labels.productCost),
+      taxType: z.enum(["EXCLUSIVE", "INCLUSIVE"], { error: m.chooseTaxType }),
+      taxRate: pctOf(m, m.labels.tax),
+      discountType: z.enum(["FIXED", "PERCENTAGE"], { error: m.chooseDiscountType }),
+      discountValue: moneyOf(m, m.labels.discount),
+    })
+    .superRefine((v, ctx) => {
+      if (v.discountType === "PERCENTAGE" && !(PCT_RE.test(v.discountValue) && Number(v.discountValue) <= 100)) {
+        ctx.addIssue({ code: "custom", path: ["discountValue"], message: m.discountPct });
       }
-      seen.add(i.productId);
-    }
-  });
+    });
+}
+export const purchaseItemSchema = makePurchaseItemSchema();
+
+/** Create payload schema. Only ids, line inputs, order inputs, status, date and notes are accepted. */
+export function makePurchaseSchema(m: PurchaseVal = en.purchases.val) {
+  return z
+    .object({
+      purchaseDate: makeTxDate({ required: m.dateRequired, invalid: m.dateInvalid, future: m.dateFuture }),
+      warehouseId: id(m.chooseWarehouse),
+      supplierId: id(m.chooseSupplier),
+      status: z.enum(PURCHASE_STATUSES, { error: m.chooseStatus }),
+      orderTaxRate: pctOf(m, m.labels.orderTax),
+      discount: moneyOf(m, m.labels.discount),
+      shipping: moneyOf(m, m.labels.shipping),
+      notes: z.string().trim().max(2000, m.notesLong).optional().default(""),
+      items: z.array(makePurchaseItemSchema(m), { error: m.addItem }).min(1, m.addItem).max(MAX_PURCHASE_ITEMS, fmt(m.maxItems, { max: MAX_PURCHASE_ITEMS })),
+    })
+    .superRefine((v, ctx) => {
+      const seen = new Set<string>();
+      for (const i of v.items) {
+        if (seen.has(i.productId)) {
+          ctx.addIssue({ code: "custom", path: ["items"], message: m.uniqueProduct });
+          break;
+        }
+        seen.add(i.productId);
+      }
+    });
+}
+export const purchaseInputSchema = makePurchaseSchema();
 
 export type PurchaseInput = z.infer<typeof purchaseInputSchema>;
 export type PurchaseField = "purchaseDate" | "warehouseId" | "supplierId" | "status" | "orderTaxRate" | "discount" | "shipping" | "notes" | "items";

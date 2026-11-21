@@ -12,7 +12,9 @@ import StatCard from "@/components/ui/StatCard";
 import { createAccount, setAccountStatus, updateAccount, type FinanceResult } from "@/app/(dashboard)/finance/actions";
 import { formatMoney } from "@/lib/money";
 import { fromUnits, toUnits } from "@/lib/transfers";
-import { ACCOUNT_STATUS_LABEL, ACCOUNT_TYPE_LABEL, type AccountField, type AccountRow, type AccountStatusValue, type AccountTypeValue, type CurrencyView } from "@/lib/cash-bank";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
+import { type AccountField, type AccountRow, type AccountStatusValue, type AccountTypeValue, type CurrencyView } from "@/lib/cash-bank";
 
 // Port of design/Cash - Bank Accounts.html: PageHeader (+ Add New Account), KPI cards, toolbar
 // (search + Type + Status), account table with row menu (View Details / Edit Account / View
@@ -35,7 +37,10 @@ export default function AccountsView({
   /** System Settings stay OWNER-only, so only the Owner gets a link there. */
   canOpenSettings: boolean;
 }) {
-  const router = useRouter();
+    const router = useRouter();
+  const T = useT();
+  const X = T.finance;
+  const A = X.accounts;
   const [q, setQ] = useState("");
   const [ty, setTy] = useState<"ALL" | AccountTypeValue>("ALL");
   const [st, setSt] = useState<"ALL" | AccountStatusValue>("ALL");
@@ -59,7 +64,7 @@ export default function AccountsView({
   const filtered = !!needle || ty !== "ALL" || st !== "ALL";
 
   const openAdd = () => {
-    if (!defaultCurrency) return toast.error("Choose a default currency in System Settings first.", { id: "account" });
+    if (!defaultCurrency) return toast.error(A.noCurrencyToast, { id: "account" });
     setF(BLANK);
     setE({});
     setModal("add");
@@ -77,10 +82,10 @@ export default function AccountsView({
   function save() {
     const adding = modal === "add";
     const n: Partial<Record<AccountField, string>> = {};
-    if (!f.name.trim()) n.name = "Account name is required";
-    if (f.type === "BANK" && !f.bankName.trim()) n.bankName = "Bank name is required";
-    if (f.type === "BANK" && !f.reference.trim()) n.reference = "Account number is required for bank accounts";
-    if (adding && !/^\d{1,12}(\.\d{1,2})?$/.test(f.openingBalance.trim())) n.openingBalance = "Enter a valid amount (0 or more, up to 2 decimals)";
+    if (!f.name.trim()) n.name = X.val.nameRequired;
+    if (f.type === "BANK" && !f.bankName.trim()) n.bankName = X.val.bankNameRequired;
+    if (f.type === "BANK" && !f.reference.trim()) n.reference = X.val.accountNumberRequired;
+    if (adding && !/^\d{1,12}(\.\d{1,2})?$/.test(f.openingBalance.trim())) n.openingBalance = A.openingInvalid;
     setE(n);
     if (Object.keys(n).length) return void toast.error(Object.values(n)[0]!, { id: "account" });
     // Edit sends no balance at all; the server schema has no balance field for edits.
@@ -90,7 +95,7 @@ export default function AccountsView({
       try {
         r = adding ? await createAccount({ ...details, openingBalance: openingBalance.trim() }) : await updateAccount((modal as AccountRow).id, details);
       } catch {
-        return void toast.error("Something went wrong. Please try again.", { id: "account" });
+        return void toast.error(T.common.somethingWrong, { id: "account" });
       }
       if (!r.ok) {
         if (r.fieldErrors) setE(r.fieldErrors);
@@ -112,24 +117,24 @@ export default function AccountsView({
         setView(null);
         router.refresh();
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "account" });
+        toast.error(T.common.somethingWrong, { id: "account" });
       }
     });
   }
 
   const menu = (a: AccountRow): RowMenuItem[] => [
-    { label: "View Details", icon: "eye", onClick: () => setView(a) },
-    ...(canManage ? [{ label: "Edit Account", icon: "pencil", onClick: () => openEdit(a) } as RowMenuItem] : []),
-    { label: "View Transactions", icon: "list", href: `/finance/transactions?account=${encodeURIComponent(a.id)}` },
+    { label: A.viewDetails, icon: "eye", onClick: () => setView(a) },
+    ...(canManage ? [{ label: A.editAccount, icon: "pencil", onClick: () => openEdit(a) } as RowMenuItem] : []),
+    { label: A.viewTransactions, icon: "list", href: `/finance/transactions?account=${encodeURIComponent(a.id)}` },
     ...(canManage
-      ? (["-", { label: a.status === "ACTIVE" ? "Deactivate Account" : "Activate Account", icon: a.status === "ACTIVE" ? "ban" : "circle-check", danger: a.status === "ACTIVE", onClick: () => toggle(a) }] as RowMenuItem[])
+      ? (["-", { label: a.status === "ACTIVE" ? A.deactivate : A.activate, icon: a.status === "ACTIVE" ? "ban" : "circle-check", danger: a.status === "ACTIVE", onClick: () => toggle(a) }] as RowMenuItem[])
       : []),
   ];
-  const typeBadge = (t: AccountTypeValue) => <span className={`sp-badge sp-badge--${t === "CASH" ? "success" : "info"}`}>{ACCOUNT_TYPE_LABEL[t]}</span>;
+  const typeBadge = (t: AccountTypeValue) => <span className={`sp-badge sp-badge--${t === "CASH" ? "success" : "info"}`}>{X.type[t]}</span>;
   const statusBadge = (s: AccountStatusValue) => (
     <span className={`sp-badge sp-badge--${s === "ACTIVE" ? "success" : "neutral"}`} data-status={s}>
       <i />
-      {ACCOUNT_STATUS_LABEL[s]}
+      {X.status[s]}
     </span>
   );
   const editing = modal && modal !== "add" ? modal : null;
@@ -139,61 +144,61 @@ export default function AccountsView({
     <>
       <div className="sp-page-head">
         <h1 className="t-page-title" style={{ margin: 0 }}>
-          Cash &amp; Bank Accounts
-        </h1>
+                    {A.title}
+</h1>
         {canManage && (
           <div style={{ display: "flex", gap: 12 }}>
-            <button type="button" className="sp-btn sp-btn--primary" onClick={openAdd} disabled={!defaultCurrency} title={defaultCurrency ? undefined : "Choose a default currency in System Settings first"}>
-              <Icon name="plus" size={18} />
-              Add New Account
+            <button type="button" className="sp-btn sp-btn--primary" onClick={openAdd} disabled={!defaultCurrency} title={defaultCurrency ? undefined : A.noCurrencyTitle}>
+                            <Icon name="plus" size={18} />
+              {A.addNew}
             </button>
           </div>
         )}
       </div>
       <p className="t-body" style={{ margin: "-8px 0 24px", color: "var(--text-2)" }}>
-        Manage cash registers, cash accounts, and bank balances.
-      </p>
+                {A.subtitle}
+</p>
 
       {!defaultCurrency && (
         <div className="sp-badge sp-badge--warning" role="status" data-testid="no-currency" style={{ height: "auto", padding: "10px 14px", whiteSpace: "normal", marginBottom: 24 }}>
           <Icon name="info" size={16} />
           <span>
-            No default currency is configured, so cash &amp; bank accounts can&apos;t be created yet.{" "}
+                        {A.noCurrencyBanner}{" "}
             {canOpenSettings ? (
               <>
-                Choose one in <Link href="/settings">System Settings</Link>.
+                                {A.chooseOne} <Link href="/settings">{A.systemSettings}</Link>.
               </>
             ) : (
-              "Ask the Owner to choose one in System Settings."
+              A.askOwner
             )}
           </span>
         </div>
       )}
 
       <div className="sp-kpi-grid bp-fin-kpis" style={{ marginBottom: 32 }}>
-        <StatCard tone="green" icon="banknote" value={money(cash, defaultCurrency)} label="Total Cash Balance" testId="kpi-cash" />
-        <StatCard tone="blue" icon="landmark" value={money(bank, defaultCurrency)} label="Total Bank Balance" testId="kpi-bank" />
-        <StatCard tone="teal" icon="wallet" value={money(sum([cash, bank]), defaultCurrency)} label="Total Available Funds" note={otherCurrency ? `Active accounts only · ${otherCurrency} in another currency excluded` : "Active accounts only"} testId="kpi-total" />
-        <StatCard tone="violet" icon="circle-check" value={String(accounts.filter((a) => a.status === "ACTIVE").length)} label="Active Accounts" testId="kpi-active" />
+        <StatCard tone="green" icon="banknote" value={money(cash, defaultCurrency)} label={A.kpiCash} testId="kpi-cash" />
+        <StatCard tone="blue" icon="landmark" value={money(bank, defaultCurrency)} label={A.kpiBank} testId="kpi-bank" />
+        <StatCard tone="teal" icon="wallet" value={money(sum([cash, bank]), defaultCurrency)} label={A.kpiFunds} note={otherCurrency ? fmt(A.kpiFundsNoteOther, { n: otherCurrency }) : A.kpiFundsNote} testId="kpi-total" />
+        <StatCard tone="violet" icon="circle-check" value={String(accounts.filter((a) => a.status === "ACTIVE").length)} label={A.kpiActive} testId="kpi-active" />
       </div>
 
       <div className="sp-toolbar">
         <div className="sp-group">
           <Icon name="search" size={18} className="sp-input-icon" />
-          <input className="sp-input " placeholder="Search accounts" aria-label="Search accounts" value={q} onChange={(ev) => { setQ(ev.target.value); setPage(1); }} />
+          <input className="sp-input " placeholder={A.search} aria-label={A.search} value={q} onChange={(ev) => { setQ(ev.target.value); setPage(1); }} />
         </div>
         <div style={{ width: 170 }}>
-          <select className="sp-select " aria-label="Account type" value={ty} onChange={(ev) => { setTy(ev.target.value as typeof ty); setPage(1); }}>
-            <option value="ALL">All Types</option>
-            <option value="CASH">Cash</option>
-            <option value="BANK">Bank</option>
+          <select className="sp-select " aria-label={A.typeAria} value={ty} onChange={(ev) => { setTy(ev.target.value as typeof ty); setPage(1); }}>
+            <option value="ALL">{A.allTypes}</option>
+            <option value="CASH">{X.type.CASH}</option>
+            <option value="BANK">{X.type.BANK}</option>
           </select>
         </div>
         <div style={{ width: 170 }}>
-          <select className="sp-select " aria-label="Status" value={st} onChange={(ev) => { setSt(ev.target.value as typeof st); setPage(1); }}>
-            <option value="ALL">All Statuses</option>
-            <option value="ACTIVE">Active</option>
-            <option value="INACTIVE">Inactive</option>
+          <select className="sp-select " aria-label={A.statusAria} value={st} onChange={(ev) => { setSt(ev.target.value as typeof st); setPage(1); }}>
+            <option value="ALL">{A.allStatuses}</option>
+            <option value="ACTIVE">{X.status.ACTIVE}</option>
+            <option value="INACTIVE">{X.status.INACTIVE}</option>
           </select>
         </div>
       </div>
@@ -201,18 +206,18 @@ export default function AccountsView({
       {list.length === 0 ? (
         <div className="sp-card sp-empty" data-testid="accounts-empty">
           <Icon name="landmark" size={36} />
-          <div className="t-section-title">{filtered ? "No accounts match your filters" : "No accounts yet"}</div>
+          <div className="t-section-title">{filtered ? A.emptyFiltered : A.emptyNone}</div>
           {filtered ? (
             <button type="button" className="sp-btn sp-btn--secondary" onClick={() => { setQ(""); setTy("ALL"); setSt("ALL"); }}>
-              Clear filters
-            </button>
+                            {A.clear}
+</button>
           ) : canManage ? (
             <button type="button" className="sp-btn sp-btn--primary" onClick={openAdd} disabled={!defaultCurrency}>
               <Icon name="plus" size={18} />
-              Add New Account
+              {A.addNew}
             </button>
           ) : (
-            <span>The Owner hasn&apos;t added any cash or bank accounts yet.</span>
+            <span>{A.emptyUser}</span>
           )}
         </div>
       ) : (
@@ -221,12 +226,12 @@ export default function AccountsView({
             <table className="sp-table">
               <thead>
                 <tr>
-                  <th>Account Name</th>
-                  <th>Account Type</th>
-                  <th>Account / Reference Number</th>
-                  <th className="num">Current Balance</th>
-                  <th>Status</th>
-                  <th className="act">Action</th>
+                  <th>{A.colName}</th>
+                  <th>{A.colType}</th>
+                  <th>{A.colRef}</th>
+                  <th className="num">{A.colBalance}</th>
+                  <th>{A.colStatus}</th>
+                  <th className="act">{A.colAction}</th>
                 </tr>
               </thead>
               <tbody>
@@ -261,63 +266,63 @@ export default function AccountsView({
       {modal && canManage && (
         <Modal
           size="md"
-          title={modal === "add" ? "Add New Account" : "Edit Account"}
+          title={modal === "add" ? A.addNew : A.editAccount}
           onClose={() => !pending && setModal(null)}
           footer={
             <>
               <button type="button" className="sp-btn sp-btn--secondary" onClick={() => setModal(null)} disabled={pending}>
-                Cancel
-              </button>
+                {A.cancel}
+</button>
               <button type="button" className="sp-btn sp-btn--primary" onClick={save} disabled={pending}>
-                {pending ? "Saving…" : "Save Account"}
+                {pending ? A.saving : A.saveAccount}
               </button>
             </>
           }
         >
           <div className="sp-form-grid">
-            <Field label="Account Name" required error={e.name} htmlFor="fa-name">
-              <input id="fa-name" className="sp-input " placeholder="Enter Account Name" value={f.name} onChange={set("name")} />
+            <Field label={A.fName} required error={e.name} htmlFor="fa-name">
+              <input id="fa-name" className="sp-input " placeholder={A.fNamePh} value={f.name} onChange={set("name")} />
             </Field>
-            <Field label="Account Type" required htmlFor="fa-type">
+            <Field label={A.fType} required htmlFor="fa-type">
               <select id="fa-type" className="sp-select " value={f.type} onChange={(ev) => { setF({ ...f, type: ev.target.value as AccountTypeValue }); setE({}); }}>
-                <option value="CASH">Cash</option>
-                <option value="BANK">Bank</option>
+                <option value="CASH">{X.type.CASH}</option>
+                <option value="BANK">{X.type.BANK}</option>
               </select>
             </Field>
             {f.type === "BANK" && (
-              <Field label="Bank Name" required error={e.bankName} htmlFor="fa-bankName">
-                <input id="fa-bankName" className="sp-input " placeholder="e.g. National Bank" value={f.bankName} onChange={set("bankName")} />
+              <Field label={A.fBank} required error={e.bankName} htmlFor="fa-bankName">
+                <input id="fa-bankName" className="sp-input " placeholder={A.fBankPh} value={f.bankName} onChange={set("bankName")} />
               </Field>
             )}
-            <Field label={f.type === "BANK" ? "Account Number" : "Reference (optional)"} required={f.type === "BANK"} error={e.reference} htmlFor="fa-reference">
-              <input id="fa-reference" className="sp-input " placeholder={f.type === "BANK" ? "Enter Account Number" : "e.g. CR-004"} value={f.reference} onChange={set("reference")} />
+            <Field label={f.type === "BANK" ? A.fAccountNumber : A.fReferenceOpt} required={f.type === "BANK"} error={e.reference} htmlFor="fa-reference">
+              <input id="fa-reference" className="sp-input " placeholder={f.type === "BANK" ? A.fAccountNumberPh : A.fReferencePh} dir="ltr" value={f.reference} onChange={set("reference")} />
             </Field>
             {modal === "add" ? (
-              <Field label="Opening Balance" required error={e.openingBalance} htmlFor="fa-openingBalance" hint="Entered once. Later changes come only from transactions.">
+              <Field label={A.fOpening} required error={e.openingBalance} htmlFor="fa-openingBalance" hint={A.fOpeningHint}>
                 <div className="sp-group">
                   <input id="fa-openingBalance" className="sp-input " inputMode="decimal" placeholder="0.00" value={f.openingBalance} onChange={set("openingBalance")} />
                   <span className="sp-addon sp-addon--r">{formCurrency?.symbol ?? "—"}</span>
                 </div>
               </Field>
             ) : (
-              <Field label="Current Balance" htmlFor="fa-balance" hint="Calculated from the opening balance and transactions — it can't be edited.">
+              <Field label={A.fCurrent} htmlFor="fa-balance" hint={A.fCurrentHint}>
                 <input id="fa-balance" className="sp-input " value={editing ? money(editing.balance, editing.currency) : ""} readOnly disabled />
               </Field>
             )}
-            <Field label="Currency" htmlFor="fa-currency" hint={modal === "add" ? "The System Settings default currency." : undefined}>
+            <Field label={A.fCurrency} htmlFor="fa-currency" hint={modal === "add" ? A.fCurrencyHint : undefined}>
               <select id="fa-currency" className="sp-select " disabled value="cur">
-                <option value="cur">{formCurrency ? `${formCurrency.code} – ${formCurrency.name}` : "No default currency"}</option>
+                <option value="cur">{formCurrency ? `${formCurrency.code} – ${formCurrency.name}` : A.fNoCurrency}</option>
               </select>
             </Field>
-            <Field label="Status" htmlFor="fa-status">
+            <Field label={A.fStatus} htmlFor="fa-status">
               <select id="fa-status" className="sp-select " value={f.status} onChange={set("status")}>
-                <option value="ACTIVE">Active</option>
-                <option value="INACTIVE">Inactive</option>
+                <option value="ACTIVE">{X.status.ACTIVE}</option>
+                <option value="INACTIVE">{X.status.INACTIVE}</option>
               </select>
             </Field>
             <div />
-            <Field label="Description / Notes" htmlFor="fa-notes" className="sp-span-all">
-              <textarea id="fa-notes" className="sp-textarea " rows={3} placeholder="Enter Notes" value={f.notes} onChange={set("notes")} />
+            <Field label={A.fNotes} htmlFor="fa-notes" className="sp-span-all">
+              <textarea id="fa-notes" className="sp-textarea " rows={3} placeholder={A.fNotesPh} value={f.notes} onChange={set("notes")} />
             </Field>
           </div>
         </Modal>
@@ -331,18 +336,18 @@ export default function AccountsView({
           footer={
             <>
               <button type="button" className="sp-btn sp-btn--secondary" onClick={() => setView(null)}>
-                Close
-              </button>
+                {A.detClose}
+</button>
               {canManage && (
                 <button type="button" className="sp-btn sp-btn--secondary" onClick={() => { const a = view; setView(null); openEdit(a); }}>
-                  <Icon name="pencil" size={18} />
-                  Edit Account
-                </button>
+                                    <Icon name="pencil" size={18} />
+                  {A.editAccount}
+</button>
               )}
               <Link href={`/finance/transactions?account=${encodeURIComponent(view.id)}`} className="sp-btn sp-btn--primary">
-                <Icon name="list" size={18} />
-                View Transactions
-              </Link>
+                                <Icon name="list" size={18} />
+                {A.viewTransactions}
+</Link>
             </>
           }
         >
@@ -350,10 +355,10 @@ export default function AccountsView({
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 16 }}>
               {(
                 [
-                  ["Account Type", typeBadge(view.type)],
-                  ["Reference", view.reference ? <span className="sp-code">{view.reference}</span> : "—"],
-                  ["Current Balance", <b key="b" style={{ fontSize: 18 }}>{money(view.balance, view.currency)}</b>],
-                  ["Status", statusBadge(view.status)],
+                  [A.detType, typeBadge(view.type)],
+                  [A.detRef, view.reference ? <span className="sp-code">{view.reference}</span> : "—"],
+                  [A.detBalance, <b key="b" style={{ fontSize: 18 }}>{money(view.balance, view.currency)}</b>],
+                  [A.detStatus, statusBadge(view.status)],
                 ] as const
               ).map(([l, v]) => (
                 <div key={l}>
@@ -367,30 +372,30 @@ export default function AccountsView({
             <div className="t-body" style={{ color: "var(--text-2)" }}>
               {view.bankName && (
                 <div>
-                  <b>Bank:</b> {view.bankName}
+                  <b>{A.detBank}</b> <bdi dir="auto">{view.bankName}</bdi>
                 </div>
               )}
               <div>
-                <b>Opening balance:</b> {money(view.openingBalance, view.currency)} · <b>Currency:</b> {view.currency.code}
+                <b>{A.detOpening}</b> {money(view.openingBalance, view.currency)} · <b>{A.detCurrency}</b> {view.currency.code}
               </div>
               {view.notes && <div>{view.notes}</div>}
             </div>
             <div>
               <h3 className="t-section-title" style={{ margin: "0 0 12px" }}>
-                Recent Transactions
-              </h3>
+                                {A.detRecent}
+</h3>
               {view.recent.length === 0 ? (
-                <div className="t-caption">No transactions yet for this account.</div>
+                <div className="t-caption">{A.detNone}</div>
               ) : (
                 <div className="sp-table-card" style={{ boxShadow: "none" }}>
                   <table className="sp-table">
                     <thead>
                       <tr>
-                        <th>Date</th>
-                        <th>Description</th>
-                        <th>Reference</th>
-                        <th>Type</th>
-                        <th className="num">Amount</th>
+                        <th>{A.detDate}</th>
+                        <th>{A.detDescription}</th>
+                        <th>{A.detReference}</th>
+                        <th>{A.detTypeCol}</th>
+                        <th className="num">{A.detAmount}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -402,7 +407,7 @@ export default function AccountsView({
                             <span className="sp-code">{t.reference}</span>
                           </td>
                           <td>
-                            <span className={`sp-badge sp-badge--${t.direction === "in" ? "success" : "danger"}`}>{t.direction === "in" ? "Money In" : "Money Out"}</span>
+                            <span className={`sp-badge sp-badge--${t.direction === "in" ? "success" : "danger"}`}>{t.direction === "in" ? A.moneyIn : A.moneyOut}</span>
                           </td>
                           <td className="num" style={{ color: t.direction === "in" ? "var(--success-700)" : "var(--danger-500)" }}>
                             {t.direction === "in" ? "+ " : "− "}

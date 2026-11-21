@@ -5,9 +5,12 @@ import { auth } from "@/auth";
 import { todayLocal } from "@/lib/cash-bank";
 import { canManageSales, canManageSystemSettings } from "@/lib/roles";
 import { getSaleFormData } from "@/lib/sale-data";
+import { getDict } from "@/lib/i18n/server";
 import SaleForm from "@/components/sales/SaleForm";
 
-export const metadata: Metadata = { title: "Create Sale" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).sales.form.createTitle };
+}
 
 export const instant = false;
 

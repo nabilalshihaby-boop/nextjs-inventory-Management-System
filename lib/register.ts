@@ -1,58 +1,68 @@
 import { z } from "zod";
-import { denominationCountsSchema } from "@/lib/denominations";
+import { makeDenominationSchemas } from "@/lib/denominations";
+import { fmt } from "@/lib/i18n/config";
+import { en } from "@/lib/i18n/dictionaries/en";
+import type { Dictionary } from "@/lib/i18n";
 
 // POS register sessions (client + server). The browser sends ONLY ids, the counted amounts and notes.
 // Status, expected cash, difference, the user and the account type are all decided on the server.
-
-const MONEY_RE = /^\d{1,12}(\.\d{1,2})?$/; // DECIMAL(14,2); zero is allowed (an empty drawer)
-const amount = (label: string) =>
-  z
-    .string({ error: `${label} is required` })
-    .trim()
-    .min(1, `${label} is required`)
-    .refine((v) => MONEY_RE.test(v), `${label} must be a number with up to 2 decimal places (not negative)`);
-const id = (msg: string) => z.string({ error: msg }).trim().min(1, msg).max(64, msg);
-
-export const openRegisterSchema = z
-  .object({
-    cashBankAccountId: id("Choose a cash account"),
-    openingCash: amount("Opening cash"),
-    notes: z.string().trim().max(1000, "Notes are too long").optional().default(""),
-  })
-  .strict();
-
-/**
- * Close Register: EITHER the typed counted cash (no denominations configured for the currency) OR integer
- * denomination counts (the server then computes the actual cash from the real denomination values and
- * ignores/rejects any client total). Never both.
- */
-export const closeRegisterSchema = z
-  .object({
-    sessionId: id("Register session not found"),
-    closingCash: amount("Counted cash").optional(),
-    counts: denominationCountsSchema.optional(),
-    notes: z.string().trim().max(1000, "Notes are too long").optional().default(""),
-  })
-  .strict()
-  .superRefine((v, ctx) => {
-    if (v.closingCash !== undefined && v.counts !== undefined) ctx.addIssue({ code: "custom", path: ["counts"], message: "Send either the counted cash or the denomination counts, not both" });
-  });
 
 export const REGISTER_MOVEMENT_TYPES = ["CASH_IN", "CASH_OUT"] as const;
 export type RegisterMovementType = (typeof REGISTER_MOVEMENT_TYPES)[number];
 export const MOVEMENT_LABEL: Record<RegisterMovementType, string> = { CASH_IN: "Cash In", CASH_OUT: "Cash Out" };
 export const formatMovementReference = (n: number) => `RM_${String(n).padStart(6, "0")}`;
 
-/** Cash In / Cash Out: only ids, the amount and the reason. The date/time, status, balances, user and reference are server-owned. */
-export const registerMovementSchema = z
-  .object({
-    sessionId: id("Register session not found"),
-    type: z.enum(REGISTER_MOVEMENT_TYPES, { error: "Choose Cash In or Cash Out" }),
-    counterAccountId: id("Choose the other account"),
-    amount: amount("Amount").refine((v) => !MONEY_RE.test(v) || /[1-9]/.test(v), "Amount must be greater than 0"),
-    notes: z.string({ error: "A reason is required" }).trim().min(1, "A reason is required").max(500, "The reason is too long"),
-  })
-  .strict();
+const MONEY_RE = /^\d{1,12}(\.\d{1,2})?$/; // DECIMAL(14,2); zero is allowed (an empty drawer)
+const id = (msg: string) => z.string({ error: msg }).trim().min(1, msg).max(64, msg);
+
+/**
+ * Register schemas with dictionary messages (English by default). The browser sends ONLY ids, the counted
+ * amounts and notes. Status, expected cash, difference, the user and the account type are decided on the server.
+ * Close Register: EITHER the typed counted cash (no denominations configured) OR integer denomination counts.
+ * Cash In / Cash Out: only ids, the amount and the reason; date/time, status, balances, user and reference are server-owned.
+ */
+export function makeRegisterSchemas(m: Dictionary["register"]["val"] = en.register.val, d: Dictionary["denom"]["val"] = en.denom.val) {
+  const amount = (label: string) =>
+    z
+      .string({ error: fmt(m.required, { label }) })
+      .trim()
+      .min(1, fmt(m.required, { label }))
+      .refine((v) => MONEY_RE.test(v), fmt(m.amountFormat, { label }));
+  const counts = makeDenominationSchemas(d).denominationCountsSchema;
+  return {
+    openRegisterSchema: z
+      .object({
+        cashBankAccountId: id(m.chooseCashAccount),
+        openingCash: amount(m.labels.openingCash),
+        notes: z.string().trim().max(1000, m.notesLong).optional().default(""),
+      })
+      .strict(),
+    closeRegisterSchema: z
+      .object({
+        sessionId: id(m.sessionNotFound),
+        closingCash: amount(m.labels.countedCash).optional(),
+        counts: counts.optional(),
+        notes: z.string().trim().max(1000, m.notesLong).optional().default(""),
+      })
+      .strict()
+      .superRefine((v, ctx) => {
+        if (v.closingCash !== undefined && v.counts !== undefined) ctx.addIssue({ code: "custom", path: ["counts"], message: m.bothSent });
+      }),
+    registerMovementSchema: z
+      .object({
+        sessionId: id(m.sessionNotFound),
+        type: z.enum(REGISTER_MOVEMENT_TYPES, { error: m.chooseMovement }),
+        counterAccountId: id(m.chooseOther),
+        amount: amount(m.labels.amount).refine((v) => !MONEY_RE.test(v) || /[1-9]/.test(v), m.amountPositive),
+        notes: z.string({ error: m.reasonRequired }).trim().min(1, m.reasonRequired).max(500, m.reasonLong),
+      })
+      .strict(),
+  };
+}
+const english = makeRegisterSchemas();
+export const openRegisterSchema = english.openRegisterSchema;
+export const closeRegisterSchema = english.closeRegisterSchema;
+export const registerMovementSchema = english.registerMovementSchema;
 
 export const formatRegisterReference = (n: number) => `RS_${String(n).padStart(6, "0")}`;
 

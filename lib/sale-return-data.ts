@@ -2,6 +2,7 @@
 import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
 import { formatDateOnly, formatDateTime } from "@/lib/format";
+import { getLocale } from "@/lib/i18n/server";
 import { getDefaultCurrency, getSystemSettings } from "@/lib/settings";
 import type { SaleReturnRow, SaleReturnSource } from "@/lib/sale-returns";
 
@@ -80,6 +81,7 @@ export async function saleReturnedTotals(saleIds: string[]): Promise<Map<string,
 }
 
 export async function getSaleReturnRows(): Promise<SaleReturnRow[]> {
+  const locale = await getLocale();
   const [returns, settings, def] = await Promise.all([
     db.saleReturn.findMany({
       orderBy: { number: "desc" },
@@ -101,6 +103,6 @@ export async function getSaleReturnRows(): Promise<SaleReturnRow[]> {
     grandTotal: r.grandTotal.toFixed(2),
     currency: { code: r.currency.code, symbol: r.currency.symbol, right: !!settings?.currencyIconRight },
     inDefaultCurrency: !!def && r.currencyId === def.id,
-    createdOn: formatDateTime(r.createdAt, settings?.dateFormat),
+    createdOn: formatDateTime(r.createdAt, settings?.dateFormat, locale),
   }));
 }

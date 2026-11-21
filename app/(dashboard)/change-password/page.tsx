@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { auth } from "@/auth";
 import Icon from "@/components/layout/Icon";
+import { getDict } from "@/lib/i18n/server";
 import ChangePasswordForm from "@/components/profile/ChangePasswordForm";
 
 export const metadata: Metadata = { title: "Change Password" };
@@ -17,17 +18,18 @@ export default async function ChangePasswordPage() {
   // Checked here as well as in the layout: pages render in parallel with their layout.
   const session = await auth();
   if (!session?.user?.id) redirect("/");
+  const t = await getDict();
 
   return (
     <>
       <div className="sp-page-head">
         <h1 className="t-page-title" style={{ margin: 0 }}>
-          Change Password
+          {t.password.title}
         </h1>
         <div style={{ display: "flex", gap: 12 }}>
           <Link href="/dashboard" className="sp-btn sp-btn--secondary">
             <Icon name="arrow-left" size={18} />
-            Back
+            {t.common.back}
           </Link>
         </div>
       </div>

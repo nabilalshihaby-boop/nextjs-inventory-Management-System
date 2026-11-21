@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 import { formatMoney, formatQuantity } from "@/lib/money";
 import { getReportCompany } from "@/lib/report-company";
+import { getDict } from "@/lib/i18n/server";
 import { canUsePos } from "@/lib/roles";
 import { getSystemSettings } from "@/lib/settings";
 import ReportActions from "@/components/reports/ReportActions";
@@ -52,7 +53,7 @@ export default async function PosReceiptPage({ params }: PageProps<"/reports/pos
 
   return (
     <>
-      <ReportActions backHref="/pos" backLabel="Back to POS" />
+      <ReportActions backHref="/pos" backLabel={(await getDict()).report.backToPos} />
       <ReportDocument
         title="POS Receipt"
         company={company}

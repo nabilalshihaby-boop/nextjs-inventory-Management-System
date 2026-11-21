@@ -6,13 +6,17 @@ import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 import { formatMoney } from "@/lib/money";
 import { getReportCompany } from "@/lib/report-company";
+import { getDict, getLocaleInfo } from "@/lib/i18n/server";
+import { fmt as fmt2 } from "@/lib/i18n/config";
 import { canUsePos } from "@/lib/roles";
 import { getSystemSettings } from "@/lib/settings";
 import { Prisma } from "@/app/generated/prisma/client";
 import ReportActions from "@/components/reports/ReportActions";
 import ReportDocument, { ReportSummary } from "@/components/reports/ReportDocument";
 
-export const metadata: Metadata = { title: "Register Closing Report" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).registerReport.title };
+}
 
 export const instant = false;
 
@@ -26,7 +30,9 @@ export default async function RegisterSessionReportPage({ params }: PageProps<"/
   if (!session?.user?.id) redirect("/");
   if (!canUsePos(session.user.role)) redirect("/dashboard");
 
-  const { sessionId } = await params;
+    const { sessionId } = await params;
+  const { dict: T, locale } = await getLocaleInfo();
+  const RR = T.registerReport;
   if (typeof sessionId !== "string" || sessionId.length > 64) notFound();
   const rs = await db.cashRegisterSession.findUnique({
     where: { id: sessionId },
@@ -58,7 +64,7 @@ export default async function RegisterSessionReportPage({ params }: PageProps<"/
   };
   const cur = { code: rs.cashBankAccount.currency.code, symbol: rs.cashBankAccount.currency.symbol, right: !!settings?.currencyIconRight };
   const m = (v: Prisma.Decimal | { toFixed: (n: number) => string }) => formatMoney(v.toFixed(2), cur);
-  const fmt = (d: Date) => formatDateTime(d, settings?.dateFormat);
+  const fmt = (d: Date) => formatDateTime(d, settings?.dateFormat, locale);
   const sales = rs.tenders.reduce((n, t) => n.plus(t.amount), new Prisma.Decimal(0));
   const cashIn = rs.movements.filter((x) => x.type === "CASH_IN").reduce((n, x) => n.plus(x.amount), new Prisma.Decimal(0));
   const cashOut = rs.movements.filter((x) => x.type === "CASH_OUT").reduce((n, x) => n.plus(x.amount), new Prisma.Decimal(0));
@@ -68,47 +74,47 @@ export default async function RegisterSessionReportPage({ params }: PageProps<"/
 
   return (
     <>
-      <ReportActions backHref="/pos" backLabel="Back to POS" />
+      <ReportActions backHref="/pos" backLabel={T.report.backToPos} />
       <ReportDocument
-        title="Register Closing Report"
+                title={RR.title}
         company={company}
         generatedAt={generatedAt}
         generatedBy={creator ? `${creator.firstName} ${creator.lastName}` : undefined}
         testId="report-register-session"
         meta={[
-          { label: "Register", value: rs.reference },
-          { label: "Cash Account", value: rs.cashBankAccount.name },
-          { label: "Status", value: closed ? "CLOSED" : "OPEN (not final)" },
-          { label: "Opened", value: `${fmt(rs.openedAt)} · ${uname(rs.openedById)}` },
-          { label: "Closed", value: rs.closedAt ? `${fmt(rs.closedAt)} · ${uname(rs.closedById)}` : "—" },
+          { label: RR.register, value: rs.reference },
+          { label: RR.cashAccount, value: rs.cashBankAccount.name },
+          { label: RR.status, value: closed ? RR.closedStatus : RR.openStatus },
+          { label: RR.opened, value: `${fmt(rs.openedAt)} · ${uname(rs.openedById)}` },
+          { label: RR.closed, value: rs.closedAt ? `${fmt(rs.closedAt)} · ${uname(rs.closedById)}` : "—" },
         ]}
       >
         <ReportSummary
           testId="register-summary"
           items={[
-            { label: "Opening Cash", value: m(rs.openingCash) },
-            { label: "Cash Sales (POS)", value: m(sales), note: `${rs.tenders.length} cash payment${rs.tenders.length === 1 ? "" : "s"}` },
-            { label: "Cash In (transfers)", value: m(cashIn), note: `${rs.movements.filter((x) => x.type === "CASH_IN").length} movement(s)` },
-            { label: "Cash Out (transfers)", value: m(cashOut), note: `${rs.movements.filter((x) => x.type === "CASH_OUT").length} movement(s)` },
-            { label: "Expected Cash", value: m(expected) },
-            { label: "Actual Cash", value: rs.closingCash ? m(rs.closingCash) : "—" },
-            { label: "Difference", value: rs.difference ? m(rs.difference) : "—", strong: true },
+            { label: RR.openingCash, value: m(rs.openingCash) },
+            { label: RR.cashSales, value: m(sales), note: fmt2(rs.tenders.length === 1 ? RR.cashPayment : RR.cashPayments, { n: rs.tenders.length }) },
+            { label: RR.cashInLabel, value: m(cashIn), note: fmt2(RR.movements, { n: rs.movements.filter((x) => x.type === "CASH_IN").length }) },
+            { label: RR.cashOutLabel, value: m(cashOut), note: fmt2(RR.movements, { n: rs.movements.filter((x) => x.type === "CASH_OUT").length }) },
+            { label: RR.expected, value: m(expected) },
+            { label: RR.actual, value: rs.closingCash ? m(rs.closingCash) : "—" },
+            { label: RR.difference, value: rs.difference ? m(rs.difference) : "—", strong: true },
           ]}
         />
         <table className="bp-report-table" data-testid="register-tenders">
           <thead>
             <tr>
-              <th>Time</th>
-              <th>Payment</th>
-              <th>Sale</th>
-              <th>Customer</th>
-              <th className="num">Cash Amount</th>
+              <th>{RR.colTime}</th>
+              <th>{RR.colPayment}</th>
+              <th>{RR.colSale}</th>
+              <th>{RR.colCustomer}</th>
+              <th className="num">{RR.colCashAmount}</th>
             </tr>
           </thead>
           <tbody>
             {rs.tenders.length === 0 && (
               <tr>
-                <td colSpan={5} style={{ textAlign: "center" }}>No POS cash payments were taken during this shift.</td>
+                <td colSpan={5} style={{ textAlign: "center" }}>{RR.noTenders}</td>
               </tr>
             )}
             {rs.tenders.map((t) => (
@@ -123,36 +129,36 @@ export default async function RegisterSessionReportPage({ params }: PageProps<"/
           </tbody>
           <tfoot>
             <tr data-testid="register-total">
-              <td colSpan={4}>Total cash sales</td>
+              <td colSpan={4}>{RR.totalSales}</td>
               <td className="num">{m(sales)}</td>
             </tr>
           </tfoot>
         </table>
-        <h2 className="t-section-title" style={{ margin: "14px 0 6px" }}>Cash In / Cash Out</h2>
+        <h2 className="t-section-title" style={{ margin: "14px 0 6px" }}>{RR.movementsTitle}</h2>
         <table className="bp-report-table" data-testid="register-movements">
           <thead>
             <tr>
-              <th>Time</th>
-              <th>Reference</th>
-              <th>Type</th>
-              <th>From</th>
-              <th>To</th>
-              <th>Reason</th>
-              <th>User</th>
-              <th className="num">Amount</th>
+              <th>{RR.colTime}</th>
+              <th>{RR.colReference}</th>
+              <th>{RR.colType}</th>
+              <th>{RR.colFrom}</th>
+              <th>{RR.colTo}</th>
+              <th>{RR.colReason}</th>
+              <th>{RR.colUser}</th>
+              <th className="num">{RR.colAmount}</th>
             </tr>
           </thead>
           <tbody>
             {rs.movements.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ textAlign: "center" }}>No cash in / cash out during this shift.</td>
+                <td colSpan={8} style={{ textAlign: "center" }}>{RR.noMovements}</td>
               </tr>
             )}
             {rs.movements.map((x) => (
               <tr key={x.reference} data-ref={x.reference}>
                 <td style={{ whiteSpace: "nowrap" }}>{fmt(x.createdAt)}</td>
                 <td>{x.reference}<span className="bp-report-muted" style={{ display: "block" }}>{x.transaction.reference}</span></td>
-                <td>{x.type === "CASH_IN" ? "Cash In" : "Cash Out"}</td>
+                <td>{T.register.movement[x.type]}</td>
                 <td>{x.fromAccount.name}</td>
                 <td>{x.toAccount.name}</td>
                 <td>{x.notes}</td>
@@ -163,21 +169,21 @@ export default async function RegisterSessionReportPage({ params }: PageProps<"/
           </tbody>
           <tfoot>
             <tr data-testid="register-move-totals">
-              <td colSpan={7}>Cash In {m(cashIn)} · Cash Out {m(cashOut)} · Net</td>
+              <td colSpan={7}>{fmt2(RR.moveTotals, { in: m(cashIn), out: m(cashOut) })}</td>
               <td className="num">{m(cashIn.minus(cashOut))}</td>
             </tr>
           </tfoot>
         </table>
         {rs.counts.length > 0 && (
           <>
-            <h2 className="t-section-title" style={{ margin: "14px 0 6px" }}>Cash count by denomination</h2>
+            <h2 className="t-section-title" style={{ margin: "14px 0 6px" }}>{RR.countTitle}</h2>
             <table className="bp-report-table" data-testid="register-counts">
               <thead>
                 <tr>
-                  <th className="num">Denomination</th>
-                  <th>Label</th>
-                  <th className="num">Count</th>
-                  <th className="num">Line Total</th>
+                  <th className="num">{RR.colDenomination}</th>
+                  <th>{RR.colLabel}</th>
+                  <th className="num">{RR.colCount}</th>
+                  <th className="num">{RR.colLineTotal}</th>
                 </tr>
               </thead>
               <tbody>
@@ -192,7 +198,7 @@ export default async function RegisterSessionReportPage({ params }: PageProps<"/
               </tbody>
               <tfoot>
                 <tr data-testid="register-counted-total">
-                  <td colSpan={3}>Counted total (actual cash)</td>
+                  <td colSpan={3}>{RR.countedTotal}</td>
                   <td className="num">{m(rs.counts.reduce((n, c) => n.plus(c.lineTotal), new Prisma.Decimal(0)))}</td>
                 </tr>
               </tfoot>
@@ -201,11 +207,11 @@ export default async function RegisterSessionReportPage({ params }: PageProps<"/
         )}
         {(rs.openingNotes || rs.closingNotes) && (
           <p className="bp-report-note">
-            {rs.openingNotes ? `Opening notes: ${rs.openingNotes}. ` : ""}
-            {rs.closingNotes ? `Closing notes: ${rs.closingNotes}.` : ""}
+                        {rs.openingNotes ? fmt2(RR.openingNotes, { notes: rs.openingNotes }) : ""}
+            {rs.closingNotes ? fmt2(RR.closingNotes, { notes: rs.closingNotes }) : ""}
           </p>
         )}
-        <p className="bp-report-note">Expected cash = opening cash + POS cash payments in this shift + Cash In - Cash Out. Cash In and Cash Out are internal transfers between the register cash account and another account. It does not use the account ledger balance, and opening or closing a register creates no ledger entry.</p>
+        <p className="bp-report-note">{RR.footnote}</p>
       </ReportDocument>
     </>
   );

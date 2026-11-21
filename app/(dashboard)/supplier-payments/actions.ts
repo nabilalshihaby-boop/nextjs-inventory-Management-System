@@ -9,7 +9,10 @@ import { LedgerError, appendLedgerRow, assertChronology, assertSufficient, dateO
 import { formatMoney } from "@/lib/money";
 import { canManageSupplierPayments } from "@/lib/roles";
 import { getSystemSettings } from "@/lib/settings";
-import { SUPPLIER_PAYMENT_PURPOSE, formatSupplierPaymentReference, supplierPaymentInputSchema, type SupplierPaymentField } from "@/lib/supplier-payments";
+import { SUPPLIER_PAYMENT_PURPOSE, formatSupplierPaymentReference, makeSupplierPaymentSchema, type SupplierPaymentField } from "@/lib/supplier-payments";
+import { getDict } from "@/lib/i18n/server";
+import { LocalizedError, errorMessage, tr, type Vars } from "@/lib/i18n/messages";
+import type { Dictionary } from "@/lib/i18n";
 
 // Supplier Payments. Financial-integrity rules (server-side, ONE transaction, READ COMMITTED):
 // 1. auth() is re-read and must be OWNER/ADMIN; the role never comes from the client.
@@ -31,25 +34,33 @@ export type SupplierPaymentResult = { ok: true; message: string; id?: string } |
 
 const isKnown = (e: unknown, ...codes: string[]) => e instanceof Prisma.PrismaClientKnownRequestError && codes.includes(e.code);
 const FIELD: Record<string, SupplierPaymentField> = { amount: "amount", transactionDate: "paymentDate", paymentDate: "paymentDate", cashBankAccountId: "cashBankAccountId", supplierId: "supplierId", allocations: "allocations" };
-const fail = (message: string, field?: SupplierPaymentField): never => {
-  throw new LedgerError(message, field);
+// Carries a dictionary key (+ variables); translated with the request dictionary in the catch below.
+class PaymentError extends LocalizedError {
+  constructor(key: string, vars: Vars, readonly field?: SupplierPaymentField) {
+    super(key, vars);
+  }
+}
+const fail = (key: string, vars: Vars = {}, field?: SupplierPaymentField): never => {
+  throw new PaymentError(key, vars, field);
 };
 
-async function authorize(): Promise<{ userId: string } | { error: SupplierPaymentResult }> {
+async function authorize(): Promise<{ userId: string; t: Dictionary } | { error: SupplierPaymentResult }> {
   const s = await auth();
-  if (!s?.user?.id) return { error: { ok: false, message: "Your session has expired. Please sign in again." } };
-  if (!canManageSupplierPayments(s.user.role)) return { error: { ok: false, message: "You don't have permission to record supplier payments." } };
-  return { userId: s.user.id };
+  const t = await getDict();
+  if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
+  if (!canManageSupplierPayments(s.user.role)) return { error: { ok: false, message: t.supplierPay.err.noPermission } };
+  return { userId: s.user.id, t };
 }
 
 export async function recordSupplierPayment(input: unknown): Promise<SupplierPaymentResult> {
   const a = await authorize();
   if ("error" in a) return a.error;
-  const v = supplierPaymentInputSchema.safeParse(input);
+  const t = a.t;
+  const v = makeSupplierPaymentSchema(t.supplierPay.val, t.sales.val).safeParse(input);
   if (!v.success) {
     const fieldErrors: Partial<Record<SupplierPaymentField, string>> = {};
     for (const i of v.error.issues) fieldErrors[(i.path[0] as SupplierPaymentField) ?? "allocations"] ??= i.message;
-    return { ok: false, message: Object.values(fieldErrors)[0] ?? "Please check the form", fieldErrors };
+    return { ok: false, message: Object.values(fieldErrors)[0] ?? t.common.checkForm, fieldErrors };
   }
   const d = v.data;
   const settings = await getSystemSettings();
@@ -58,7 +69,7 @@ export async function recordSupplierPayment(input: unknown): Promise<SupplierPay
     try {
       const created = await db.$transaction(async (tx) => {
         const supplier = await tx.supplier.findUnique({ where: { id: d.supplierId }, select: { id: true, name: true } });
-        if (!supplier) fail("Choose a valid supplier", "supplierId");
+        if (!supplier) fail("supplierPay.err.supplierGone", {}, "supplierId");
 
         // Lock the purchases first (stable id order), then re-read them.
         const ids = [...new Set(d.allocations.map((x) => x.purchaseId))].sort();
@@ -70,24 +81,24 @@ export async function recordSupplierPayment(input: unknown): Promise<SupplierPay
         );
 
         const lines = d.allocations.map((al) => {
-          const p = byId.get(al.purchaseId) ?? fail("A selected purchase no longer exists", "allocations");
-          if (p.supplierId !== supplier!.id) fail(`${p.reference} belongs to another supplier.`, "allocations");
-          if (dateOnly(d.paymentDate) < p.purchaseDate) fail(`The payment date can't be before the date of ${p.reference}.`, "paymentDate");
+          const p = byId.get(al.purchaseId) ?? fail("supplierPay.err.purchaseGone", {}, "allocations");
+          if (p.supplierId !== supplier!.id) fail("supplierPay.err.otherSupplier", { ref: p.reference }, "allocations");
+          if (dateOnly(d.paymentDate) < p.purchaseDate) fail("supplierPay.err.beforePurchase", { ref: p.reference }, "paymentDate");
           const due = new Prisma.Decimal(p.grandTotal).minus(p.paidAmount).minus(returned.get(p.id) ?? 0);
           const money = (x: Prisma.Decimal) => formatMoney(x.toFixed(2), { code: "", symbol: p.currency.symbol, right: !!settings?.currencyIconRight });
-          if (!due.gt(0)) fail(`${p.reference} has nothing left to pay.`, "allocations");
-          if (new Prisma.Decimal(al.amount).gt(due)) fail(`${money(new Prisma.Decimal(al.amount))} is more than the ${money(due)} still due on ${p.reference}.`, "allocations");
+          if (!due.gt(0)) fail("supplierPay.err.nothingToPay", { ref: p.reference }, "allocations");
+          if (new Prisma.Decimal(al.amount).gt(due)) fail("supplierPay.err.tooMuch", { amount: money(new Prisma.Decimal(al.amount)), due: money(due), ref: p.reference }, "allocations");
           return { p, amount: al.amount };
         });
         const currencies = new Set(lines.map((l) => l.p.currencyId));
-        if (currencies.size !== 1) fail("All selected purchases must use the same currency.", "allocations");
+        if (currencies.size !== 1) fail("supplierPay.err.sameCurrency", {}, "allocations");
         const total = lines.reduce((s, l) => s.plus(l.amount), new Prisma.Decimal(0));
-        if (!total.equals(d.amount)) fail("The payment amount must equal the sum of the allocations.", "amount");
+        if (!total.equals(d.amount)) fail("supplierPay.err.sumMismatch", {}, "amount");
 
         // Then lock and check the paying account (current + chronological balance).
-        const acc = (await lockAccounts(tx, [d.cashBankAccountId])).get(d.cashBankAccountId) ?? fail("Choose a valid cash/bank account", "cashBankAccountId");
-        if (acc.status !== "ACTIVE") fail(`${acc.name} is inactive and can't be used for new transactions.`, "cashBankAccountId");
-        if (acc.currencyId !== lines[0].p.currencyId) fail(`${acc.name} uses a different currency from the selected purchases.`, "cashBankAccountId");
+        const acc = (await lockAccounts(tx, [d.cashBankAccountId])).get(d.cashBankAccountId) ?? fail("supplierPay.err.accountInvalid", {}, "cashBankAccountId");
+        if (acc.status !== "ACTIVE") fail("supplierPay.err.accountInactive", { name: acc.name }, "cashBankAccountId");
+        if (acc.currencyId !== lines[0].p.currencyId) fail("supplierPay.err.accountCurrency", { name: acc.name }, "cashBankAccountId");
         await assertSufficient(tx, acc, total, "amount");
         await assertChronology(tx, acc, dateOnly(d.paymentDate), total.negated(), "paymentDate");
 
@@ -129,14 +140,19 @@ export async function recordSupplierPayment(input: unknown): Promise<SupplierPay
       for (const id of d.allocations.map((x) => x.purchaseId)) revalidatePath(`/purchases/${id}`);
       revalidatePath("/finance/accounts");
       revalidatePath("/finance/transactions");
-      return { ok: true, message: `Payment ${created.reference} recorded (${created.ledger}) — applied to ${created.refs.join(", ")}`, id: created.id };
+      return { ok: true, message: tr(t, "supplierPay.ok.recorded", { ref: created.reference, ledger: created.ledger, purchases: created.refs.join(", ") }), id: created.id };
     } catch (e) {
+      if (e instanceof PaymentError) {
+        const message = errorMessage(t, e);
+        return { ok: false, message, fieldErrors: e.field ? { [e.field]: message } : undefined };
+      }
       if (e instanceof LedgerError) {
         const field = e.field ? FIELD[e.field] : undefined;
-        return { ok: false, message: e.message, fieldErrors: field ? { [field]: e.message } : undefined };
+        const message = e.i18n ? tr(t, e.i18n.key, e.i18n.vars) : e.message;
+        return { ok: false, message, fieldErrors: field ? { [field]: message } : undefined };
       }
       if (attempt < 4 && isKnown(e, "P2034")) continue; // deadlock / write conflict → retry
-      if (isKnown(e, "P2003")) return { ok: false, message: "A selected supplier, purchase or account no longer exists. Refresh and try again." };
+      if (isKnown(e, "P2003")) return { ok: false, message: t.supplierPay.err.refsGone };
       throw e;
     }
   }

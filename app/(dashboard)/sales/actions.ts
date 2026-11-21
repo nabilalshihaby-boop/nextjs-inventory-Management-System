@@ -8,10 +8,13 @@ import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
 import { todayLocal } from "@/lib/cash-bank";
 import { canManageSales } from "@/lib/roles";
+import { getDict } from "@/lib/i18n/server";
+import { errorMessage, tr } from "@/lib/i18n/messages";
+import type { Dictionary } from "@/lib/i18n";
 import { SaleError, deductStock } from "@/lib/sale-stock";
 import { getDefaultCurrency } from "@/lib/settings";
 import { toUnits } from "@/lib/transfers";
-import { calcSale, formatSaleReference, saleInputSchema, type SaleField, type SaleInput } from "@/lib/sales";
+import { calcSale, formatSaleReference, makeSaleSchema, type SaleField, type SaleInput } from "@/lib/sales";
 
 // Sales — the shared sales engine (future POS must call these same rules, not its own stock logic).
 // Integrity rules (server-side):
@@ -35,21 +38,21 @@ export type SaleResult =
 
 const idSchema = z.string().trim().min(1).max(64);
 const MAX_TOTAL = toUnits("999999999999.99", 2);
-const NO_CURRENCY = "No default currency is configured. The Owner must choose one in System Settings before sales can be recorded.";
 
 const isKnown = (e: unknown, ...codes: string[]) => e instanceof Prisma.PrismaClientKnownRequestError && codes.includes(e.code);
 const dateOnly = (v: string) => new Date(`${v}T00:00:00.000Z`);
 const txOptions = { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 15_000 } as const;
 
-async function authorize(): Promise<{ userId: string } | { error: SaleResult }> {
+async function authorize(): Promise<{ userId: string; t: Dictionary } | { error: SaleResult }> {
   const s = await auth();
-  if (!s?.user?.id) return { error: { ok: false, message: "Your session has expired. Please sign in again." } };
-  if (!canManageSales(s.user.role)) return { error: { ok: false, message: "You don't have permission to manage sales." } };
-  return { userId: s.user.id };
+  const t = await getDict();
+  if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
+  if (!canManageSales(s.user.role)) return { error: { ok: false, message: t.sales.err.noPermission } };
+  return { userId: s.user.id, t };
 }
 
-function parse(input: unknown): { ok: true; data: SaleInput } | { ok: false; error: SaleResult } {
-  const v = saleInputSchema.safeParse(input);
+function parse(input: unknown, t: Dictionary): { ok: true; data: SaleInput } | { ok: false; error: SaleResult } {
+  const v = makeSaleSchema(t.sales.val).safeParse(input);
   if (v.success) return { ok: true, data: v.data };
   const fieldErrors: Partial<Record<SaleField, string>> = {};
   const itemErrors: Record<string, string> = {};
@@ -59,32 +62,35 @@ function parse(input: unknown): { ok: true; data: SaleInput } | { ok: false; err
     if (k === "items" && typeof index === "number" && Array.isArray(raw) && typeof raw[index]?.productId === "string") itemErrors[raw[index].productId as string] ??= i.message;
     fieldErrors[(k as SaleField) ?? "items"] ??= i.message;
   }
-  return { ok: false, error: { ok: false, message: Object.values(fieldErrors)[0] ?? "Please check the form", fieldErrors, itemErrors } };
+  return { ok: false, error: { ok: false, message: Object.values(fieldErrors)[0] ?? t.common.checkForm, fieldErrors, itemErrors } };
 }
 
 type StockLine = { productId: string; quantity: string; productCode: string; productName: string };
 
 /** Re-read references and compute the authoritative totals + line snapshots. */
-async function prepare(d: SaleInput): Promise<{ ok: true; lines: Prisma.SaleItemCreateWithoutSaleInput[]; stock: StockLine[]; totals: ReturnType<typeof calcSale> } | { ok: false; error: SaleResult }> {
+async function prepare(d: SaleInput, t: Dictionary): Promise<{ ok: true; lines: Prisma.SaleItemCreateWithoutSaleInput[]; stock: StockLine[]; totals: ReturnType<typeof calcSale> } | { ok: false; error: SaleResult }> {
   const [customer, warehouse, products] = await Promise.all([
     db.customer.findUnique({ where: { id: d.customerId }, select: { id: true } }),
     db.warehouse.findUnique({ where: { id: d.warehouseId }, select: { id: true } }),
     db.product.findMany({ where: { id: { in: d.items.map((i) => i.productId) } }, select: { id: true, code: true, name: true, saleUnit: { select: { name: true } } } }),
   ]);
-  if (!customer) return { ok: false, error: { ok: false, message: "Choose a valid customer", fieldErrors: { customerId: "Choose a valid customer" } } };
-  if (!warehouse) return { ok: false, error: { ok: false, message: "Choose a valid warehouse", fieldErrors: { warehouseId: "Choose a valid warehouse" } } };
+  if (!customer) return { ok: false, error: { ok: false, message: t.sales.err.invalidCustomer, fieldErrors: { customerId: t.sales.err.invalidCustomer } } };
+  if (!warehouse) return { ok: false, error: { ok: false, message: t.sales.err.invalidWarehouse, fieldErrors: { warehouseId: t.sales.err.invalidWarehouse } } };
   const byId = new Map(products.map((p) => [p.id, p]));
   const missing = d.items.find((i) => !byId.has(i.productId));
-  if (missing) return { ok: false, error: { ok: false, message: "A product in the sale no longer exists", fieldErrors: { items: "A product in the sale no longer exists" }, itemErrors: { [missing.productId]: "This product no longer exists" } } };
+  if (missing) return { ok: false, error: { ok: false, message: t.sales.err.productGone, fieldErrors: { items: t.sales.err.productGone }, itemErrors: { [missing.productId]: t.sales.err.itemGone } } };
 
   const totals = calcSale(d.items, { orderTaxRate: d.orderTaxRate, discount: d.discount, shipping: d.shipping });
   const bad = totals.lines.findIndex((l) => l.error);
   if (bad >= 0) {
-    const msg = totals.lines[bad].error!;
+    const msg = totals.lines[bad].errorKey ? tr(t, totals.lines[bad].errorKey!) : totals.lines[bad].error!;
     return { ok: false, error: { ok: false, message: msg, fieldErrors: { items: msg }, itemErrors: { [d.items[bad].productId]: msg } } };
   }
-  if (totals.error) return { ok: false, error: { ok: false, message: totals.error, fieldErrors: { discount: totals.error } } };
-  if (toUnits(totals.grandTotal, 2) > MAX_TOTAL || toUnits(totals.subtotal, 2) > MAX_TOTAL) return { ok: false, error: { ok: false, message: "The sale total is too large", fieldErrors: { items: "The sale total is too large" } } };
+  if (totals.error) {
+    const msg = totals.errorKey ? tr(t, totals.errorKey) : totals.error;
+    return { ok: false, error: { ok: false, message: msg, fieldErrors: { discount: msg } } };
+  }
+  if (toUnits(totals.grandTotal, 2) > MAX_TOTAL || toUnits(totals.subtotal, 2) > MAX_TOTAL) return { ok: false, error: { ok: false, message: t.sales.err.totalTooLarge, fieldErrors: { items: t.sales.err.totalTooLarge } } };
 
   const lines = d.items.map((i, n) => {
     const p = byId.get(i.productId)!;
@@ -124,9 +130,12 @@ function revalidate(id?: string, quotationId?: string | null) {
   }
 }
 
-function fail(e: unknown): SaleResult {
-  if (e instanceof SaleError) return { ok: false, message: e.message, fieldErrors: e.itemId ? { items: e.message } : undefined, itemErrors: e.itemId ? { [e.itemId]: e.message } : undefined };
-  if (isKnown(e, "P2003", "P2025")) return { ok: false, message: "A selected customer, warehouse or product no longer exists. Refresh and try again." };
+function fail(e: unknown, t: Dictionary): SaleResult {
+  if (e instanceof SaleError) {
+    const message = errorMessage(t, e);
+    return { ok: false, message, fieldErrors: e.itemId ? { items: message } : undefined, itemErrors: e.itemId ? { [e.itemId]: message } : undefined };
+  }
+  if (isKnown(e, "P2003", "P2025")) return { ok: false, message: t.sales.err.refsGone };
   throw e;
 }
 
@@ -144,12 +153,12 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
 export async function createSale(input: unknown): Promise<SaleResult> {
   const a = await authorize();
   if ("error" in a) return a.error;
-  const v = parse(input);
+  const v = parse(input, a.t);
   if (!v.ok) return v.error;
   const d = v.data;
   const currency = await getDefaultCurrency();
-  if (!currency) return { ok: false, message: NO_CURRENCY };
-  const p = await prepare(d);
+  if (!currency) return { ok: false, message: a.t.sales.err.noCurrency };
+  const p = await prepare(d, a.t);
   if (!p.ok) return p.error;
 
   try {
@@ -184,9 +193,9 @@ export async function createSale(input: unknown): Promise<SaleResult> {
       }, txOptions),
     );
     revalidate(created.id);
-    return { ok: true, message: `Sale ${created.reference} created${d.status === "COMPLETED" ? " — stock deducted from the warehouse" : " as Pending — no stock deducted yet"}`, id: created.id };
+    return { ok: true, message: tr(a.t, d.status === "COMPLETED" ? "sales.ok.createdCompleted" : "sales.ok.createdPending", { ref: created.reference }), id: created.id };
   } catch (e) {
-    return fail(e);
+    return fail(e, a.t);
   }
 }
 
@@ -195,19 +204,19 @@ export async function updateSale(id: unknown, input: unknown): Promise<SaleResul
   const a = await authorize();
   if ("error" in a) return a.error;
   const sid = idSchema.safeParse(id);
-  if (!sid.success) return { ok: false, message: "Sale not found" };
-  const v = parse(input);
+  if (!sid.success) return { ok: false, message: a.t.sales.err.notFound };
+  const v = parse(input, a.t);
   if (!v.ok) return v.error;
   const d = v.data;
-  const p = await prepare(d);
+  const p = await prepare(d, a.t);
   if (!p.ok) return p.error;
 
   try {
     const r = await withRetry(() =>
       db.$transaction(async (tx) => {
         const s = await lockSale(tx, sid.data);
-        if (!s) throw new SaleError("Sale not found");
-        if (s.status !== "PENDING") throw new SaleError(`Sale ${s.reference} is Completed and can no longer be edited.`);
+        if (!s) throw new SaleError("sales.err.notFound");
+        if (s.status !== "PENDING") throw new SaleError("sales.err.completedNoEdit", { ref: s.reference });
         await tx.saleItem.deleteMany({ where: { saleId: s.id } });
         await tx.sale.update({
           where: { id: s.id },
@@ -232,9 +241,9 @@ export async function updateSale(id: unknown, input: unknown): Promise<SaleResul
       }, txOptions),
     );
     revalidate(sid.data, r.quotationId);
-    return { ok: true, message: `Sale ${r.reference} updated${d.status === "COMPLETED" ? " and completed — stock deducted from the warehouse" : ""}`, id: sid.data };
+    return { ok: true, message: tr(a.t, d.status === "COMPLETED" ? "sales.ok.updatedCompleted" : "sales.ok.updated", { ref: r.reference }), id: sid.data };
   } catch (e) {
-    return fail(e);
+    return fail(e, a.t);
   }
 }
 
@@ -243,13 +252,13 @@ export async function completeSale(id: unknown): Promise<SaleResult> {
   const a = await authorize();
   if ("error" in a) return a.error;
   const sid = idSchema.safeParse(id);
-  if (!sid.success) return { ok: false, message: "Sale not found" };
+  if (!sid.success) return { ok: false, message: a.t.sales.err.notFound };
   try {
     const r = await withRetry(() =>
       db.$transaction(async (tx) => {
         const s = await lockSale(tx, sid.data);
-        if (!s) throw new SaleError("Sale not found");
-        if (s.status !== "PENDING") throw new SaleError(`Sale ${s.reference} has already been completed.`);
+        if (!s) throw new SaleError("sales.err.notFound");
+        if (s.status !== "PENDING") throw new SaleError("sales.err.alreadyCompleted", { ref: s.reference });
         const items = await tx.saleItem.findMany({ where: { saleId: s.id }, select: { productId: true, quantity: true, productCode: true, productName: true } });
         await tx.sale.update({ where: { id: s.id }, data: { status: "COMPLETED", completedAt: new Date(), completedById: a.userId } });
         await deductStock(tx, s.warehouseId, items);
@@ -257,9 +266,9 @@ export async function completeSale(id: unknown): Promise<SaleResult> {
       }, txOptions),
     );
     revalidate(r.id, r.quotationId);
-    return { ok: true, message: `Sale ${r.reference} completed — stock deducted from the warehouse` };
+    return { ok: true, message: tr(a.t, "sales.ok.completed", { ref: r.reference }) };
   } catch (e) {
-    return fail(e);
+    return fail(e, a.t);
   }
 }
 
@@ -268,19 +277,19 @@ export async function deleteSale(id: unknown): Promise<SaleResult> {
   const a = await authorize();
   if ("error" in a) return a.error;
   const sid = idSchema.safeParse(id);
-  if (!sid.success) return { ok: false, message: "Sale not found" };
+  if (!sid.success) return { ok: false, message: a.t.sales.err.notFound };
   try {
     const r = await db.$transaction(async (tx) => {
       const s = await lockSale(tx, sid.data);
-      if (!s) throw new SaleError("Sale not found");
-      if (s.status !== "PENDING") throw new SaleError(`Sale ${s.reference} is Completed and can't be deleted.`);
+      if (!s) throw new SaleError("sales.err.notFound");
+      if (s.status !== "PENDING") throw new SaleError("sales.err.completedNoDelete", { ref: s.reference });
       await tx.sale.delete({ where: { id: s.id } }); // lines cascade
       return s;
     }, txOptions);
     revalidate(undefined, r.quotationId);
-    return { ok: true, message: `Sale ${r.reference} deleted` };
+    return { ok: true, message: tr(a.t, "sales.ok.deleted", { ref: r.reference }) };
   } catch (e) {
-    return fail(e);
+    return fail(e, a.t);
   }
 }
 
@@ -293,14 +302,14 @@ export async function convertQuotationToSale(quotationId: unknown): Promise<Sale
   const a = await authorize();
   if ("error" in a) return a.error;
   const qid = idSchema.safeParse(quotationId);
-  if (!qid.success) return { ok: false, message: "Quotation not found" };
+  if (!qid.success) return { ok: false, message: a.t.sales.err.quotationNotFound };
   try {
     const created = await db.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM quotations WHERE id = ${qid.data} FOR UPDATE`;
       const q = await tx.quotation.findUnique({ where: { id: qid.data }, include: { items: { orderBy: { id: "asc" } }, sale: { select: { reference: true } } } });
-      if (!q) throw new SaleError("Quotation not found");
-      if (q.status !== "ACCEPTED") throw new SaleError(`Only accepted quotations can be converted to a sale (${q.reference} is ${q.status.toLowerCase()}).`);
-      if (q.sale) throw new SaleError(`Quotation ${q.reference} has already been converted to sale ${q.sale.reference}.`);
+      if (!q) throw new SaleError("sales.err.quotationNotFound");
+      if (q.status !== "ACCEPTED") throw new SaleError("sales.err.quotationNotAccepted", { ref: q.reference, status: tr(a.t, `sales.qStatus.${q.status}`) });
+      if (q.sale) throw new SaleError("sales.err.alreadyConverted", { ref: q.reference, sale: q.sale.reference });
       const s0 = await tx.sale.create({
         data: {
           reference: `TMP_${randomBytes(8).toString("hex")}`,
@@ -345,9 +354,9 @@ export async function convertQuotationToSale(quotationId: unknown): Promise<Sale
       return { id: s0.id, reference, quotationRef: q.reference };
     }, txOptions);
     revalidate(created.id, qid.data);
-    return { ok: true, message: `Sale ${created.reference} created as Pending from quotation ${created.quotationRef} — no stock deducted yet`, id: created.id };
+    return { ok: true, message: tr(a.t, "sales.ok.converted", { ref: created.reference, quotation: created.quotationRef }), id: created.id };
   } catch (e) {
-    if (isKnown(e, "P2002")) return { ok: false, message: "This quotation has already been converted to a sale." };
-    return fail(e);
+    if (isKnown(e, "P2002")) return { ok: false, message: a.t.sales.err.alreadyConvertedGeneric };
+    return fail(e, a.t);
   }
 }

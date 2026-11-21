@@ -4,9 +4,12 @@ import { connection } from "next/server";
 import { auth } from "@/auth";
 import { getAccountsView } from "@/lib/cash-bank-data";
 import { canManageCashBankAccounts, canManageSystemSettings, canViewFinance } from "@/lib/roles";
+import { getDict } from "@/lib/i18n/server";
 import AccountsView from "@/components/finance/AccountsView";
 
-export const metadata: Metadata = { title: "Cash & Bank Accounts" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).finance.accounts.title };
+}
 
 export const instant = false;
 
@@ -18,6 +21,6 @@ export default async function CashBankAccountsPage() {
   if (!session?.user?.id) redirect("/");
   if (!canViewFinance(session.user.role)) redirect("/dashboard");
 
-  const data = await getAccountsView();
+  const data = await getAccountsView(await getDict());
   return <AccountsView {...data} canManage={canManageCashBankAccounts(session.user.role)} canOpenSettings={canManageSystemSettings(session.user.role)} />;
 }

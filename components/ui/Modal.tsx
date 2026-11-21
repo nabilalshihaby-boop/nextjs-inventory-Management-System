@@ -2,6 +2,8 @@
 
 import { useEffect, type ReactNode } from "react";
 import Icon from "@/components/layout/Icon";
+import { fmt } from "@/lib/i18n/config";
+import { useT } from "@/components/i18n/I18nProvider";
 
 // Design Modal (.sp-overlay / .sp-modal): title bar with close button, body, optional footer.
 // Escape and a click on the backdrop close it.
@@ -18,6 +20,7 @@ export default function Modal({
   size?: "sm" | "md" | "lg";
   children: ReactNode;
 }) {
+  const t = useT();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
@@ -28,7 +31,7 @@ export default function Modal({
       <div className={`sp-modal sp-modal--${size}`} role="dialog" aria-modal="true" aria-label={title}>
         <div className="sp-modal-head">
           <div className="t-section-title">{title}</div>
-          <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label="Close" onClick={onClose}>
+          <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={t.common.close} onClick={onClose}>
             <Icon name="x" size={16} />
           </button>
         </div>
@@ -53,18 +56,19 @@ export function ConfirmDeleteModal({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const t = useT();
   return (
     <Modal
-      title={itemName ? `Delete ${itemName}?` : `Delete ${itemType}?`}
+      title={fmt(t.common.deleteTitle, { name: itemName ?? itemType })}
       onClose={onCancel}
       footer={
         <>
           <button type="button" className="sp-btn sp-btn--secondary" onClick={onCancel} disabled={busy}>
-            Cancel
+            {t.common.cancel}
           </button>
           <button type="button" className="sp-btn sp-btn--danger" onClick={onConfirm} disabled={busy}>
             <Icon name="trash-2" size={18} />
-            Delete
+            {t.common.delete}
           </button>
         </>
       }
@@ -86,7 +90,7 @@ export function ConfirmDeleteModal({
           <Icon name="triangle-alert" size={22} />
         </span>
         <p className="t-body" style={{ margin: 0, color: "var(--text-2)" }}>
-          Are you sure you want to delete this {itemType}? This action cannot be undone.
+          {fmt(t.common.deleteBody, { type: itemType })}
         </p>
       </div>
     </Modal>

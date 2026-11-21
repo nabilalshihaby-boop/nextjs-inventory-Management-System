@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import type { ReportCompany } from "@/lib/report-company";
+import { fmt } from "@/lib/i18n/config";
+import { getDict } from "@/lib/i18n/server";
 
 // The reusable printable report document (.bp-report). Every report page renders exactly one of
 // these: letterhead (company logo/name/contact from System Settings), title, the record reference
@@ -10,7 +12,7 @@ import type { ReportCompany } from "@/lib/report-company";
 
 export type ReportMeta = { label: string; value: ReactNode };
 
-export default function ReportDocument({
+export default async function ReportDocument({
   title,
   company,
   meta,
@@ -29,6 +31,7 @@ export default function ReportDocument({
   children: ReactNode;
   testId?: string;
 }) {
+  const t = await getDict();
   return (
     <article className={`bp-report bp-report--${orientation}`} data-testid={testId} aria-label={title}>
       <header className="bp-report-head">
@@ -41,7 +44,7 @@ export default function ReportDocument({
             <div className="bp-report-company-name">{company.name}</div>
             {company.lines.map((l) => (
               <div key={l} className="bp-report-muted">
-                {l}
+                <bdi dir="auto">{l}</bdi>
               </div>
             ))}
           </div>
@@ -49,8 +52,7 @@ export default function ReportDocument({
         <div className="bp-report-titlebox">
           <h1 className="bp-report-title">{title}</h1>
           <div className="bp-report-muted" data-testid="report-generated">
-            Generated {generatedAt}
-            {generatedBy ? ` by ${generatedBy}` : ""}
+            {generatedBy ? fmt(t.report.generatedBy, { at: generatedAt, by: generatedBy }) : fmt(t.report.generated, { at: generatedAt })}
           </div>
         </div>
       </header>
@@ -71,7 +73,7 @@ export default function ReportDocument({
       <footer className="bp-report-foot">
         <span>{company.name}</span>
         <span>
-          {title} · Generated {generatedAt}
+          {fmt(t.report.footerLine, { title, at: generatedAt })}
         </span>
       </footer>
     </article>

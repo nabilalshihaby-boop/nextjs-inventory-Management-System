@@ -5,16 +5,15 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
-import { LedgerError, appendLedgerRow, assertChronology, assertSufficient, dateOnly, ledgerReject, ledgerTxOptions, lockAccounts } from "@/lib/cash-bank-ledger";
+import { LedgerError, appendLedgerRow, assertChronology, assertSufficient, dateOnly, ledgerFail, ledgerTxOptions, lockAccounts } from "@/lib/cash-bank-ledger";
+import { getDict } from "@/lib/i18n/server";
+import { tr } from "@/lib/i18n/messages";
+import type { Dictionary } from "@/lib/i18n";
 import { openRegisterBlock } from "@/lib/register-guard";
 import { canManageCashBankAccounts, canRecordCashBankTransactions } from "@/lib/roles";
 import { getDefaultCurrency } from "@/lib/settings";
 import {
-  accountCreateSchema,
-  accountUpdateSchema,
-  depositSchema,
-  transferSchema,
-  withdrawalSchema,
+    makeCashBankSchemas,
   type AccountField,
   type TxField,
 } from "@/lib/cash-bank";
@@ -42,18 +41,19 @@ export type FinanceResult<F extends string = string> =
   | { ok: false; message: string; fieldErrors?: Partial<Record<F, string>> };
 
 const idSchema = z.string().trim().min(1).max(64);
-const DUPLICATE = "An account with this name already exists";
-const NO_CURRENCY = "No default currency is configured. The Owner must choose one in System Settings (/settings) before cash & bank accounts can be created.";
-
 async function session() {
   const s = await auth();
   return s?.user?.id ? s.user : null;
 }
+const schemas = async () => {
+  const t = await getDict();
+  return { t, ...makeCashBankSchemas(t.finance.val) };
+};
 
-function collect<F extends string>(issues: z.core.$ZodIssue[]): FinanceResult<F> {
+function collect<F extends string>(issues: z.core.$ZodIssue[], t: Dictionary): FinanceResult<F> {
   const fieldErrors: Partial<Record<F, string>> = {};
   for (const i of issues) fieldErrors[i.path[0] as F] ??= i.message;
-  return { ok: false, message: Object.values<string | undefined>(fieldErrors)[0] ?? "Please check the form", fieldErrors };
+  return { ok: false, message: Object.values<string | undefined>(fieldErrors)[0] ?? t.common.checkForm, fieldErrors };
 }
 const isKnown = (e: unknown, ...codes: string[]) => e instanceof Prisma.PrismaClientKnownRequestError && codes.includes(e.code);
 const revalidate = () => {
@@ -64,19 +64,22 @@ const revalidate = () => {
 // ---- accounts (OWNER + ADMIN) ------------------------------------------------------------------
 
 async function accountManager(): Promise<FinanceResult<AccountField> | null> {
-  const u = await session();
-  if (!u) return { ok: false, message: "Your session has expired. Please sign in again." };
-  if (!canManageCashBankAccounts(u.role)) return { ok: false, message: "You don't have permission to create or change cash & bank accounts." };
+    const u = await session();
+  const t = await getDict();
+  if (!u) return { ok: false, message: t.common.sessionExpired };
+  if (!canManageCashBankAccounts(u.role)) return { ok: false, message: t.finance.err.noPermissionAccounts };
   return null;
 }
 
 export async function createAccount(input: unknown): Promise<FinanceResult<AccountField>> {
   const denied = await accountManager();
   if (denied) return denied;
+    const S = await schemas();
+  const DUPLICATE = S.t.finance.err.duplicate;
   const currency = await getDefaultCurrency(); // the account currency is always the default currency
-  if (!currency) return { ok: false, message: NO_CURRENCY, fieldErrors: { currency: NO_CURRENCY } };
-  const v = accountCreateSchema.safeParse(input);
-  if (!v.success) return collect(v.error.issues);
+  if (!currency) return { ok: false, message: S.t.finance.err.noCurrency, fieldErrors: { currency: S.t.finance.err.noCurrency } };
+  const v = S.accountCreateSchema.safeParse(input);
+  if (!v.success) return collect(v.error.issues, S.t);
   const d = v.data;
   if (await db.cashBankAccount.findUnique({ where: { name: d.name }, select: { id: true } })) return { ok: false, message: DUPLICATE, fieldErrors: { name: DUPLICATE } };
   try {
@@ -98,27 +101,29 @@ export async function createAccount(input: unknown): Promise<FinanceResult<Accou
     throw e;
   }
   revalidate();
-  return { ok: true, message: "Account created" };
+  return { ok: true, message: S.t.finance.ok.created };
 }
 
 /** Edit account details. Opening balance, currency and the (computed) balance can't be changed. */
 export async function updateAccount(id: unknown, input: unknown): Promise<FinanceResult<AccountField>> {
   const denied = await accountManager();
   if (denied) return denied;
+    const S = await schemas();
+  const DUPLICATE = S.t.finance.err.duplicate;
   const aid = idSchema.safeParse(id);
-  if (!aid.success) return { ok: false, message: "Account not found" };
-  const v = accountUpdateSchema.safeParse(input); // no balance fields exist in this schema (stripped)
-  if (!v.success) return collect(v.error.issues);
+  if (!aid.success) return { ok: false, message: S.t.finance.err.notFound };
+  const v = S.accountUpdateSchema.safeParse(input); // no balance fields exist in this schema (stripped)
+  if (!v.success) return collect(v.error.issues, S.t);
   const d = v.data;
   const existing = await db.cashBankAccount.findUnique({ where: { id: aid.data }, select: { id: true } });
-  if (!existing) return { ok: false, message: "Account not found" };
+    if (!existing) return { ok: false, message: S.t.finance.err.notFound };
   if (await db.cashBankAccount.findFirst({ where: { name: d.name, NOT: { id: existing.id } }, select: { id: true } })) return { ok: false, message: DUPLICATE, fieldErrors: { name: DUPLICATE } };
   try {
     // An account with an OPEN register session can't be deactivated or turned into a bank account.
     const blocked = await db.$transaction(async (tx) => {
       if (d.status === "INACTIVE" || d.type === "BANK") {
-        const msg = await openRegisterBlock(tx, existing.id);
-        if (msg) return msg;
+                const reg = await openRegisterBlock(tx, existing.id);
+        if (reg) return tr(S.t, "finance.err.openRegister", { reference: reg });
       }
       await tx.cashBankAccount.update({
         where: { id: existing.id },
@@ -133,47 +138,52 @@ export async function updateAccount(id: unknown, input: unknown): Promise<Financ
     throw e;
   }
   revalidate();
-  return { ok: true, message: "Account updated" };
+  return { ok: true, message: S.t.finance.ok.updated };
 }
 
 export async function setAccountStatus(id: unknown, status: unknown): Promise<FinanceResult<AccountField>> {
   const denied = await accountManager();
   if (denied) return denied;
+    const t = await getDict();
   const aid = idSchema.safeParse(id);
   const st = z.enum(["ACTIVE", "INACTIVE"]).safeParse(status);
-  if (!aid.success || !st.success) return { ok: false, message: "Invalid request" };
+  if (!aid.success || !st.success) return { ok: false, message: t.finance.err.invalidRequest };
   const res = await db.$transaction(async (tx) => {
     if (st.data === "INACTIVE") {
-      const msg = await openRegisterBlock(tx, aid.data);
-      if (msg) return msg;
+            const reg = await openRegisterBlock(tx, aid.data);
+      if (reg) return tr(t, "finance.err.openRegister", { reference: reg });
     }
     return (await tx.cashBankAccount.updateMany({ where: { id: aid.data }, data: { status: st.data } })).count;
   });
   if (typeof res === "string") return { ok: false, message: res };
-  if (res !== 1) return { ok: false, message: "Account not found" };
+  if (res !== 1) return { ok: false, message: t.finance.err.notFound };
   revalidate();
-  return { ok: true, message: st.data === "ACTIVE" ? "Account activated" : "Account deactivated" };
+  return { ok: true, message: st.data === "ACTIVE" ? t.finance.ok.activated : t.finance.ok.deactivated };
 }
 
 // ---- transactions (OWNER + ADMIN) -------------------------------------------------------------
 // Locking, balance and chronology rules live in lib/cash-bank-ledger.ts (shared with Expenses).
 
-async function recorder(): Promise<{ userId: string } | { error: FinanceResult<TxField> }> {
+async function recorder(): Promise<{ userId: string; t: Dictionary } | { error: FinanceResult<TxField> }> {
   const u = await session();
-  if (!u) return { error: { ok: false, message: "Your session has expired. Please sign in again." } };
-  if (!canRecordCashBankTransactions(u.role)) return { error: { ok: false, message: "You don't have permission to record cash & bank transactions." } };
-  return { userId: u.id };
+  const t = await getDict();
+  if (!u) return { error: { ok: false, message: t.common.sessionExpired } };
+  if (!canRecordCashBankTransactions(u.role)) return { error: { ok: false, message: t.finance.err.noPermissionTx } };
+  return { userId: u.id, t };
 }
 
-async function run(fn: (tx: Prisma.TransactionClient) => Promise<string>, success: (ref: string) => string): Promise<FinanceResult<TxField>> {
+async function run(t: Dictionary, fn: (tx: Prisma.TransactionClient) => Promise<string>, success: (ref: string) => string): Promise<FinanceResult<TxField>> {
   try {
     const reference = await db.$transaction(fn, ledgerTxOptions);
     revalidate();
     return { ok: true, message: success(reference), reference };
   } catch (e) {
-    if (e instanceof LedgerError) return { ok: false, message: e.message, fieldErrors: e.field ? { [e.field as TxField]: e.message } : undefined };
-    if (isKnown(e, "P2034")) return { ok: false, message: "The account was busy. Please try again." };
-    if (isKnown(e, "P2003")) return { ok: false, message: "The account no longer exists. Refresh and try again." };
+        if (e instanceof LedgerError) {
+      const message = e.i18n ? tr(t, e.i18n.key, e.i18n.vars) : e.message;
+      return { ok: false, message, fieldErrors: e.field ? { [e.field as TxField]: message } : undefined };
+    }
+    if (isKnown(e, "P2034")) return { ok: false, message: t.finance.err.busy };
+    if (isKnown(e, "P2003")) return { ok: false, message: t.finance.err.accountGone };
     throw e;
   }
 }
@@ -181,50 +191,53 @@ async function run(fn: (tx: Prisma.TransactionClient) => Promise<string>, succes
 export async function createDeposit(input: unknown): Promise<FinanceResult<TxField>> {
   const a = await recorder();
   if ("error" in a) return a.error;
-  const v = depositSchema.safeParse(input);
-  if (!v.success) return collect(v.error.issues);
+    const S = await schemas();
+  const v = S.depositSchema.safeParse(input);
+  if (!v.success) return collect(v.error.issues, S.t);
   const d = v.data;
-  return run(async (tx) => {
-    const acc = (await lockAccounts(tx, [d.accountId])).get(d.accountId) ?? ledgerReject("Choose a valid account", "accountId");
-    if (acc.status !== "ACTIVE") ledgerReject(`${acc.name} is inactive and can't receive new transactions.`, "accountId");
+  return run(S.t, async (tx) => {
+    const acc = (await lockAccounts(tx, [d.accountId])).get(d.accountId) ?? ledgerFail("finance.err.invalidAccount", {}, "accountId");
+    if (acc.status !== "ACTIVE") ledgerFail("finance.err.inactiveReceive", { name: acc.name }, "accountId");
     await assertChronology(tx, acc, dateOnly(d.transactionDate), new Prisma.Decimal(d.amount)); // money in: always passes
     return (await appendLedgerRow(tx, "DEPOSIT", { transactionDate: dateOnly(d.transactionDate), accountId: acc.id, amount: d.amount, paymentMethod: d.paymentMethod, purpose: d.purpose, notes: d.notes || null, createdById: a.userId })).reference;
-  }, (ref) => `Deposit ${ref} recorded`);
+  }, (ref) => tr(S.t, "finance.ok.deposit", { ref }));
 }
 
 export async function createWithdrawal(input: unknown): Promise<FinanceResult<TxField>> {
   const a = await recorder();
   if ("error" in a) return a.error;
-  const v = withdrawalSchema.safeParse(input);
-  if (!v.success) return collect(v.error.issues);
+    const S = await schemas();
+  const v = S.withdrawalSchema.safeParse(input);
+  if (!v.success) return collect(v.error.issues, S.t);
   const d = v.data;
-  return run(async (tx) => {
-    const acc = (await lockAccounts(tx, [d.accountId])).get(d.accountId) ?? ledgerReject("Choose a valid account", "accountId");
-    if (acc.status !== "ACTIVE") ledgerReject(`${acc.name} is inactive and can't receive new transactions.`, "accountId");
+  return run(S.t, async (tx) => {
+    const acc = (await lockAccounts(tx, [d.accountId])).get(d.accountId) ?? ledgerFail("finance.err.invalidAccount", {}, "accountId");
+    if (acc.status !== "ACTIVE") ledgerFail("finance.err.inactiveReceive", { name: acc.name }, "accountId");
     await assertSufficient(tx, acc, d.amount); // under the row lock
     await assertChronology(tx, acc, dateOnly(d.transactionDate), new Prisma.Decimal(d.amount).negated());
     return (await appendLedgerRow(tx, "WITHDRAWAL", { transactionDate: dateOnly(d.transactionDate), accountId: acc.id, amount: d.amount, paymentMethod: d.paymentMethod, purpose: d.purpose, notes: d.notes || null, createdById: a.userId })).reference;
-  }, (ref) => `Withdrawal ${ref} recorded`);
+  }, (ref) => tr(S.t, "finance.ok.withdrawal", { ref }));
 }
 
 export async function createTransfer(input: unknown): Promise<FinanceResult<TxField>> {
   const a = await recorder();
   if ("error" in a) return a.error;
-  const v = transferSchema.safeParse(input);
-  if (!v.success) return collect(v.error.issues);
+    const S = await schemas();
+  const v = S.transferSchema.safeParse(input);
+  if (!v.success) return collect(v.error.issues, S.t);
   const d = v.data;
-  return run(async (tx) => {
+  return run(S.t, async (tx) => {
     const locked = await lockAccounts(tx, [d.fromAccountId, d.toAccountId]);
-    const from = locked.get(d.fromAccountId) ?? ledgerReject("Choose a valid source account", "fromAccountId");
-    const to = locked.get(d.toAccountId) ?? ledgerReject("Choose a valid destination account", "toAccountId");
-    if (from.status !== "ACTIVE") ledgerReject(`${from.name} is inactive and can't be used for new transactions.`, "fromAccountId");
-    if (to.status !== "ACTIVE") ledgerReject(`${to.name} is inactive and can't receive new transactions.`, "toAccountId");
-    if (from.currencyId !== to.currencyId) ledgerReject("Both accounts must use the same currency.", "toAccountId");
+    const from = locked.get(d.fromAccountId) ?? ledgerFail("finance.err.invalidSource", {}, "fromAccountId");
+    const to = locked.get(d.toAccountId) ?? ledgerFail("finance.err.invalidDestination", {}, "toAccountId");
+    if (from.status !== "ACTIVE") ledgerFail("finance.err.inactiveUse", { name: from.name }, "fromAccountId");
+    if (to.status !== "ACTIVE") ledgerFail("finance.err.inactiveReceive", { name: to.name }, "toAccountId");
+    if (from.currencyId !== to.currencyId) ledgerFail("finance.err.sameCurrency", {}, "toAccountId");
     await assertSufficient(tx, from, d.amount, "amount", from.name);
     // Both ledgers, chronologically: the source loses the amount at that date, the destination gains it.
     await assertChronology(tx, from, dateOnly(d.transactionDate), new Prisma.Decimal(d.amount).negated());
     await assertChronology(tx, to, dateOnly(d.transactionDate), new Prisma.Decimal(d.amount));
     // One row = debit + credit together: the transfer can only ever apply exactly once.
     return (await appendLedgerRow(tx, "TRANSFER", { transactionDate: dateOnly(d.transactionDate), accountId: from.id, destinationAccountId: to.id, amount: d.amount, notes: d.notes || null, createdById: a.userId })).reference;
-  }, (ref) => `Transfer ${ref} recorded`);
+  }, (ref) => tr(S.t, "finance.ok.transfer", { ref }));
 }

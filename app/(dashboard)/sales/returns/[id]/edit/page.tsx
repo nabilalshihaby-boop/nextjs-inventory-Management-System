@@ -6,8 +6,12 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { canManageSaleReturns } from "@/lib/roles";
 import Icon from "@/components/layout/Icon";
+import { getDict } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n/config";
 
-export const metadata: Metadata = { title: "Edit Sale Return" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).salesReturns.details.editTitle };
+}
 
 export const instant = false;
 
@@ -23,13 +27,14 @@ export default async function EditSaleReturnPage({ params }: PageProps<"/sales/r
   const { id } = await params;
   const r = await db.saleReturn.findUnique({ where: { id }, select: { id: true, reference: true } });
   if (!r) notFound();
+  const D = (await getDict()).salesReturns.details;
   return (
     <div className="sp-card sp-empty" data-testid="return-locked">
       <Icon name="file-text" size={36} />
-      <div className="t-section-title">Completed returns cannot be edited</div>
-      <span>Sale return {r.reference} has already added its stock back and reduced the sale&apos;s due. Completed sales returns are final.</span>
+      <div className="t-section-title">{D.lockedTitle}</div>
+      <span>{fmt(D.lockedBody, { ref: r.reference })}</span>
       <Link href={`/sales/returns/${encodeURIComponent(r.id)}`} className="sp-btn sp-btn--secondary">
-        View Sale Return
+        {D.viewReturn}
       </Link>
     </div>
   );

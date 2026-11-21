@@ -7,7 +7,9 @@ import Pagination, { paginate } from "@/components/ui/Pagination";
 import RowMenu from "@/components/ui/RowMenu";
 import { formatMoney } from "@/lib/money";
 import { fromUnits, toUnits } from "@/lib/transfers";
-import { SALE_RETURN_IMMUTABLE, SALE_RETURN_PDF_SOON, type SaleReturnRow } from "@/lib/sale-returns";
+import type { SaleReturnRow } from "@/lib/sale-returns";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
 
 // Port of design/Sales Returns.html: TableToolbar (search, Filter, date, Create Sale Return),
 // DataTable (Reference / Customer / Warehouse / Status / Grand Total / Paid / Payment Status /
@@ -18,6 +20,9 @@ import { SALE_RETURN_IMMUTABLE, SALE_RETURN_PDF_SOON, type SaleReturnRow } from 
 type Currency = { code: string; symbol: string; right: boolean };
 
 export default function SaleReturnsTable({ rows, customers, currency }: { rows: SaleReturnRow[]; customers: { id: string; name: string }[]; currency: Currency | null }) {
+  const T = useT();
+  const R = T.salesReturns;
+  const L = R.list;
   const [q, setQ] = useState("");
   const [date, setDate] = useState("");
   const [showFilters, setShowFilters] = useState(false);
@@ -57,18 +62,18 @@ export default function SaleReturnsTable({ rows, customers, currency }: { rows: 
       <div className="sp-toolbar">
         <div className="sp-group">
           <Icon name="search" size={18} className="sp-input-icon" />
-          <input className="sp-input " placeholder="Search" aria-label="Search sales returns" value={q} onChange={(e) => reset(() => setQ(e.target.value))} />
+          <input className="sp-input " placeholder={L.search} aria-label={L.searchAria} value={q} onChange={(e) => reset(() => setQ(e.target.value))} />
         </div>
         <div className="sp-grow" />
-        <button type="button" className={"sp-btn sp-btn--icon " + (showFilters || activeFilters ? "sp-btn--primary" : "sp-btn--secondary")} aria-label={activeFilters ? `Filter (${activeFilters} active)` : "Filter"} aria-expanded={showFilters} onClick={() => setShowFilters(!showFilters)}>
+        <button type="button" className={"sp-btn sp-btn--icon " + (showFilters || activeFilters ? "sp-btn--primary" : "sp-btn--secondary")} aria-label={activeFilters ? fmt(L.filterActive, { n: activeFilters }) : L.filter} aria-expanded={showFilters} onClick={() => setShowFilters(!showFilters)}>
           <Icon name="filter" size={18} />
         </button>
         <div style={{ width: 240 }}>
-          <input type="date" className="sp-input " aria-label="Select Date" title="Show returns dated on this day" value={date} onChange={(e) => reset(() => setDate(e.target.value))} />
+          <input type="date" className="sp-input " aria-label={L.dateAria} title={L.dateTitle} value={date} onChange={(e) => reset(() => setDate(e.target.value))} />
         </div>
         <Link href="/sales/returns/create" className="sp-btn sp-btn--primary">
           <Icon name="plus" size={18} />
-          Create Sale Return
+          {L.create}
         </Link>
       </div>
 
@@ -76,10 +81,10 @@ export default function SaleReturnsTable({ rows, customers, currency }: { rows: 
         <div className="sp-card" data-testid="return-filters" style={{ padding: 16, marginBottom: 16, display: "flex", gap: 16, alignItems: "flex-end", flexWrap: "wrap" }}>
           <div className="sp-field" style={{ width: 240 }}>
             <label className="sp-label" htmlFor="rf-customer">
-              Customer
+              {L.customer}
             </label>
             <select id="rf-customer" className="sp-select " value={customer} onChange={(e) => reset(() => setCustomer(e.target.value))}>
-              <option value="ALL">All Customers</option>
+              <option value="ALL">{L.allCustomers}</option>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -89,12 +94,12 @@ export default function SaleReturnsTable({ rows, customers, currency }: { rows: 
           </div>
           <div className="sp-field" style={{ width: 200 }}>
             <label className="sp-label" htmlFor="rf-sale">
-              Sale Reference
+              {L.saleRef}
             </label>
-            <input id="rf-sale" className="sp-input " placeholder="e.g. SA_000001" value={sale} onChange={(e) => reset(() => setSale(e.target.value))} />
+            <input id="rf-sale" className="sp-input " placeholder={L.salePh} dir="ltr" value={sale} onChange={(e) => reset(() => setSale(e.target.value))} />
           </div>
           <button type="button" className="sp-btn sp-btn--secondary" onClick={clear} disabled={!filtering}>
-            Clear filters
+            {L.clear}
           </button>
         </div>
       )}
@@ -104,15 +109,15 @@ export default function SaleReturnsTable({ rows, customers, currency }: { rows: 
           <table className="sp-table">
             <thead>
               <tr>
-                <th>Reference</th>
-                <th>Customer</th>
-                <th>Warehouse</th>
-                <th>Status</th>
-                <th className="num">Grand Total</th>
-                <th className="num">Paid</th>
-                <th>Payment Status</th>
-                <th>Created On</th>
-                <th className="act">Action</th>
+                <th>{L.reference}</th>
+                <th>{L.customer}</th>
+                <th>{L.warehouse}</th>
+                <th>{L.status}</th>
+                <th className="num">{L.grandTotal}</th>
+                <th className="num">{L.paid}</th>
+                <th>{L.paymentStatus}</th>
+                <th>{L.createdOn}</th>
+                <th className="act">{L.action}</th>
               </tr>
             </thead>
             <tbody>
@@ -121,7 +126,7 @@ export default function SaleReturnsTable({ rows, customers, currency }: { rows: 
                   <td>
                     <span className="sp-code">{r.reference}</span>
                     <div className="t-caption" style={{ marginTop: 4 }}>
-                      From {r.saleRef} · {r.dateLabel}
+                      {fmt(L.fromSale, { sale: r.saleRef, date: r.dateLabel })}
                     </div>
                   </td>
                   <td className="primary-cell">{r.customer}</td>
@@ -129,14 +134,14 @@ export default function SaleReturnsTable({ rows, customers, currency }: { rows: 
                   <td>
                     <span className="sp-badge sp-badge--success" data-status="COMPLETED">
                       <i />
-                      Completed
+                      {T.sales.status.COMPLETED}
                     </span>
                   </td>
                   <td className="num" data-col="total">{formatMoney(r.grandTotal, r.currency)}</td>
-                  <td className="num" data-col="paid" title="Refunded to the customer (customer refunds aren't available yet)">{formatMoney("0.00", r.currency)}</td>
+                  <td className="num" data-col="paid" title={L.paidTitle}>{formatMoney("0.00", r.currency)}</td>
                   <td>
-                    <span className="sp-badge sp-badge--primary" title={`The return value reduced the unpaid due of ${r.saleRef}`}>
-                      Sale credit
+                    <span className="sp-badge sp-badge--primary" title={fmt(L.creditTitle, { sale: r.saleRef })}>
+                      {L.saleCredit}
                     </span>
                   </td>
                   <td>
@@ -146,11 +151,11 @@ export default function SaleReturnsTable({ rows, customers, currency }: { rows: 
                     <RowMenu
                       label={r.reference}
                       items={[
-                        { label: "View Sale Return", icon: "eye", href: `/sales/returns/${encodeURIComponent(r.id)}` },
-                        { label: "Download PDF", icon: "file-down", disabled: SALE_RETURN_PDF_SOON },
-                        { label: "Edit Sale Return", icon: "pencil", disabled: SALE_RETURN_IMMUTABLE },
+                        { label: L.view, icon: "eye", href: `/sales/returns/${encodeURIComponent(r.id)}` },
+                        { label: L.pdf, icon: "file-down", disabled: T.sales.pdfSoon },
+                        { label: L.edit, icon: "pencil", disabled: R.immutable },
                         "-",
-                        { label: "Delete Sale Return", icon: "trash-2", danger: true, disabled: SALE_RETURN_IMMUTABLE },
+                        { label: L.delete, icon: "trash-2", danger: true, disabled: R.immutable },
                       ]}
                     />
                   </td>
@@ -161,13 +166,13 @@ export default function SaleReturnsTable({ rows, customers, currency }: { rows: 
                   <td colSpan={9} style={{ textAlign: "center", color: "var(--text-2)" }} data-testid="empty">
                     {rows.length === 0 ? (
                       <span>
-                        <b style={{ color: "var(--text-1)" }}>No sales returns yet</b> — use Create Sale Return to take back items from a completed sale.
+                        <b style={{ color: "var(--text-1)" }}>{L.emptyTitle}</b> — {L.emptyHint}
                       </span>
                     ) : (
                       <span>
-                        No sales returns match your search or filters.{" "}
+                        {L.emptyFiltered}{" "}
                         <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm" onClick={clear}>
-                          Clear filters
+                          {L.clear}
                         </button>
                       </span>
                     )}
@@ -178,8 +183,8 @@ export default function SaleReturnsTable({ rows, customers, currency }: { rows: 
             {filtered.length > 0 && (
               <tfoot>
                 <tr data-testid="totals" style={{ fontWeight: 700 }}>
-                  <td colSpan={4} title={mixed ? "The total includes only returns in the current default currency" : undefined}>
-                    Total{mixed ? ` (${currency?.code ?? ""} only)` : ""}
+                  <td colSpan={4} title={mixed ? L.totalMixed : undefined}>
+                    {mixed ? fmt(L.totalCur, { code: currency?.code ?? "" }) : L.total}
                   </td>
                   <td className="num" data-testid="total-amount">{formatMoney(total, currency)}</td>
                   <td className="num">{formatMoney("0.00", currency)}</td>

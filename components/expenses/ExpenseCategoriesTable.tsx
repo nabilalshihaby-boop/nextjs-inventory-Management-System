@@ -1,5 +1,7 @@
 "use client";
 
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -15,7 +17,9 @@ import type { ExpenseCategoryRow } from "@/lib/expense-categories";
 // created in the browser — every change goes through the Server Actions, then the page refreshes.
 
 export default function ExpenseCategoriesTable({ rows }: { rows: ExpenseCategoryRow[] }) {
-  const router = useRouter();
+    const router = useRouter();
+  const T = useT();
+  const C = T.expenses.cat;
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(10);
@@ -38,8 +42,8 @@ export default function ExpenseCategoriesTable({ rows }: { rows: ExpenseCategory
 
   function save() {
     if (!name.trim()) {
-      setErr("Name is required");
-      return void toast.error("Name is required", { id: "expense-category" });
+      setErr(T.expenses.val.catNameRequired);
+      return void toast.error(T.expenses.val.catNameRequired, { id: "expense-category" });
     }
     const editing = modal && modal !== "create" ? modal : null;
     startTransition(async () => {
@@ -47,7 +51,7 @@ export default function ExpenseCategoriesTable({ rows }: { rows: ExpenseCategory
       try {
         r = editing ? await updateExpenseCategory(editing.id, { name }) : await createExpenseCategory({ name });
       } catch {
-        return void toast.error("Something went wrong. Please try again.", { id: "expense-category" });
+        return void toast.error(T.common.somethingWrong, { id: "expense-category" });
       }
       if (!r.ok) {
         setErr(r.fieldErrors?.name ?? "");
@@ -70,7 +74,7 @@ export default function ExpenseCategoriesTable({ rows }: { rows: ExpenseCategory
         else toast.success(r.message, { id: "expense-category" });
         router.refresh();
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "expense-category" });
+        toast.error(T.common.somethingWrong, { id: "expense-category" });
       }
     });
   }
@@ -80,13 +84,13 @@ export default function ExpenseCategoriesTable({ rows }: { rows: ExpenseCategory
       <div className="sp-toolbar">
         <div className="sp-group">
           <Icon name="search" size={18} className="sp-input-icon" />
-          <input className="sp-input " placeholder="Search" aria-label="Search expense categories" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+          <input className="sp-input " placeholder={C.search} aria-label={C.searchAria} value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
         </div>
         <div className="sp-grow" />
         <button type="button" className="sp-btn sp-btn--primary" onClick={() => open()}>
-          <Icon name="plus" size={18} />
-          Create Expense Category
-        </button>
+                    <Icon name="plus" size={18} />
+          {C.create}
+</button>
       </div>
 
       <div className="sp-table-card">
@@ -94,8 +98,8 @@ export default function ExpenseCategoriesTable({ rows }: { rows: ExpenseCategory
           <table className="sp-table">
             <thead>
               <tr>
-                <th>Name</th>
-                <th className="num">Action</th>
+                <th>{C.colName}</th>
+                <th className="num">{C.colAction}</th>
               </tr>
             </thead>
             <tbody>
@@ -104,10 +108,10 @@ export default function ExpenseCategoriesTable({ rows }: { rows: ExpenseCategory
                   <td className="primary-cell">{r.name}</td>
                   <td className="num">
                     <span style={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
-                      <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={`Edit ${r.name}`} style={{ color: "var(--primary-600)" }} onClick={() => open(r)}>
+                      <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={fmt(C.editAria, { name: r.name })} style={{ color: "var(--primary-600)" }} onClick={() => open(r)}>
                         <Icon name="pencil" size={16} />
                       </button>
-                      <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={`Delete ${r.name}`} style={{ color: "var(--danger-500)" }} onClick={() => setDel(r)}>
+                      <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={fmt(C.deleteAria, { name: r.name })} style={{ color: "var(--danger-500)" }} onClick={() => setDel(r)}>
                         <Icon name="trash-2" size={16} />
                       </button>
                     </span>
@@ -119,10 +123,10 @@ export default function ExpenseCategoriesTable({ rows }: { rows: ExpenseCategory
                   <td colSpan={2} style={{ textAlign: "center", color: "var(--text-2)" }} data-testid="empty">
                     {rows.length === 0 ? (
                       <span>
-                        <b style={{ color: "var(--text-1)" }}>No expense categories yet</b> — use Create Expense Category to add your first one.
+                        <b style={{ color: "var(--text-1)" }}>{C.emptyTitle}</b> — {C.emptyHint}
                       </span>
                     ) : (
-                      "No expense categories match your search."
+                      C.noMatch
                     )}
                   </td>
                 </tr>
@@ -136,15 +140,15 @@ export default function ExpenseCategoriesTable({ rows }: { rows: ExpenseCategory
       {modal && (
         <Modal
           size="sm"
-          title={modal === "create" ? "Create Expense Category" : "Edit Expense Category"}
+          title={modal === "create" ? C.create : C.editTitle}
           onClose={close}
           footer={
             <>
               <button type="button" className="sp-btn sp-btn--secondary" onClick={close} disabled={pending}>
-                Cancel
-              </button>
+                {C.cancel}
+</button>
               <button type="button" className="sp-btn sp-btn--primary" onClick={save} disabled={pending}>
-                {pending ? "Saving…" : "Save"}
+                {pending ? C.saving : C.save}
               </button>
             </>
           }
@@ -158,16 +162,16 @@ export default function ExpenseCategoriesTable({ rows }: { rows: ExpenseCategory
           >
             <div className={"sp-field" + (err ? " sp-field--error" : "")}>
               <label className="sp-label" htmlFor="ec-name">
-                Name<i>*</i>
+                                {C.name}<i>*</i>
               </label>
-              <input id="ec-name" className="sp-input " placeholder="Enter Name" value={name} maxLength={120} autoFocus onChange={(e) => { setName(e.target.value); setErr(""); }} aria-invalid={!!err || undefined} />
+              <input id="ec-name" className="sp-input " placeholder={C.namePh} value={name} maxLength={120} autoFocus onChange={(e) => { setName(e.target.value); setErr(""); }} aria-invalid={!!err || undefined} />
               {err && <span className="sp-error" id="ec-name-error">{err}</span>}
             </div>
           </form>
         </Modal>
       )}
 
-      {del && <ConfirmDeleteModal itemType="expense category" itemName={del.name} busy={pending} onCancel={() => setDel(null)} onConfirm={confirmDelete} />}
+      {del && <ConfirmDeleteModal itemType={C.deleteType} itemName={del.name} busy={pending} onCancel={() => setDel(null)} onConfirm={confirmDelete} />}
     </>
   );
 }

@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Icon from "@/components/layout/Icon";
 import ClearCacheSection from "@/components/settings/ClearCacheSection";
+import { useT } from "@/components/i18n/I18nProvider";
 import { siteConfig } from "@/config/site";
 import { saveSettings, type SettingsField, type SettingsState } from "@/app/(dashboard)/settings/actions";
 import type { SettingsValues } from "@/lib/settings";
@@ -45,6 +46,7 @@ export default function SettingsForm({
   dateFormats: string[];
 }) {
   const router = useRouter();
+  const t = useT();
   const [state, formAction, pending] = useActionState<SettingsState, FormData>(saveSettings, { status: "idle" });
   const [saved, setSaved] = useState(initial);
   const [f, setF] = useState(initial);
@@ -93,9 +95,9 @@ export default function SettingsForm({
     if (!file) return setPreview(null);
     const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
     const problem = !["jpg", "jpeg", "png", "webp"].includes(ext)
-      ? "Use a JPG, PNG or WebP image"
+      ? t.settings.imageType
       : file.size > MAX_LOGO_BYTES
-        ? "Image must be 2 MB or smaller"
+        ? t.settings.imageSize
         : null;
     if (problem) {
       ev.target.value = "";
@@ -189,9 +191,9 @@ export default function SettingsForm({
       <form method="post" encType="multipart/form-data" onSubmit={submit} noValidate aria-busy={pending}>
         <div className="sp-card sp-form-card">
           <div className="sp-form-grid" style={{ "--cols": 2 } as React.CSSProperties}>
-            <Field k="defaultCurrencyId" error={e.defaultCurrencyId} label="Default Currency" required>
+            <Field k="defaultCurrencyId" error={e.defaultCurrencyId} label={t.settings.defaultCurrency} required>
               {currencies.length ? (
-                select("defaultCurrencyId", "Select currency", currencies)
+                select("defaultCurrencyId", t.settings.selectCurrency, currencies)
               ) : (
                 // No Currency records yet: nothing to choose; the Owner must create one first.
                 <>
@@ -202,18 +204,18 @@ export default function SettingsForm({
                     disabled
                     aria-describedby="st-defaultCurrencyId-empty"
                   >
-                    <option value="">No currencies available yet</option>
+                    <option value="">{t.settings.noCurrencies}</option>
                   </select>
                   {!e.defaultCurrencyId && (
                     <span className="sp-hint" id="st-defaultCurrencyId-empty">
-                      No currencies yet. <Link href="/currencies">Create a currency</Link> first, then choose it here.
+                      {t.settings.noCurrenciesHint} <Link href="/currencies">{t.settings.createCurrency}</Link> {t.settings.firstThenChoose}
                     </span>
                   )}
                 </>
               )}
             </Field>
-            <Field k="defaultEmail" error={e.defaultEmail} label="Default Email">
-              {input("defaultEmail", "Enter Default Email", "email")}
+            <Field k="defaultEmail" error={e.defaultEmail} label={t.settings.defaultEmail}>
+              {input("defaultEmail", t.settings.phEmail, "email")}
             </Field>
             <div className="sp-span-all">
               <label className="sp-switch">
@@ -224,13 +226,13 @@ export default function SettingsForm({
                   checked={f.currencyIconRight}
                   onChange={(ev) => setF({ ...f, currencyIconRight: ev.target.checked })}
                 />
-                Currency icon Right side
+                {t.settings.currencyRight}
               </label>
             </div>
 
             <div className={"sp-field" + (e.logo ? " sp-field--error" : "")}>
               <label className="sp-label" htmlFor="st-logo">
-                Change Logo
+                {t.settings.changeLogo}
               </label>
               <div style={{ position: "relative", width: 100 }}>
                 <span
@@ -259,7 +261,7 @@ export default function SettingsForm({
                 <button
                   type="button"
                   className="sp-btn sp-btn--secondary sp-btn--sm sp-btn--icon"
-                  aria-label="Change logo"
+                  aria-label={t.settings.changeLogoAria}
                   style={{ position: "absolute", top: -6, right: -6, borderRadius: "50%" }}
                   onClick={() => fileRef.current?.click()}
                 >
@@ -270,33 +272,33 @@ export default function SettingsForm({
               {e.logo ? (
                 <span className="sp-error">{e.logo}</span>
               ) : (
-                <span className="sp-hint">JPG, PNG or WebP, up to 2 MB.</span>
+                <span className="sp-hint">{t.settings.logoHint}</span>
               )}
               {saved.companyLogo && (
                 <label className="sp-check" style={{ marginTop: 4 }}>
                   <input type="checkbox" name="removeLogo" checked={removeLogo} onChange={onRemoveLogo} />
-                  Remove current logo
+                  {t.settings.removeLogo}
                 </label>
               )}
             </div>
-            <Field k="companyName" error={e.companyName} label="Company Name">
-              {input("companyName", "Enter Company Name")}
+            <Field k="companyName" error={e.companyName} label={t.settings.companyName}>
+              {input("companyName", t.settings.phCompany)}
             </Field>
 
-            <Field k="companyPhone" error={e.companyPhone} label="Company Phone">
-              {input("companyPhone", "Enter Company Phone", "tel")}
+            <Field k="companyPhone" error={e.companyPhone} label={t.settings.companyPhone}>
+              {input("companyPhone", t.settings.phPhone, "tel")}
             </Field>
-            <Field k="developedBy" error={e.developedBy} label="Developed By">
-              {input("developedBy", "Enter Developer Name")}
+            <Field k="developedBy" error={e.developedBy} label={t.settings.developedBy}>
+              {input("developedBy", t.settings.phDeveloper)}
             </Field>
-            <Field k="footerText" error={e.footerText} label="Footer">
-              {input("footerText", "Enter Footer Text")}
+            <Field k="footerText" error={e.footerText} label={t.settings.footer}>
+              {input("footerText", t.settings.phFooter)}
             </Field>
-            <Field k="posWalkInCustomerId" error={e.posWalkInCustomerId} label="POS Walk-in Customer">
+            <Field k="posWalkInCustomerId" error={e.posWalkInCustomerId} label={t.settings.walkIn}>
               {customers.length ? (
                 <>
                   <select id="st-posWalkInCustomerId" name="posWalkInCustomerId" className="sp-select" value={f.posWalkInCustomerId} onChange={set("posWalkInCustomerId")} aria-describedby="st-posWalkInCustomerId-hint">
-                    <option value="">None — the cashier must choose a customer</option>
+                    <option value="">{t.settings.walkInNone}</option>
                     {customers.map((o) => (
                       <option key={o.value} value={o.value}>
                         {o.label}
@@ -304,46 +306,46 @@ export default function SettingsForm({
                     ))}
                   </select>
                   <span className="sp-hint" id="st-posWalkInCustomerId-hint">
-                    Pre-selected at the POS for anonymous sales. It must be an existing customer, and can&apos;t be deleted while selected here.
+                    {t.settings.walkInHint}
                   </span>
                 </>
               ) : (
                 <span className="sp-hint">
-                  No customers yet. <Link href="/customers/create">Create a customer</Link> first, then choose it here.
+                  {t.settings.noCustomers} <Link href="/customers/create">{t.settings.createCustomer}</Link> {t.settings.firstThenChoose}
                 </span>
               )}
             </Field>
             {unavailable("st-defaultWarehouse", "Default Warehouse", "No warehouses available yet")}
-            <Field k="country" error={e.country} label="Country" required>
+            <Field k="country" error={e.country} label={t.settings.country} required>
               {select(
                 "country",
-                "Select country",
+                t.settings.selectCountry,
                 countries.map((c) => ({ value: c.code, label: c.name })),
               )}
             </Field>
-            <Field k="state" error={e.state} label="State" required>
-              {input("state", "Enter State")}
+            <Field k="state" error={e.state} label={t.settings.state} required>
+              {input("state", t.settings.phState)}
             </Field>
-            <Field k="city" error={e.city} label="City">
-              {input("city", "Enter City")}
+            <Field k="city" error={e.city} label={t.settings.city}>
+              {input("city", t.settings.phCity)}
             </Field>
-            <Field k="postalCode" error={e.postalCode} label="Postal Code">
-              {input("postalCode", "Enter Postal Code")}
+            <Field k="postalCode" error={e.postalCode} label={t.settings.postalCode}>
+              {input("postalCode", t.settings.phPostal)}
             </Field>
-            <Field k="dateFormat" error={e.dateFormat} label="Date Format" required>
+            <Field k="dateFormat" error={e.dateFormat} label={t.settings.dateFormat} required>
               {select(
                 "dateFormat",
-                "Select date format",
+                t.settings.selectDateFormat,
                 dateFormats.map((d) => ({ value: d, label: d })),
               )}
             </Field>
-            <Field k="address" error={e.address} label="Address" className="sp-span-all">
+            <Field k="address" error={e.address} label={t.settings.address} className="sp-span-all">
               <textarea
                 id="st-address"
                 name="address"
                 className="sp-textarea "
                 rows={3}
-                placeholder="Enter Address"
+                placeholder={t.settings.addressPh}
                 value={f.address}
                 onChange={set("address")}
                 aria-invalid={!!e.address || undefined}
@@ -357,41 +359,41 @@ export default function SettingsForm({
                   checked={f.showVersionInFooter}
                   onChange={(ev) => setF({ ...f, showVersionInFooter: ev.target.checked })}
                 />
-                Show version number in footer
+                {t.settings.showVersion}
               </label>
             </div>
           </div>
           <div className="sp-form-actions">
             <button type="button" className="sp-btn sp-btn--secondary" onClick={reset} disabled={pending}>
-              Reset
+              {t.common.reset}
             </button>
             <button type="submit" className="sp-btn sp-btn--primary" disabled={pending}>
-              {pending ? "Saving…" : "Save"}
+              {pending ? t.common.saving : t.common.save}
             </button>
           </div>
         </div>
       </form>
 
       <h2 className="t-section-title" style={{ margin: "32px 0 16px" }}>
-        Appearance
+        {t.settings.appearance}
       </h2>
       <div className="sp-card" style={{ padding: 24, display: "flex", alignItems: "center", gap: 16 }}>
         <Link href="/settings/theme" className="sp-btn sp-btn--secondary">
           <Icon name="palette" size={18} />
-          Theme Settings
+          {t.settings.themeSettings}
         </Link>
-        <span className="t-caption">Customize theme colors, mode, sidebar style and border radius.</span>
+        <span className="t-caption">{t.settings.themeCaption}</span>
       </div>
 
       <h2 className="t-section-title" style={{ margin: "32px 0 16px" }}>
-        POS Cash Drawer
+        {t.settings.posDrawer}
       </h2>
       <div className="sp-card" style={{ padding: 24, display: "flex", alignItems: "center", gap: 16 }}>
         <Link href="/settings/denominations" className="sp-btn sp-btn--secondary">
           <Icon name="banknote" size={18} />
-          Cash Denominations
+          {t.settings.denominations}
         </Link>
-        <span className="t-caption">Banknotes and coins per currency, used to count the drawer when a register is closed.</span>
+        <span className="t-caption">{t.settings.denominationsCaption}</span>
       </div>
 
       <ClearCacheSection />

@@ -84,7 +84,7 @@ export async function getCurrencyOptions() {
 /** The singleton settings row, or null if it has never been saved. Deduplicated per request. */
 export const getSystemSettings = cache(async () => db.systemSettings.findUnique({ where: { id: SETTINGS_ID } }));
 
-export type ShellBranding = { name: string; logo: string | null; footerText: string; version: string | null };
+export type ShellBranding = { name: string; logo: string | null; footerText: string; /** The footer text the Owner typed (empty = use the localized default). */ footerCustom: string; version: string | null };
 
 /** Global branding from a settings row (or none), with Bluepiller fallbacks for missing values. */
 export function brandingFrom(
@@ -95,6 +95,7 @@ export function brandingFrom(
     name,
     logo: s?.companyLogo || null,
     footerText: s?.footerText?.trim() || `All Rights Reserved © 2026 ${name}`,
+    footerCustom: s?.footerText?.trim() || "",
     version: s?.showVersionInFooter ? pkg.version : null,
   };
 }

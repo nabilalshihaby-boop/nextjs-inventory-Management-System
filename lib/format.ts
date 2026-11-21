@@ -21,8 +21,9 @@ export function formatDateOnly(d: Date, dateFormat: string | null | undefined): 
 }
 
 /** "11:52 AM · 04/11/2023" — the design's Created On style. */
-export function formatDateTime(d: Date, dateFormat: string | null | undefined): string {
+export function formatDateTime(d: Date, dateFormat: string | null | undefined, locale: "en" | "ar" = "en"): string {
   const h = d.getHours();
-  const time = `${h % 12 || 12}:${pad(d.getMinutes())} ${h < 12 ? "AM" : "PM"}`;
+  const mer = locale === "ar" ? (h < 12 ? "ص" : "م") : h < 12 ? "AM" : "PM";
+  const time = `${h % 12 || 12}:${pad(d.getMinutes())} ${mer}`;
   return `${time} · ${formatDate(d, dateFormat)}`;
 }

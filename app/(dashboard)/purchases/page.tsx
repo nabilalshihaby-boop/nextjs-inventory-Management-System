@@ -8,9 +8,12 @@ import { canManagePurchases } from "@/lib/roles";
 import { getDefaultCurrency, getSystemSettings } from "@/lib/settings";
 import { paymentStatus, purchaseDue, type PurchaseRow } from "@/lib/purchases";
 import { returnedTotals } from "@/lib/purchase-return-data";
+import { getDict, getLocale } from "@/lib/i18n/server";
 import PurchasesTable from "@/components/purchases/PurchasesTable";
 
-export const metadata: Metadata = { title: "Purchases" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).purchases.list.title };
+}
 
 export const instant = false;
 
@@ -22,6 +25,7 @@ export default async function PurchasesPage() {
   if (!session?.user?.id) redirect("/");
   if (!canManagePurchases(session.user.role)) redirect("/dashboard");
 
+  const locale = await getLocale();
   const [purchases, settings, currency] = await Promise.all([
     db.purchase.findMany({
       orderBy: { number: "desc" },
@@ -45,7 +49,7 @@ export default async function PurchasesPage() {
       paid,
       due: purchaseDue(grand, paid, ret),
       paymentStatus: paymentStatus(paid, grand, ret),
-      createdOn: formatDateTime(p.createdAt, settings?.dateFormat),
+      createdOn: formatDateTime(p.createdAt, settings?.dateFormat, locale),
       currency: { code: p.currency.code, symbol: p.currency.symbol, right: !!settings?.currencyIconRight },
       inDefaultCurrency: !!currency && p.currencyId === currency.id,
     };

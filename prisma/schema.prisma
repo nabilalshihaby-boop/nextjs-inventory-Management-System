@@ -21,25 +21,26 @@ enum Role {
 }
 
 model User {
-  id             String          @id @default(cuid())
-  firstName      String
-  lastName       String
-  email          String          @unique
+  id                   String                @id @default(cuid())
+  firstName            String
+  lastName             String
+  email                String                @unique
   /// bcrypt hash only — never store a plaintext password.
-  passwordHash   String
-  phoneNumber    String
-  image          String?         @db.Text
-  role           Role            @default(USER)
+  passwordHash         String
+  phoneNumber          String
+  image                String?               @db.Text
+  role                 Role                  @default(USER)
   /// Bumped whenever all existing sessions must end (password reset/change). Every session read
   /// compares it with the value stored in the encrypted JWT (auth.ts). Never sent to the browser.
-  sessionVersion Int             @default(0)
+  sessionVersion       Int                   @default(0)
   /// bcrypt hash of the optional POS Cashier PIN (OWNER/ADMIN, set on the Profile page). Only unlocks the POS
   /// screen of an already signed-in session - never a login. Independent of passwordHash: a password change or
   /// reset leaves it untouched. Never selected into pages/responses; removed with the user row.
-  posPinHash     String?         @db.VarChar(100)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  preference     UserPreference?
+  posPinHash           String?               @db.VarChar(100)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  preference           UserPreference?
+  translationOverrides TranslationOverride[] @relation("TranslationOverrideUpdatedBy")
 
   @@map("users")
 }
@@ -47,13 +48,13 @@ model User {
 /// Currencies managed on /currencies. `code` is ISO-style: exactly 3 uppercase letters, unique
 /// regardless of case (stored uppercase; the column collation is case-insensitive as well).
 model Currency {
-  id               String            @id @default(cuid())
-  name             String            @db.VarChar(100)
-  code             String            @unique @db.Char(3)
-  symbol           String            @db.VarChar(10)
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  defaultIn        SystemSettings[]  @relation("DefaultCurrency")
+  id               String                 @id @default(cuid())
+  name             String                 @db.VarChar(100)
+  code             String                 @unique @db.Char(3)
+  symbol           String                 @db.VarChar(10)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  defaultIn        SystemSettings[]       @relation("DefaultCurrency")
   cashBankAccounts CashBankAccount[]
   purchases        Purchase[]
   purchaseReturns  PurchaseReturn[]
@@ -669,31 +670,31 @@ enum CashBankTransactionType {
 /// the current balance is always openingBalance + deposits − withdrawals − transfers out +
 /// transfers in, computed from CashBankTransaction rows. Accounts are deactivated, never deleted.
 model CashBankAccount {
-  id               String                @id @default(cuid())
+  id               String                 @id @default(cuid())
   /// Unique (case-insensitive column collation).
-  name             String                @unique @db.VarChar(120)
+  name             String                 @unique @db.VarChar(120)
   type             CashBankAccountType
   /// Bank: account number (required). Cash: optional register/reference code.
-  reference        String?               @db.VarChar(64)
+  reference        String?                @db.VarChar(64)
   /// Required for BANK accounts, null for CASH.
-  bankName         String?               @db.VarChar(120)
+  bankName         String?                @db.VarChar(120)
   /// The System Settings default currency at creation time (read-only afterwards).
   currencyId       String
-  currency         Currency              @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  currency         Currency               @relation(fields: [currencyId], references: [id], onDelete: Restrict)
   /// Set once on creation; never edited.
-  openingBalance   Decimal               @db.Decimal(14, 2)
-  status           CashBankAccountStatus @default(ACTIVE)
-  notes            String?               @db.Text
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
-  transactions     CashBankTransaction[] @relation("CashBankSource")
-  transfersIn      CashBankTransaction[] @relation("CashBankDestination")
+  openingBalance   Decimal                @db.Decimal(14, 2)
+  status           CashBankAccountStatus  @default(ACTIVE)
+  notes            String?                @db.Text
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  transactions     CashBankTransaction[]  @relation("CashBankSource")
+  transfersIn      CashBankTransaction[]  @relation("CashBankDestination")
   expenses         Expense[]
   supplierPayments SupplierPayment[]
   customerPayments CustomerPayment[]
-  registerSessions  CashRegisterSession[]
-  movementsFrom     CashRegisterMovement[]        @relation("RegisterMovementFrom")
-  movementsTo       CashRegisterMovement[]        @relation("RegisterMovementTo")
+  registerSessions CashRegisterSession[]
+  movementsFrom    CashRegisterMovement[] @relation("RegisterMovementFrom")
+  movementsTo      CashRegisterMovement[] @relation("RegisterMovementTo")
 
   @@map("cash_bank_accounts")
 }
@@ -729,7 +730,7 @@ model CashBankTransaction {
   /// Set (at creation only) on the one DEPOSIT produced by a customer payment.
   customerPaymentId    String?                 @unique
   customerPayment      CustomerPayment?        @relation("CustomerPaymentLedger", fields: [customerPaymentId], references: [id], onDelete: Restrict)
-  registerMovement      CashRegisterMovement?
+  registerMovement     CashRegisterMovement?
   createdAt            DateTime                @default(now())
 
   @@index([expenseId])
@@ -745,12 +746,32 @@ model UserPreference {
   id        String   @id @default(cuid())
   userId    String   @unique
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  /// Validated ThemeState JSON (see lib/theme.ts).
-  theme     Json
+  /// Validated ThemeState JSON (see lib/theme.ts). Null when the user only saved a language.
+  theme     Json?
+  /// The user's UI language ("en" | "ar"); null = no choice yet (cookie / English default apply).
+  locale    String?  @db.VarChar(5)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("user_preferences")
+}
+
+/// Owner-managed Arabic text overrides. English is never stored; the default Arabic lives in code (ar.ts).
+/// `key` is a stable dictionary path validated against the server-owned catalog (lib/i18n/catalog.ts).
+model TranslationOverride {
+  id          String   @id @default(cuid())
+  locale      String   @db.VarChar(5)
+  key         String   @db.VarChar(120)
+  text        String   @db.VarChar(1000)
+  /// Audit only: kept (set NULL) when the user is deleted.
+  updatedById String?
+  updatedBy   User?    @relation("TranslationOverrideUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([locale, key])
+  @@index([updatedById])
+  @@map("translation_overrides")
 }
 
 /// Global system settings: a singleton row (id is always 1), edited by administrators on /settings.
@@ -1100,24 +1121,24 @@ enum PosHeldOrderStatus {
 }
 
 model PosHeldOrder {
-  id                String             @id @default(cuid())
+  id                String               @id @default(cuid())
   /// MySQL AUTO_INCREMENT: concurrency-safe and never reused (gaps are possible).
-  number            Int                @unique @default(autoincrement())
+  number            Int                  @unique @default(autoincrement())
   /// "HO_000001" — generated server-side from `number`.
-  reference         String             @unique @db.VarChar(20)
+  reference         String               @unique @db.VarChar(20)
   /// Idempotency key of the Hold action: a double-clicked / retried Hold creates one order only.
-  holdKey           String             @unique @db.VarChar(64)
-  createdById       String             @db.VarChar(191)
-  status            PosHeldOrderStatus @default(HELD)
-  customerId        String?            @db.VarChar(191)
-  warehouseId       String?            @db.VarChar(191)
-  cashBankAccountId String?            @db.VarChar(191)
-  paymentMethod     String?            @db.VarChar(32)
-  notes             String?            @db.Text
+  holdKey           String               @unique @db.VarChar(64)
+  createdById       String               @db.VarChar(191)
+  status            PosHeldOrderStatus   @default(HELD)
+  customerId        String?              @db.VarChar(191)
+  warehouseId       String?              @db.VarChar(191)
+  cashBankAccountId String?              @db.VarChar(191)
+  paymentMethod     String?              @db.VarChar(32)
+  notes             String?              @db.Text
   /// Set when a POS checkout consumed this order (the resulting sale).
-  consumedSaleId    String?            @unique @db.VarChar(191)
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  consumedSaleId    String?              @unique @db.VarChar(191)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
   items             PosHeldOrderItem[]
   /// Draft payment rows (split payment). Orders held before split payments existed have none and
   /// carry the single account/method in the legacy columns above: they resume as ONE tender.
@@ -1171,26 +1192,26 @@ enum CashRegisterStatus {
 }
 
 model CashRegisterSession {
-  id                String             @id @default(cuid())
+  id                String                 @id @default(cuid())
   /// MySQL AUTO_INCREMENT: concurrency-safe and never reused (gaps are possible).
-  number            Int                @unique @default(autoincrement())
+  number            Int                    @unique @default(autoincrement())
   /// "RS_000001" - generated server-side from `number`.
-  reference         String             @unique @db.VarChar(20)
+  reference         String                 @unique @db.VarChar(20)
   cashBankAccountId String
-  cashBankAccount   CashBankAccount    @relation(fields: [cashBankAccountId], references: [id], onDelete: Restrict)
-  status            CashRegisterStatus @default(OPEN)
-  openAccountKey    String?            @unique @db.VarChar(191)
-  openingCash       Decimal            @db.Decimal(14, 2)
-  openedAt          DateTime           @default(now())
-  openedById        String             @db.VarChar(191)
-  openingNotes      String?            @db.Text
+  cashBankAccount   CashBankAccount        @relation(fields: [cashBankAccountId], references: [id], onDelete: Restrict)
+  status            CashRegisterStatus     @default(OPEN)
+  openAccountKey    String?                @unique @db.VarChar(191)
+  openingCash       Decimal                @db.Decimal(14, 2)
+  openedAt          DateTime               @default(now())
+  openedById        String                 @db.VarChar(191)
+  openingNotes      String?                @db.Text
   closedAt          DateTime?
-  closedById        String?            @db.VarChar(191)
+  closedById        String?                @db.VarChar(191)
   /// Final snapshot, written once at close.
-  closingCash       Decimal?           @db.Decimal(14, 2)
-  expectedCash      Decimal?           @db.Decimal(14, 2)
-  difference        Decimal?           @db.Decimal(14, 2)
-  closingNotes      String?            @db.Text
+  closingCash       Decimal?               @db.Decimal(14, 2)
+  expectedCash      Decimal?               @db.Decimal(14, 2)
+  difference        Decimal?               @db.Decimal(14, 2)
+  closingNotes      String?                @db.Text
   tenders           CustomerPayment[]
   movements         CashRegisterMovement[]
   /// Immutable cash-count snapshot taken when the session was closed with denomination counting.

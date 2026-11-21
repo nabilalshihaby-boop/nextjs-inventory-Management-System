@@ -1,4 +1,6 @@
 // Server-only loaders for the Expenses pages (OWNER/ADMIN — callers check the role first).
+import { fmt } from "@/lib/i18n/config";
+import type { Dictionary } from "@/lib/i18n";
 import { db } from "@/lib/db";
 import { computeBalances } from "@/lib/cash-bank-server";
 import { formatMoney } from "@/lib/money";
@@ -17,7 +19,7 @@ export type ExpenseFormData = {
  * computed balance; only active accounts in the default currency are selectable. Display only —
  * the server re-checks everything (under the account lock) when saving.
  */
-export async function getExpenseFormData(): Promise<ExpenseFormData> {
+export async function getExpenseFormData(T: Dictionary): Promise<ExpenseFormData> {
   const [warehouses, categories, accounts, currency] = await Promise.all([
     db.warehouse.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.expenseCategory.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
@@ -32,7 +34,8 @@ export async function getExpenseFormData(): Promise<ExpenseFormData> {
       const balance = balances.get(a.id)?.toFixed(2) ?? "0.00";
       return {
         value: a.id,
-        label: `${a.name} — ${formatMoney(balance, { code: a.currency.code, symbol: a.currency.symbol, right: !!currency?.right })} available`,
+                name: a.name,
+        label: fmt(T.expenses.form.accountOption, { name: a.name, balance: formatMoney(balance, { code: a.currency.code, symbol: a.currency.symbol, right: !!currency?.right }) }),
         balance,
         active: a.status === "ACTIVE",
         inDefaultCurrency: !!currency && a.currencyId === currency.id,

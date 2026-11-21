@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 // Cashier PIN rules (client + server). A PIN only unlocks the POS screen of an already signed-in session.
+// Validation messages are dictionary keys ("pin.digits" ...) translated by the action in the user language.
 // The plain PIN is only ever held in memory while it is typed and hashed (bcrypt) on the server.
 
 const DIGITS = /^\d{4,8}$/;
@@ -14,20 +15,20 @@ export function isWeakPin(pin: string): boolean {
 }
 
 export const pinValue = z
-  .string({ error: "PIN is required" })
-  .refine((v) => DIGITS.test(v), "The PIN must be 4 to 8 digits (numbers only)")
-  .refine((v) => !DIGITS.test(v) || !isWeakPin(v), "That PIN is too easy to guess (no repeated or sequential digits like 1111 or 1234)");
+  .string({ error: "pin.required" })
+  .refine((v) => DIGITS.test(v), "pin.digits")
+  .refine((v) => !DIGITS.test(v) || !isWeakPin(v), "pin.weak");
 
 export const setPinSchema = z
   .object({
-    currentPassword: z.string({ error: "Current password is required" }).min(1, "Current password is required").max(200),
+    currentPassword: z.string({ error: "pin.pwRequired" }).min(1, "pin.pwRequired").max(200),
     pin: pinValue,
-    confirmPin: z.string({ error: "Confirm the PIN" }).min(1, "Confirm the PIN"),
+    confirmPin: z.string({ error: "pin.confirmRequired" }).min(1, "pin.confirmRequired"),
   })
   .strict()
-  .refine((v) => v.pin === v.confirmPin, { path: ["confirmPin"], message: "The PINs do not match" });
+  .refine((v) => v.pin === v.confirmPin, { path: ["confirmPin"], message: "pin.mismatch" });
 
-export const clearPinSchema = z.object({ currentPassword: z.string({ error: "Current password is required" }).min(1, "Current password is required").max(200) }).strict();
+export const clearPinSchema = z.object({ currentPassword: z.string({ error: "pin.pwRequired" }).min(1, "pin.pwRequired").max(200) }).strict();
 
 /** Unlock payloads: no user id, role, email or hash is ever accepted from the client. */
 export const unlockPinSchema = z.object({ pin: z.string().min(1).max(32) }).strict();

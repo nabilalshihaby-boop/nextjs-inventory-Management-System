@@ -7,6 +7,8 @@ import { getGlobalTheme, getShellBranding } from "@/lib/settings";
 import { DEFAULT_THEME } from "@/lib/theme";
 import ThemeSettingsForm from "@/components/settings/ThemeSettingsForm";
 import ClearCacheSection from "@/components/settings/ClearCacheSection";
+import LanguageSwitch from "@/components/i18n/LanguageSwitch";
+import { getDict } from "@/lib/i18n/server";
 
 export const metadata: Metadata = { title: "Appearance & Cache" };
 
@@ -24,10 +26,18 @@ export default async function PreferencesPage() {
     getGlobalTheme(),
     getShellBranding(),
   ]);
+  const t = await getDict();
   const organization = global ?? DEFAULT_THEME; // what "Reset to organization default" returns to
 
   return (
     <ThemeSettingsForm variant="personal" saved={personal ?? organization} defaults={organization} brandName={brand.name}>
+      <h2 className="t-section-title" style={{ margin: "32px 0 16px" }}>
+        {t.prefs.languageTitle}
+      </h2>
+      <div className="sp-card" style={{ padding: 24, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+        <LanguageSwitch />
+        <span className="t-caption">{t.prefs.languageHelp}</span>
+      </div>
       <ClearCacheSection />
     </ThemeSettingsForm>
   );

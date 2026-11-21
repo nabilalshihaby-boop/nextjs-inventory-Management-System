@@ -10,9 +10,12 @@ import Pagination, { paginate } from "@/components/ui/Pagination";
 import RowMenu from "@/components/ui/RowMenu";
 import { deleteQuotation } from "@/app/(dashboard)/quotations/actions";
 import { convertQuotationToSale } from "@/app/(dashboard)/sales/actions";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
+import { tr } from "@/lib/i18n/messages";
 import { formatMoney } from "@/lib/money";
 import { fromUnits, toUnits } from "@/lib/transfers";
-import { QUOTATION_PDF_SOON, convertBlockedReason, QUOTATION_STATUSES, QUOTATION_STATUS_LABEL, QUOTATION_STATUS_TONE, isEditable, type QuotationCurrency, type QuotationRow, type QuotationStatusValue } from "@/lib/quotations";
+import { convertBlockedReason, QUOTATION_STATUSES, QUOTATION_STATUS_TONE, isEditable, type QuotationCurrency, type QuotationRow, type QuotationStatusValue } from "@/lib/quotations";
 
 // Port of design/Quotations.html: TableToolbar (search, Filter, date, Create Quotation), DataTable
 // (Reference / Customer / Warehouse / Status / Grand Total / Created On) with a Grand Total footer, the
@@ -23,6 +26,9 @@ import { QUOTATION_PDF_SOON, convertBlockedReason, QUOTATION_STATUSES, QUOTATION
 
 export default function QuotationsTable({ rows, customers, currency }: { rows: QuotationRow[]; customers: { id: string; name: string }[]; currency: QuotationCurrency | null }) {
   const router = useRouter();
+  const T = useT();
+  const Q = T.quotations;
+  const L = Q.list;
   const [q, setQ] = useState("");
   const [date, setDate] = useState("");
   const [showFilters, setShowFilters] = useState(false);
@@ -36,7 +42,7 @@ export default function QuotationsTable({ rows, customers, currency }: { rows: Q
   const needle = q.trim().toLowerCase();
   const filtered = rows.filter(
     (r) =>
-      (!needle || [r.reference, r.customer, r.warehouse, QUOTATION_STATUS_LABEL[r.status]].join(" ").toLowerCase().includes(needle)) &&
+      (!needle || [r.reference, r.customer, r.warehouse, Q.status[r.status]].join(" ").toLowerCase().includes(needle)) &&
       (!date || r.date === date) &&
       (status === "ALL" || r.status === status) &&
       (customer === "ALL" || r.customerId === customer),
@@ -70,7 +76,7 @@ export default function QuotationsTable({ rows, customers, currency }: { rows: Q
         router.push(r.id ? `/sales/${encodeURIComponent(r.id)}` : "/sales");
         router.refresh();
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "quotation" });
+        toast.error(T.common.somethingWrong, { id: "quotation" });
       }
     });
   }
@@ -86,7 +92,7 @@ export default function QuotationsTable({ rows, customers, currency }: { rows: Q
         toast.success(r.message, { id: "quotation" });
         router.refresh();
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "quotation" });
+        toast.error(T.common.somethingWrong, { id: "quotation" });
       }
     });
   }
@@ -96,18 +102,18 @@ export default function QuotationsTable({ rows, customers, currency }: { rows: Q
       <div className="sp-toolbar">
         <div className="sp-group">
           <Icon name="search" size={18} className="sp-input-icon" />
-          <input className="sp-input " placeholder="Search" aria-label="Search quotations" value={q} onChange={(e) => reset(() => setQ(e.target.value))} />
+          <input className="sp-input " placeholder={L.search} aria-label={L.searchAria} value={q} onChange={(e) => reset(() => setQ(e.target.value))} />
         </div>
         <div className="sp-grow" />
-        <button type="button" className={"sp-btn sp-btn--icon " + (showFilters || activeFilters ? "sp-btn--primary" : "sp-btn--secondary")} aria-label={activeFilters ? `Filter (${activeFilters} active)` : "Filter"} aria-expanded={showFilters} onClick={() => setShowFilters(!showFilters)}>
+        <button type="button" className={"sp-btn sp-btn--icon " + (showFilters || activeFilters ? "sp-btn--primary" : "sp-btn--secondary")} aria-label={activeFilters ? fmt(L.filterActive, { n: activeFilters }) : L.filter} aria-expanded={showFilters} onClick={() => setShowFilters(!showFilters)}>
           <Icon name="filter" size={18} />
         </button>
         <div style={{ width: 240 }}>
-          <input type="date" className="sp-input " aria-label="Select Date" title="Show quotations dated on this day" value={date} onChange={(e) => reset(() => setDate(e.target.value))} />
+          <input type="date" className="sp-input " aria-label={L.dateAria} title={L.dateTitle} value={date} onChange={(e) => reset(() => setDate(e.target.value))} />
         </div>
         <Link href="/quotations/create" className="sp-btn sp-btn--primary">
           <Icon name="plus" size={18} />
-          Create Quotation
+          {L.create}
         </Link>
       </div>
 
@@ -115,23 +121,23 @@ export default function QuotationsTable({ rows, customers, currency }: { rows: Q
         <div className="sp-card" data-testid="quotation-filters" style={{ padding: 16, marginBottom: 16, display: "flex", gap: 16, alignItems: "flex-end", flexWrap: "wrap" }}>
           <div className="sp-field" style={{ width: 200 }}>
             <label className="sp-label" htmlFor="qf-status">
-              Status
+              {L.status}
             </label>
             <select id="qf-status" className="sp-select " value={status} onChange={(e) => reset(() => setStatus(e.target.value as QuotationStatusValue | "ALL"))}>
-              <option value="ALL">All Statuses</option>
+              <option value="ALL">{L.allStatuses}</option>
               {QUOTATION_STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {QUOTATION_STATUS_LABEL[s]}
+                  {Q.status[s]}
                 </option>
               ))}
             </select>
           </div>
           <div className="sp-field" style={{ width: 240 }}>
             <label className="sp-label" htmlFor="qf-customer">
-              Customer
+              {L.customer}
             </label>
             <select id="qf-customer" className="sp-select " value={customer} onChange={(e) => reset(() => setCustomer(e.target.value))}>
-              <option value="ALL">All Customers</option>
+              <option value="ALL">{L.allCustomers}</option>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -140,7 +146,7 @@ export default function QuotationsTable({ rows, customers, currency }: { rows: Q
             </select>
           </div>
           <button type="button" className="sp-btn sp-btn--secondary" onClick={clear} disabled={!filtering}>
-            Clear filters
+            {L.clear}
           </button>
         </div>
       )}
@@ -150,13 +156,13 @@ export default function QuotationsTable({ rows, customers, currency }: { rows: Q
           <table className="sp-table">
             <thead>
               <tr>
-                <th>Reference</th>
-                <th>Customer</th>
-                <th>Warehouse</th>
-                <th>Status</th>
-                <th className="num">Grand Total</th>
-                <th>Created On</th>
-                <th className="act">Action</th>
+                <th>{L.reference}</th>
+                <th>{L.customer}</th>
+                <th>{L.warehouse}</th>
+                <th>{L.status}</th>
+                <th className="num">{L.grandTotal}</th>
+                <th>{L.createdOn}</th>
+                <th className="act">{L.action}</th>
               </tr>
             </thead>
             <tbody>
@@ -175,7 +181,7 @@ export default function QuotationsTable({ rows, customers, currency }: { rows: Q
                     <td>
                       <span className={`sp-badge sp-badge--${QUOTATION_STATUS_TONE[r.status]}`} data-status={r.status}>
                         <i />
-                        {QUOTATION_STATUS_LABEL[r.status]}
+                        {Q.status[r.status]}
                       </span>
                     </td>
                     <td className="num" data-col="total">{formatMoney(r.grandTotal, r.currency)}</td>
@@ -186,14 +192,14 @@ export default function QuotationsTable({ rows, customers, currency }: { rows: Q
                       <RowMenu
                         label={r.reference}
                         items={[
-                          { label: "View Quotation", icon: "eye", href: `/quotations/${encodeURIComponent(r.id)}` },
-                          { label: "Download PDF", icon: "file-down", disabled: QUOTATION_PDF_SOON },
+                          { label: L.viewQuotation, icon: "eye", href: `/quotations/${encodeURIComponent(r.id)}` },
+                          { label: L.downloadPdf, icon: "file-down", disabled: T.sales.pdfSoon },
                           convertBlockedReason(r.status, r.sale?.reference ?? null)
-                            ? { label: "Create Sale", icon: "shopping-cart", disabled: convertBlockedReason(r.status, r.sale?.reference ?? null)! }
-                            : { label: "Create Sale", icon: "shopping-cart", onClick: () => convert(r) },
-                          draft ? { label: "Edit Quotation", icon: "pencil", href: `/quotations/${encodeURIComponent(r.id)}/edit` } : { label: "Edit Quotation", icon: "pencil", disabled: "Only draft quotations can be edited" },
+                            ? { label: L.createSale, icon: "shopping-cart", disabled: tr(T, convertBlockedReason(r.status, r.sale?.reference ?? null)!.key, convertBlockedReason(r.status, r.sale?.reference ?? null)!.vars) }
+                            : { label: L.createSale, icon: "shopping-cart", onClick: () => convert(r) },
+                          draft ? { label: L.editQuotation, icon: "pencil", href: `/quotations/${encodeURIComponent(r.id)}/edit` } : { label: L.editQuotation, icon: "pencil", disabled: Q.block.noEdit },
                           "-",
-                          draft ? { label: "Delete Quotation", icon: "trash-2", danger: true, onClick: () => setDel(r) } : { label: "Delete Quotation", icon: "trash-2", danger: true, disabled: "Only draft quotations can be deleted" },
+                          draft ? { label: L.deleteQuotation, icon: "trash-2", danger: true, onClick: () => setDel(r) } : { label: L.deleteQuotation, icon: "trash-2", danger: true, disabled: Q.block.noDelete },
                         ]}
                       />
                     </td>
@@ -205,13 +211,13 @@ export default function QuotationsTable({ rows, customers, currency }: { rows: Q
                   <td colSpan={7} style={{ textAlign: "center", color: "var(--text-2)" }} data-testid="empty">
                     {rows.length === 0 ? (
                       <span>
-                        <b style={{ color: "var(--text-1)" }}>No quotations yet</b> — use Create Quotation to prepare an offer for a customer.
+                        <b style={{ color: "var(--text-1)" }}>{L.emptyTitle}</b> — {L.emptyHint}
                       </span>
                     ) : (
                       <span>
-                        No quotations match your search or filters.{" "}
+                        {L.emptyFiltered}{" "}
                         <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm" onClick={clear}>
-                          Clear filters
+                          {L.clear}
                         </button>
                       </span>
                     )}
@@ -222,8 +228,8 @@ export default function QuotationsTable({ rows, customers, currency }: { rows: Q
             {filtered.length > 0 && (
               <tfoot>
                 <tr data-testid="totals" style={{ fontWeight: 700 }}>
-                  <td colSpan={4} title={mixed ? "The total includes only quotations in the current default currency" : undefined}>
-                    Total{mixed ? ` (${currency?.code ?? ""} only)` : ""}
+                  <td colSpan={4} title={mixed ? L.totalMixed : undefined}>
+                    {mixed ? fmt(L.totalCur, { code: currency?.code ?? "" }) : L.total}
                   </td>
                   <td className="num" data-testid="total-amount">{formatMoney(total, currency)}</td>
                   <td colSpan={2} />
@@ -235,7 +241,7 @@ export default function QuotationsTable({ rows, customers, currency }: { rows: Q
         <Pagination page={p.current} last={p.last} pageSize={size} from={p.from} to={p.to} total={p.total} onPage={setPage} onPageSize={(n) => { setSize(n); setPage(1); }} />
       </div>
 
-      {del && <ConfirmDeleteModal itemType="quotation" itemName={del.reference} busy={pending} onCancel={() => setDel(null)} onConfirm={confirmDelete} />}
+      {del && <ConfirmDeleteModal itemType={L.deleteType} itemName={del.reference} busy={pending} onCancel={() => setDel(null)} onConfirm={confirmDelete} />}
     </>
   );
 }

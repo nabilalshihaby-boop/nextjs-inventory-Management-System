@@ -5,9 +5,12 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { canManageSystemSettings } from "@/lib/roles";
 import type { DenominationRow } from "@/lib/denominations";
+import { getDict } from "@/lib/i18n/server";
 import DenominationsManager from "@/components/settings/DenominationsManager";
 
-export const metadata: Metadata = { title: "Cash Denominations" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).denom.title };
+}
 
 export const instant = false;
 
@@ -30,8 +33,8 @@ export default async function DenominationsPage() {
     <>
       <div className="sp-page-head">
         <h1 className="t-page-title" style={{ margin: 0 }}>
-          Cash Denominations
-        </h1>
+                    {(await getDict()).denom.title}
+</h1>
         <div style={{ display: "flex", gap: 12 }} />
       </div>
       <DenominationsManager rows={list} currencies={currencies.map((c) => ({ value: c.id, label: `${c.name} (${c.code})` }))} />

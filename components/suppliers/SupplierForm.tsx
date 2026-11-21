@@ -5,6 +5,7 @@ import { useState, useTransition, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Icon from "@/components/layout/Icon";
+import { useT } from "@/components/i18n/I18nProvider";
 import { createSupplier, updateSupplier, type SupplierResult } from "@/app/(dashboard)/suppliers/actions";
 import type { SupplierField, SupplierFormValues } from "@/lib/suppliers";
 import type { CountryOption } from "@/lib/countries";
@@ -24,6 +25,9 @@ export default function SupplierForm({
   countries: CountryOption[];
 }) {
   const router = useRouter();
+  const T = useT();
+  const F = T.suppliers.form;
+  const V = T.suppliers.val;
   const editing = !!supplierId;
   const [f, setF] = useState<SupplierFormValues>(initial ?? EMPTY);
   const [e, setE] = useState<Partial<Record<SupplierField, string>>>({});
@@ -38,12 +42,12 @@ export default function SupplierForm({
   function save() {
     // Same checks as the design; the server action validates everything again with zod.
     const n: Partial<Record<SupplierField, string>> = {};
-    if (!f.name.trim()) n.name = "Name is required";
-    if (!/^\S+@\S+\.\S+$/.test(f.email.trim())) n.email = "Enter a valid email";
-    if (!f.phoneNumber.trim()) n.phoneNumber = "Phone number is required";
-    if (!f.countryCode) n.countryCode = "Country is required";
-    if (!f.city.trim()) n.city = "City is required";
-    if (!f.address.trim()) n.address = "Address is required";
+    if (!f.name.trim()) n.name = V.nameRequired;
+    if (!/^\S+@\S+\.\S+$/.test(f.email.trim())) n.email = V.emailInvalid;
+    if (!f.phoneNumber.trim()) n.phoneNumber = V.phoneRequired;
+    if (!f.countryCode) n.countryCode = V.countryRequired;
+    if (!f.city.trim()) n.city = V.cityRequired;
+    if (!f.address.trim()) n.address = V.addressRequired;
     setE(n);
     if (Object.keys(n).length) {
       toast.error(Object.values(n)[0]!, { id: "supplier" });
@@ -54,7 +58,7 @@ export default function SupplierForm({
       try {
         r = editing ? await updateSupplier(supplierId, f) : await createSupplier(f);
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "supplier" });
+        toast.error(T.common.somethingWrong, { id: "supplier" });
         return;
       }
       if (!r.ok) {
@@ -79,6 +83,7 @@ export default function SupplierForm({
         name={k}
         type={type}
         className="sp-input "
+        dir={type === "email" || type === "tel" ? "ltr" : undefined}
         placeholder={placeholder}
         value={f[k]}
         onChange={set(k)}
@@ -92,12 +97,12 @@ export default function SupplierForm({
     <>
       <div className="sp-page-head">
         <h1 className="t-page-title" style={{ margin: 0 }}>
-          {editing ? "Edit Supplier" : "Create Supplier"}
+          {editing ? F.editTitle : F.createTitle}
         </h1>
         <div style={{ display: "flex", gap: 12 }}>
           <Link href="/suppliers" className="sp-btn sp-btn--secondary">
             <Icon name="arrow-left" size={18} />
-            Back
+            {F.back}
           </Link>
         </div>
       </div>
@@ -112,12 +117,12 @@ export default function SupplierForm({
       >
         <div className="sp-card sp-form-card">
           <div className="sp-form-grid" style={{ "--cols": 2 } as CSSProperties}>
-            {field("name", "Name", "Enter Name")}
-            {field("email", "Email", "Enter Email", "email")}
-            {field("phoneNumber", "Phone Number", "Phone Number", "tel")}
+            {field("name", F.name, F.namePh)}
+            {field("email", F.email, F.emailPh, "email")}
+            {field("phoneNumber", F.phone, F.phonePh, "tel")}
             <div className={"sp-field" + (e.countryCode ? " sp-field--error" : "")}>
               <label className="sp-label" htmlFor="sp-countryCode">
-                Country<i>*</i>
+                {F.country}<i>*</i>
               </label>
               <select
                 id="sp-countryCode"
@@ -128,7 +133,7 @@ export default function SupplierForm({
                 aria-invalid={!!e.countryCode || undefined}
               >
                 <option value="" disabled>
-                  Select Country
+                  {F.countryPh}
                 </option>
                 {countries.map((c) => (
                   <option key={c.code} value={c.code}>
@@ -138,15 +143,15 @@ export default function SupplierForm({
               </select>
               {e.countryCode && <span className="sp-error">{e.countryCode}</span>}
             </div>
-            {field("city", "City", "Enter City")}
-            {field("address", "Address", "Enter Address")}
+            {field("city", F.city, F.cityPh)}
+            {field("address", F.address, F.addressPh)}
           </div>
           <div className="sp-form-actions">
             <button type="button" className="sp-btn sp-btn--secondary" onClick={() => router.push("/suppliers")} disabled={pending}>
-              Cancel
+              {F.cancel}
             </button>
             <button type="submit" className="sp-btn sp-btn--primary" disabled={!ok || pending}>
-              {pending ? "Saving…" : "Save"}
+              {pending ? F.saving : F.save}
             </button>
           </div>
         </div>

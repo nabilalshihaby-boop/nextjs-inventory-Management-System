@@ -8,6 +8,8 @@ import Icon from "@/components/layout/Icon";
 import { recordSupplierPayment, type SupplierPaymentResult } from "@/app/(dashboard)/supplier-payments/actions";
 import { PAYMENT_METHODS } from "@/lib/cash-bank";
 import { formatMoney } from "@/lib/money";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
 import { fromUnits, toUnits } from "@/lib/transfers";
 import type { PayablePurchase, PayingAccount, PaymentCurrency, SupplierPaymentField } from "@/lib/supplier-payments";
 
@@ -19,7 +21,6 @@ import type { PayablePurchase, PayingAccount, PaymentCurrency, SupplierPaymentFi
 // "Unallocated Payment" needs supplier credit and is shown disabled. Every figure here is a
 // preview — the server re-reads dues, balances and currency under locks when saving.
 const MONEY_RE = /^\d{1,12}(\.\d{1,2})?$/;
-const UNALLOCATED_SOON = "Unallocated payments (supplier credit) — coming soon";
 
 export default function SupplierPaymentForm({
   suppliers,
@@ -39,6 +40,10 @@ export default function SupplierPaymentForm({
   initialPurchase: string;
 }) {
   const router = useRouter();
+  const T = useT();
+  const C = T.supplierPay;
+  const F = C.form;
+  const meth = (m: string) => (T.sales.methods as Record<string, string>)[m] ?? m;
   const pre = payables.find((p) => p.id === initialPurchase && p.supplierId === initialSupplier);
   const [supplierId, setSupplierId] = useState(initialSupplier);
   const [date, setDate] = useState(today);
@@ -92,30 +97,30 @@ export default function SupplierPaymentForm({
 
   function lineProblem(i: PayablePurchase): string {
     const v = (alloc[i.id] ?? "").trim();
-    if (!v) return "Enter the amount to pay";
-    if (!MONEY_RE.test(v)) return "Use a number with up to 2 decimal places";
-    if (toUnits(v, 2) <= BigInt(0)) return "Must be greater than 0";
-    if (toUnits(v, 2) > toUnits(i.due, 2)) return `More than the ${money(i.due, cur(i.currencyId))} still due`;
+    if (!v) return F.problemEnter;
+    if (!MONEY_RE.test(v)) return F.problemFormat;
+    if (toUnits(v, 2) <= BigInt(0)) return F.problemPositive;
+    if (toUnits(v, 2) > toUnits(i.due, 2)) return fmt(F.problemMore, { due: money(i.due, cur(i.currencyId)) });
     return "";
   }
 
   function save() {
     const n: Partial<Record<SupplierPaymentField, string>> = {};
     const le: Record<string, string> = {};
-    if (!supplierId) n.supplierId = "Supplier is required";
-    if (!date) n.paymentDate = "Payment date is required";
-    else if (date > today) n.paymentDate = "The date can't be in the future";
-    else if (minDate && date < minDate) n.paymentDate = "The payment date can't be before the date of a selected purchase";
-    if (supplierId && !picked.length) n.allocations = invoices.length ? "Select at least one invoice to pay" : "This supplier has no unpaid purchase invoices";
+    if (!supplierId) n.supplierId = F.supplierRequired;
+    if (!date) n.paymentDate = F.dateRequired;
+    else if (date > today) n.paymentDate = F.dateFuture;
+    else if (minDate && date < minDate) n.paymentDate = F.dateBefore;
+    if (supplierId && !picked.length) n.allocations = invoices.length ? F.selectInvoice : F.noUnpaid;
     for (const i of picked) {
       const p = lineProblem(i);
       if (p) le[i.id] = p;
     }
     if (Object.keys(le).length) n.allocations = Object.values(le)[0];
-    if (pickedCurrencies.length > 1) n.allocations = "Selected invoices must use the same currency";
-    if (!accountId || !account) n.cashBankAccountId = "Select an account";
-    else if (total > toUnits(account.balance, 2)) n.cashBankAccountId = `Insufficient account balance (${money(account.balance)} available)`;
-    if (picked.length && !Object.keys(le).length && total <= BigInt(0)) n.amount = "Enter an amount greater than 0";
+    if (pickedCurrencies.length > 1) n.allocations = F.sameCurrency;
+    if (!accountId || !account) n.cashBankAccountId = F.selectAccount;
+    else if (total > toUnits(account.balance, 2)) n.cashBankAccountId = fmt(F.insufficientBalance, { balance: money(account.balance) });
+    if (picked.length && !Object.keys(le).length && total <= BigInt(0)) n.amount = F.amountPositive;
     setE(n);
     setLineErr(le);
     if (Object.keys(n).length) return void toast.error(Object.values(n)[0]!, { id: "sp" });
@@ -135,7 +140,7 @@ export default function SupplierPaymentForm({
       try {
         r = await recordSupplierPayment(payload);
       } catch {
-        return void toast.error("Something went wrong. Please try again.", { id: "sp" });
+        return void toast.error(T.common.somethingWrong, { id: "sp" });
       }
       if (!r.ok) {
         if (r.fieldErrors) setE(r.fieldErrors);
@@ -166,21 +171,21 @@ export default function SupplierPaymentForm({
     <>
       <div className="sp-page-head">
         <h1 className="t-page-title" style={{ margin: 0 }}>
-          Record Supplier Payment
+          {F.title}
         </h1>
         <Link href="/supplier-payments" className="sp-btn sp-btn--secondary">
           <Icon name="arrow-left" size={18} />
-          Back
+          {F.back}
         </Link>
       </div>
 
       {setup ? (
         <div className="sp-card sp-empty" data-testid="sp-setup">
           <Icon name={setup === "suppliers" ? "inbox" : "wallet"} size={36} />
-          <div className="t-section-title">{setup === "suppliers" ? "No suppliers yet" : "No active cash or bank account"}</div>
-          <span>{setup === "suppliers" ? "Add a supplier and record a purchase before paying it." : "A supplier payment is paid from an active cash or bank account. Create or activate one first."}</span>
+          <div className="t-section-title">{setup === "suppliers" ? F.setupSuppliersTitle : F.setupAccountsTitle}</div>
+          <span>{setup === "suppliers" ? F.setupSuppliersBody : F.setupAccountsBody}</span>
           <Link href={setup === "suppliers" ? "/suppliers/create" : "/finance/accounts"} className="sp-btn sp-btn--secondary">
-            {setup === "suppliers" ? "Add Supplier" : "Go to Cash & Bank Accounts"}
+            {setup === "suppliers" ? F.addSupplier : F.goAccounts}
           </Link>
         </div>
       ) : (
@@ -189,12 +194,12 @@ export default function SupplierPaymentForm({
             <div className="sp-form-grid" style={{ "--cols": 2 } as CSSProperties}>
               {field(
                 "supplierId",
-                "Supplier",
+                F.supplier,
                 <div style={{ display: "flex", gap: 12 }}>
                   <div style={{ flex: 1 }}>
                     <select id="sp-supplierId" className={"sp-select " + (supplierId ? "" : "sp-select--placeholder")} value={supplierId} onChange={(ev) => chooseSupplier(ev.target.value)} aria-invalid={!!e.supplierId || undefined}>
                       <option value="" disabled>
-                        Choose Supplier
+                        {F.chooseSupplier}
                       </option>
                       {suppliers.map((s) => (
                         <option key={s.id} value={s.id}>
@@ -205,35 +210,35 @@ export default function SupplierPaymentForm({
                   </div>
                   <Link href="/suppliers/create" className="sp-btn sp-btn--secondary">
                     <Icon name="plus" size={18} />
-                    Add Supplier
+                    {F.addSupplier}
                   </Link>
                 </div>,
                 { required: true },
               )}
-              {field("paymentDate", "Payment Date", <input id="sp-paymentDate" type="date" className="sp-input " min={minDate || undefined} max={today} value={date} onChange={(ev) => { setDate(ev.target.value); clearErr("paymentDate"); }} aria-invalid={!!e.paymentDate || undefined} />, { required: true })}
+              {field("paymentDate", F.paymentDate, <input id="sp-paymentDate" type="date" className="sp-input " min={minDate || undefined} max={today} value={date} onChange={(ev) => { setDate(ev.target.value); clearErr("paymentDate"); }} aria-invalid={!!e.paymentDate || undefined} />, { required: true })}
               {field(
                 "paymentMethod",
-                "Payment Method",
+                F.method,
                 <select id="sp-paymentMethod" className="sp-select " value={method} onChange={(ev) => setMethod(ev.target.value)}>
                   {PAYMENT_METHODS.map((m) => (
                     <option key={m} value={m}>
-                      {m}
+                      {meth(m)}
                     </option>
                   ))}
                 </select>,
               )}
               {field(
                 "amount",
-                "Amount",
+                F.amount,
                 <input id="sp-amount" className="sp-input " readOnly value={money(fromUnits(total, 2))} data-testid="sp-amount" aria-readonly="true" style={{ background: "var(--neutral-100)" }} />,
-                { required: true, hint: "The sum of the amounts applied to the selected invoices." },
+                { required: true, hint: F.amountHint },
               )}
               {field(
                 "cashBankAccountId",
-                "Pay From — Cash / Bank Account",
+                F.payFrom,
                 <select id="sp-cashBankAccountId" className={"sp-select " + (account ? "" : "sp-select--placeholder")} value={account ? accountId : ""} onChange={(ev) => { setAccountId(ev.target.value); clearErr("cashBankAccountId"); }} aria-invalid={!!e.cashBankAccountId || undefined}>
                   <option value="" disabled>
-                    Choose Account
+                    {F.chooseAccount}
                   </option>
                   {usable.map((a) => (
                     <option key={a.id} value={a.id}>
@@ -241,36 +246,36 @@ export default function SupplierPaymentForm({
                     </option>
                   ))}
                 </select>,
-                { required: true, hint: currencyId && !usable.length ? `No active account uses ${currency?.code ?? "this currency"}.` : "Only active accounts in the invoices' currency are listed." },
+                { required: true, hint: currencyId && !usable.length ? fmt(F.noAccount, { currency: currency?.code ?? F.thisCurrency }) : F.onlyActive },
               )}
-              {field("externalReference", "Reference / Transaction Number", <input id="sp-externalReference" className="sp-input " placeholder="Enter Reference" maxLength={64} value={extRef} onChange={(ev) => setExtRef(ev.target.value)} />)}
+              {field("externalReference", F.reference, <input id="sp-externalReference" className="sp-input " dir="ltr" placeholder={F.refPh} maxLength={64} value={extRef} onChange={(ev) => setExtRef(ev.target.value)} />)}
 
               {field(
                 "allocations",
-                "Apply Payment To",
+                F.applyTo,
                 <div className="sp-card" style={{ padding: 16, boxShadow: "none", display: "flex", flexDirection: "column", gap: 12 }} data-testid="sp-invoices">
-                  <label className="sp-check" aria-disabled="true" title={UNALLOCATED_SOON} style={{ opacity: 0.5, cursor: "not-allowed" }}>
+                  <label className="sp-check" aria-disabled="true" title={C.unallocatedSoon} style={{ opacity: 0.5, cursor: "not-allowed" }}>
                     <input type="checkbox" disabled checked={false} readOnly />
-                    Unallocated Payment <span className="t-caption">(coming soon)</span>
+                    {F.unallocated} <span className="t-caption">{F.comingSoon}</span>
                   </label>
                   {!supplierId ? (
-                    <span className="t-caption">Choose a supplier to see unpaid purchase invoices.</span>
+                    <span className="t-caption">{F.chooseToSee}</span>
                   ) : invoices.length === 0 ? (
-                    <span className="t-caption" data-testid="sp-no-invoices">This supplier has no unpaid purchase invoices.</span>
+                    <span className="t-caption" data-testid="sp-no-invoices">{F.noInvoices}</span>
                   ) : (
                     <div className="sp-table-scroll">
                       <table className="sp-table">
                         <thead>
                           <tr>
                             <th style={{ width: 40 }} />
-                            <th>Invoice</th>
-                            <th>Date</th>
-                            <th className="num">Invoice Total</th>
-                            <th className="num">Already Paid</th>
-                            <th className="num">Returned</th>
-                            <th className="num">Due</th>
-                            <th className="num" style={{ width: 180 }}>Apply</th>
-                            <th className="num">Remaining Due</th>
+                            <th>{F.colInvoice}</th>
+                            <th>{F.colDate}</th>
+                            <th className="num">{F.colTotal}</th>
+                            <th className="num">{F.colPaid}</th>
+                            <th className="num">{F.colReturned}</th>
+                            <th className="num">{F.colDue}</th>
+                            <th className="num" style={{ width: 180 }}>{F.colApply}</th>
+                            <th className="num">{F.colRemaining}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -281,12 +286,12 @@ export default function SupplierPaymentForm({
                             return (
                               <tr key={i.id} data-invoice={i.reference}>
                                 <td>
-                                  <input type="checkbox" aria-label={`Pay ${i.reference}`} checked={on} onChange={(ev) => toggle(i, ev.target.checked)} />
+                                  <input type="checkbox" aria-label={fmt(F.payAria, { ref: i.reference })} checked={on} onChange={(ev) => toggle(i, ev.target.checked)} />
                                 </td>
                                 <td>
                                   <span className="sp-code">{i.reference}</span>
                                   <div className="t-caption" style={{ marginTop: 4 }}>
-                                    {i.status}
+                                    {(T.purchases.status as Record<string, string>)[i.status] ?? i.status}
                                   </div>
                                 </td>
                                 <td>{i.dateLabel}</td>
@@ -295,7 +300,7 @@ export default function SupplierPaymentForm({
                                 <td className="num">{money(i.returned, c)}</td>
                                 <td className="num" data-col="due">{money(i.due, c)}</td>
                                 <td className="num">
-                                  <input className="sp-input" style={{ textAlign: "right" }} inputMode="decimal" aria-label={`Amount applied to ${i.reference}`} disabled={!on} value={on ? (alloc[i.id] ?? "") : ""} placeholder="0.00" onChange={(ev) => setLine(i.id, ev.target.value)} aria-invalid={!!lineErr[i.id] || undefined} />
+                                  <input className="sp-input" style={{ textAlign: "end" }} dir="ltr" inputMode="decimal" aria-label={fmt(F.amountAria, { ref: i.reference })} disabled={!on} value={on ? (alloc[i.id] ?? "") : ""} placeholder="0.00" onChange={(ev) => setLine(i.id, ev.target.value)} aria-invalid={!!lineErr[i.id] || undefined} />
                                   {lineErr[i.id] && <div className="sp-error" style={{ marginTop: 4, textAlign: "left" }}>{lineErr[i.id]}</div>}
                                 </td>
                                 <td className="num" data-col="remaining">{money(fromUnits(rem < BigInt(0) ? BigInt(0) : rem, 2), c)}</td>
@@ -308,20 +313,20 @@ export default function SupplierPaymentForm({
                   )}
                   {picked.length > 0 && (
                     <span className="t-caption" data-testid="sp-summary">
-                      Selected invoices due {money(fromUnits(dueSel, 2))}. {money(fromUnits(total, 2))} will be applied; {money(fromUnits(dueSel - total < BigInt(0) ? BigInt(0) : dueSel - total, 2))} stays due.
+                      {fmt(F.summary, { due: money(fromUnits(dueSel, 2)), applied: money(fromUnits(total, 2)), stays: money(fromUnits(dueSel - total < BigInt(0) ? BigInt(0) : dueSel - total, 2)) })}
                     </span>
                   )}
                 </div>,
                 { required: true, span: true },
               )}
-              {field("notes", "Notes", <textarea id="sp-notes" className="sp-textarea " rows={4} placeholder="Enter Notes" maxLength={2000} value={notes} onChange={(ev) => setNotes(ev.target.value)} />, { span: true })}
+              {field("notes", F.notes, <textarea id="sp-notes" className="sp-textarea " rows={4} placeholder={F.notesPh} maxLength={2000} value={notes} onChange={(ev) => setNotes(ev.target.value)} />, { span: true })}
             </div>
             <div className="sp-form-actions">
               <button type="button" className="sp-btn sp-btn--secondary" onClick={() => router.push("/supplier-payments")} disabled={pending}>
-                Cancel
+                {F.cancel}
               </button>
               <button type="submit" className="sp-btn sp-btn--primary" disabled={pending}>
-                {pending ? "Saving…" : "Save Payment"}
+                {pending ? F.saving : F.save}
               </button>
             </div>
           </div>

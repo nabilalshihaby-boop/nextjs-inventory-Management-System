@@ -4,12 +4,15 @@ import { useState, useTransition } from "react";
 import toast from "react-hot-toast";
 import { clearPosPin, setPosPin } from "@/app/(dashboard)/profile/pin-actions";
 import Icon from "@/components/layout/Icon";
+import { fmt } from "@/lib/i18n/config";
+import { useT } from "@/components/i18n/I18nProvider";
 
 // Personal POS Cashier PIN (Profile). A faster way to unlock the POS lock screen of an already signed-in
 // session - NOT a sign-in method. Requires the current account password to set, change or clear it.
 // PIN fields are masked, numeric and never autocompleted; nothing is stored in the browser, and the
 // values are cleared after every attempt. The server validates everything again.
 export default function PosPinForm({ hasPin: initial }: { hasPin: boolean }) {
+  const t = useT();
   const [hasPin, setHasPin] = useState(initial);
   const [pending, startTransition] = useTransition();
   const [pw, setPw] = useState("");
@@ -42,7 +45,7 @@ export default function PosPinForm({ hasPin: initial }: { hasPin: boolean }) {
         setHasPin(r.hasPin);
         wipe();
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "pos-pin" });
+        toast.error(t.common.somethingWrong, { id: "pos-pin" });
         wipe();
       }
     });
@@ -67,7 +70,7 @@ export default function PosPinForm({ hasPin: initial }: { hasPin: boolean }) {
           aria-describedby={errs[errKey] ? `pp-${id}-err` : undefined}
           disabled={pending}
         />
-        <button type="button" className="si-eye" aria-label={show[id] ? `Hide ${label}` : `Show ${label}`} aria-pressed={show[id]} onClick={() => toggle(id)}>
+        <button type="button" className="si-eye" aria-label={fmt(show[id] ? t.pin.hide : t.pin.show, { label })} aria-pressed={show[id]} onClick={() => toggle(id)}>
           <Icon name={show[id] ? "eye-off" : "eye"} size={18} />
         </button>
       </div>
@@ -82,7 +85,7 @@ export default function PosPinForm({ hasPin: initial }: { hasPin: boolean }) {
   return (
     <>
       <h2 className="t-section-title" style={{ margin: "32px 0 16px" }}>
-        POS Cashier PIN
+        {t.pin.section}
       </h2>
       <form
         className="sp-card sp-form-card"
@@ -94,12 +97,12 @@ export default function PosPinForm({ hasPin: initial }: { hasPin: boolean }) {
         data-testid="pos-pin-form"
       >
         <p className="t-caption" style={{ margin: "0 0 12px" }} data-testid="pos-pin-status">
-          {hasPin ? "A POS PIN is set." : "No POS PIN is set."} A PIN only unlocks the POS lock screen of your signed-in session - it is not a sign-in method. Use 4 to 8 digits (no repeated or sequential digits). Your account password is required to set, change or clear it.
+          {hasPin ? t.pin.isSet : t.pin.notSet} {t.pin.explain}
         </p>
         <div className="sp-form-grid" style={{ "--cols": 3 } as React.CSSProperties}>
-          {field("pw", "Current password", pw, setPw, "currentPassword", { autoComplete: "current-password" })}
-          {field("pin", hasPin ? "New PIN" : "PIN", pin, setPin, "pin", { numeric: true, autoComplete: "off" })}
-          {field("confirm", "Confirm PIN", confirm, setConfirm, "confirmPin", { numeric: true, autoComplete: "off" })}
+          {field("pw", t.pin.currentPassword, pw, setPw, "currentPassword", { autoComplete: "current-password" })}
+          {field("pin", hasPin ? t.pin.newPin : t.pin.pin, pin, setPin, "pin", { numeric: true, autoComplete: "off" })}
+          {field("confirm", t.pin.confirmPin, confirm, setConfirm, "confirmPin", { numeric: true, autoComplete: "off" })}
         </div>
         {errs.form && (
           <div className="sp-error" role="alert" style={{ marginTop: 8 }}>
@@ -108,11 +111,11 @@ export default function PosPinForm({ hasPin: initial }: { hasPin: boolean }) {
         )}
         <div className="sp-form-actions" style={{ marginTop: 16, display: "flex", gap: 12 }}>
           <button type="submit" className="sp-btn sp-btn--primary" data-testid="pos-pin-save" disabled={pending || !pw || !pin || !confirm}>
-            {hasPin ? "Change PIN" : "Set PIN"}
+            {hasPin ? t.pin.changePin : t.pin.setPin}
           </button>
           {hasPin && (
             <button type="button" className="sp-btn sp-btn--secondary" data-testid="pos-pin-clear" disabled={pending || !pw} onClick={() => run("clear")}>
-              Clear PIN
+              {t.pin.clearPin}
             </button>
           )}
         </div>

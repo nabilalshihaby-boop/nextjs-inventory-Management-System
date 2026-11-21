@@ -11,8 +11,11 @@ import RowMenu from "@/components/ui/RowMenu";
 import { deleteSale } from "@/app/(dashboard)/sales/actions";
 import { formatMoney } from "@/lib/money";
 import { fromUnits, toUnits } from "@/lib/transfers";
-import { PAYMENT_STATUS_LABEL, PAYMENT_STATUS_TONE } from "@/lib/purchases";
-import { SALE_PDF_SOON, SALE_STATUSES, SALE_STATUS_LABEL, SALE_STATUS_TONE, type SaleCurrency, type SaleRow, type SaleStatusValue } from "@/lib/sales";
+import { PAYMENT_STATUS_TONE } from "@/lib/purchases";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
+import { tr } from "@/lib/i18n/messages";
+import { SALE_STATUSES, SALE_STATUS_TONE, type SaleCurrency, type SaleRow, type SaleStatusValue } from "@/lib/sales";
 
 // Port of design/Sales.html: TableToolbar (search, Filter, date, Create Sale), DataTable (Reference /
 // Customer / Warehouse / Status / Grand Total / Paid / Payment Status / Payment Type / Created On) with
@@ -25,6 +28,9 @@ import { SALE_PDF_SOON, SALE_STATUSES, SALE_STATUS_LABEL, SALE_STATUS_TONE, type
 
 export default function SalesTable({ rows, customers, currency }: { rows: SaleRow[]; customers: { id: string; name: string }[]; currency: SaleCurrency | null }) {
   const router = useRouter();
+  const T = useT();
+  const S = T.sales;
+  const L = S.list;
   const [q, setQ] = useState("");
   const [date, setDate] = useState("");
   const [showFilters, setShowFilters] = useState(false);
@@ -38,7 +44,7 @@ export default function SalesTable({ rows, customers, currency }: { rows: SaleRo
   const needle = q.trim().toLowerCase();
   const filtered = rows.filter(
     (r) =>
-      (!needle || [r.reference, r.customer, r.warehouse, SALE_STATUS_LABEL[r.status], r.quotationRef ?? ""].join(" ").toLowerCase().includes(needle)) &&
+      (!needle || [r.reference, r.customer, r.warehouse, S.status[r.status], r.quotationRef ?? ""].join(" ").toLowerCase().includes(needle)) &&
       (!date || r.date === date) &&
       (status === "ALL" || r.status === status) &&
       (customer === "ALL" || r.customerId === customer),
@@ -71,7 +77,7 @@ export default function SalesTable({ rows, customers, currency }: { rows: SaleRo
         toast.success(r.message, { id: "sale" });
         router.refresh();
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "sale" });
+        toast.error(T.common.somethingWrong, { id: "sale" });
       }
     });
   }
@@ -81,18 +87,18 @@ export default function SalesTable({ rows, customers, currency }: { rows: SaleRo
       <div className="sp-toolbar">
         <div className="sp-group">
           <Icon name="search" size={18} className="sp-input-icon" />
-          <input className="sp-input " placeholder="Search" aria-label="Search sales" value={q} onChange={(e) => reset(() => setQ(e.target.value))} />
+          <input className="sp-input " placeholder={L.search} aria-label={L.searchAria} value={q} onChange={(e) => reset(() => setQ(e.target.value))} />
         </div>
         <div className="sp-grow" />
-        <button type="button" className={"sp-btn sp-btn--icon " + (showFilters || activeFilters ? "sp-btn--primary" : "sp-btn--secondary")} aria-label={activeFilters ? `Filter (${activeFilters} active)` : "Filter"} aria-expanded={showFilters} onClick={() => setShowFilters(!showFilters)}>
+        <button type="button" className={"sp-btn sp-btn--icon " + (showFilters || activeFilters ? "sp-btn--primary" : "sp-btn--secondary")} aria-label={activeFilters ? fmt(L.filterActive, { n: activeFilters }) : L.filter} aria-expanded={showFilters} onClick={() => setShowFilters(!showFilters)}>
           <Icon name="filter" size={18} />
         </button>
         <div style={{ width: 240 }}>
-          <input type="date" className="sp-input " aria-label="Select Date" title="Show sales dated on this day" value={date} onChange={(e) => reset(() => setDate(e.target.value))} />
+          <input type="date" className="sp-input " aria-label={L.dateAria} title={L.dateTitle} value={date} onChange={(e) => reset(() => setDate(e.target.value))} />
         </div>
         <Link href="/sales/create" className="sp-btn sp-btn--primary">
           <Icon name="plus" size={18} />
-          Create Sale
+          {L.create}
         </Link>
       </div>
 
@@ -100,23 +106,23 @@ export default function SalesTable({ rows, customers, currency }: { rows: SaleRo
         <div className="sp-card" data-testid="sale-filters" style={{ padding: 16, marginBottom: 16, display: "flex", gap: 16, alignItems: "flex-end", flexWrap: "wrap" }}>
           <div className="sp-field" style={{ width: 200 }}>
             <label className="sp-label" htmlFor="sf-status">
-              Status
+              {L.status}
             </label>
             <select id="sf-status" className="sp-select " value={status} onChange={(e) => reset(() => setStatus(e.target.value as SaleStatusValue | "ALL"))}>
-              <option value="ALL">All Statuses</option>
+              <option value="ALL">{L.allStatuses}</option>
               {SALE_STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {SALE_STATUS_LABEL[s]}
+                  {S.status[s]}
                 </option>
               ))}
             </select>
           </div>
           <div className="sp-field" style={{ width: 240 }}>
             <label className="sp-label" htmlFor="sf-customer">
-              Customer
+              {L.customer}
             </label>
             <select id="sf-customer" className="sp-select " value={customer} onChange={(e) => reset(() => setCustomer(e.target.value))}>
-              <option value="ALL">All Customers</option>
+              <option value="ALL">{L.allCustomers}</option>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -125,7 +131,7 @@ export default function SalesTable({ rows, customers, currency }: { rows: SaleRo
             </select>
           </div>
           <button type="button" className="sp-btn sp-btn--secondary" onClick={clear} disabled={!filtering}>
-            Clear filters
+            {L.clear}
           </button>
         </div>
       )}
@@ -135,16 +141,16 @@ export default function SalesTable({ rows, customers, currency }: { rows: SaleRo
           <table className="sp-table">
             <thead>
               <tr>
-                <th>Reference</th>
-                <th>Customer</th>
-                <th>Warehouse</th>
-                <th>Status</th>
-                <th className="num">Grand Total</th>
-                <th className="num">Paid</th>
-                <th>Payment Status</th>
-                <th>Payment Type</th>
-                <th>Created On</th>
-                <th className="act">Action</th>
+                <th>{L.reference}</th>
+                <th>{L.customer}</th>
+                <th>{L.warehouse}</th>
+                <th>{L.status}</th>
+                <th className="num">{L.grandTotal}</th>
+                <th className="num">{L.paid}</th>
+                <th>{L.paymentStatus}</th>
+                <th>{L.paymentType}</th>
+                <th>{L.createdOn}</th>
+                <th className="act">{L.action}</th>
               </tr>
             </thead>
             <tbody>
@@ -156,7 +162,7 @@ export default function SalesTable({ rows, customers, currency }: { rows: SaleRo
                       <span className="sp-code">{r.reference}</span>
                       <div className="t-caption" style={{ marginTop: 4 }}>
                         {r.dateLabel}
-                        {r.quotationRef ? ` · from ${r.quotationRef}` : ""}
+                        {r.quotationRef ? ` · ${fmt(L.fromQuotation, { ref: r.quotationRef })}` : ""}
                       </div>
                     </td>
                     <td className="primary-cell">{r.customer}</td>
@@ -164,22 +170,22 @@ export default function SalesTable({ rows, customers, currency }: { rows: SaleRo
                     <td>
                       <span className={`sp-badge sp-badge--${SALE_STATUS_TONE[r.status]}`} data-status={r.status}>
                         <i />
-                        {SALE_STATUS_LABEL[r.status]}
+                        {S.status[r.status]}
                       </span>
                     </td>
                     <td className="num" data-col="total">{formatMoney(r.grandTotal, r.currency)}</td>
-                    <td className="num" data-col="paid" title={`Due ${formatMoney(r.due, r.currency)}`}>{formatMoney(r.paid, r.currency)}</td>
+                    <td className="num" data-col="paid" title={fmt(L.dueTitle, { amount: formatMoney(r.due, r.currency) })}>{formatMoney(r.paid, r.currency)}</td>
                     <td>
-                      <span className={`sp-badge sp-badge--${PAYMENT_STATUS_TONE[r.paymentStatus]}`} data-payment={r.paymentStatus} title={r.returned !== "0.00" ? `Returned ${formatMoney(r.returned, r.currency)} · Due ${formatMoney(r.due, r.currency)}` : undefined}>
+                      <span className={`sp-badge sp-badge--${PAYMENT_STATUS_TONE[r.paymentStatus]}`} data-payment={r.paymentStatus} title={r.returned !== "0.00" ? fmt(L.returnedTitle, { returned: formatMoney(r.returned, r.currency), due: formatMoney(r.due, r.currency) }) : undefined}>
                         <i />
-                        {PAYMENT_STATUS_LABEL[r.paymentStatus]}
+                        {S.payStatus[r.paymentStatus]}
                       </span>
                     </td>
                     <td data-col="payment-type">
                       {r.paymentTypes.length ? (
                         r.paymentTypes.map((t) => (
                           <span key={t} className="sp-badge sp-badge--primary" style={{ marginRight: 4 }}>
-                            {t}
+                            {(S.methods as Record<string, string>)[t] ?? t}
                           </span>
                         ))
                       ) : (
@@ -193,13 +199,13 @@ export default function SalesTable({ rows, customers, currency }: { rows: SaleRo
                       <RowMenu
                         label={r.reference}
                         items={[
-                          { label: "View Sale", icon: "eye", href: `/sales/${encodeURIComponent(r.id)}` },
-                          { label: "Download PDF", icon: "file-down", disabled: SALE_PDF_SOON },
-                          r.paid !== "0.00" ? { label: "Show Payments", icon: "dollar-sign", href: `/customer-payments?q=${encodeURIComponent(r.reference)}` } : { label: "Show Payments", icon: "dollar-sign", disabled: "No payments recorded for this sale yet" },
-                          r.returnBlocked ? { label: "Create Sale Return", icon: "undo-2", disabled: r.returnBlocked } : { label: "Create Sale Return", icon: "undo-2", href: `/sales/returns/create?sale=${encodeURIComponent(r.id)}` },
-                          editable ? { label: "Edit Sale", icon: "pencil", href: `/sales/${encodeURIComponent(r.id)}/edit` } : { label: "Edit Sale", icon: "pencil", disabled: "Completed sales can't be edited" },
+                          { label: L.viewSale, icon: "eye", href: `/sales/${encodeURIComponent(r.id)}` },
+                          { label: L.downloadPdf, icon: "file-down", disabled: S.pdfSoon },
+                          r.paid !== "0.00" ? { label: L.showPayments, icon: "dollar-sign", href: `/customer-payments?q=${encodeURIComponent(r.reference)}` } : { label: L.showPayments, icon: "dollar-sign", disabled: S.block.noPayments },
+                          r.returnBlocked ? { label: L.createReturn, icon: "undo-2", disabled: tr(T, r.returnBlocked) } : { label: L.createReturn, icon: "undo-2", href: `/sales/returns/create?sale=${encodeURIComponent(r.id)}` },
+                          editable ? { label: L.editSale, icon: "pencil", href: `/sales/${encodeURIComponent(r.id)}/edit` } : { label: L.editSale, icon: "pencil", disabled: S.block.noEdit },
                           "-",
-                          editable ? { label: "Delete Sale", icon: "trash-2", danger: true, onClick: () => setDel(r) } : { label: "Delete Sale", icon: "trash-2", danger: true, disabled: "Completed sales can't be deleted" },
+                          editable ? { label: L.deleteSale, icon: "trash-2", danger: true, onClick: () => setDel(r) } : { label: L.deleteSale, icon: "trash-2", danger: true, disabled: S.block.noDelete },
                         ]}
                       />
                     </td>
@@ -211,13 +217,13 @@ export default function SalesTable({ rows, customers, currency }: { rows: SaleRo
                   <td colSpan={10} style={{ textAlign: "center", color: "var(--text-2)" }} data-testid="empty">
                     {rows.length === 0 ? (
                       <span>
-                        <b style={{ color: "var(--text-1)" }}>No sales yet</b> — use Create Sale to record a sale to a customer.
+                        <b style={{ color: "var(--text-1)" }}>{L.emptyTitle}</b> — {L.emptyHint}
                       </span>
                     ) : (
                       <span>
-                        No sales match your search or filters.{" "}
+                        {L.emptyFiltered}{" "}
                         <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm" onClick={clear}>
-                          Clear filters
+                          {L.clear}
                         </button>
                       </span>
                     )}
@@ -228,8 +234,8 @@ export default function SalesTable({ rows, customers, currency }: { rows: SaleRo
             {filtered.length > 0 && (
               <tfoot>
                 <tr data-testid="totals" style={{ fontWeight: 700 }}>
-                  <td colSpan={4} title={mixed ? "Totals include only sales in the current default currency" : undefined}>
-                    Total{mixed ? ` (${currency?.code ?? ""} only)` : ""}
+                  <td colSpan={4} title={mixed ? L.totalMixed : undefined}>
+                    {mixed ? fmt(L.totalCur, { code: currency?.code ?? "" }) : L.total}
                   </td>
                   <td className="num" data-testid="total-grand">{formatMoney(sum("grandTotal"), currency)}</td>
                   <td className="num" data-testid="total-paid">{formatMoney(sum("paid"), currency)}</td>
@@ -242,7 +248,7 @@ export default function SalesTable({ rows, customers, currency }: { rows: SaleRo
         <Pagination page={p.current} last={p.last} pageSize={size} from={p.from} to={p.to} total={p.total} onPage={setPage} onPageSize={(n) => { setSize(n); setPage(1); }} />
       </div>
 
-      {del && <ConfirmDeleteModal itemType="sale" itemName={del.reference} busy={pending} onCancel={() => setDel(null)} onConfirm={confirmDelete} />}
+      {del && <ConfirmDeleteModal itemType={L.deleteType} itemName={del.reference} busy={pending} onCancel={() => setDel(null)} onConfirm={confirmDelete} />}
     </>
   );
 }

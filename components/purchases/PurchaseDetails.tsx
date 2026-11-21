@@ -7,7 +7,9 @@ import toast from "react-hot-toast";
 import Icon, { type IconName } from "@/components/layout/Icon";
 import Modal from "@/components/ui/Modal";
 import { markPurchaseReceived } from "@/app/(dashboard)/purchases/actions";
-import { PAYMENT_STATUS_LABEL, PAYMENT_STATUS_TONE, PURCHASE_STATUS_LABEL, PURCHASE_STATUS_TONE, type PaymentStatusValue, type PurchaseStatusValue } from "@/lib/purchases";
+import { PAYMENT_STATUS_TONE, PURCHASE_STATUS_TONE, type PaymentStatusValue, type PurchaseStatusValue } from "@/lib/purchases";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
 
 // Port of design/Purchase Details.html: PageHeader (+ Back), card with "Purchase Details : <ref>",
 // Supplier Info / Company Info / Purchase Info bands, Order Summary table and the totals summary.
@@ -41,15 +43,18 @@ type Details = {
 };
 type Party = { name: string; email: string; phone: string; address: string };
 
-const L = ({ i, children }: { i: IconName; children: React.ReactNode }) => (
+// `d`: ltr for emails/phones, auto for names/addresses (keeps them readable inside Arabic pages).
+const L = ({ i, d = "auto", children }: { i: IconName; d?: "ltr" | "auto"; children: React.ReactNode }) => (
   <span>
     <Icon name={i} size={16} className="sp-icon" />
-    {children}
+    <bdi dir={d}>{children}</bdi>
   </span>
 );
 
 export default function PurchaseDetails({ purchase: p, supplier, company }: { purchase: Details; supplier: Party; company: Party }) {
   const router = useRouter();
+  const T = useT();
+  const D = T.purchases.details;
   const [confirm, setConfirm] = useState(false);
   const [pending, startTransition] = useTransition();
   const receivable = p.status !== "RECEIVED";
@@ -63,7 +68,7 @@ export default function PurchaseDetails({ purchase: p, supplier, company }: { pu
         else toast.success(r.message, { id: "purchase" });
         router.refresh();
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "purchase" });
+        toast.error(T.common.somethingWrong, { id: "purchase" });
       }
     });
   }
@@ -72,29 +77,29 @@ export default function PurchaseDetails({ purchase: p, supplier, company }: { pu
     <>
       <div className="sp-page-head">
         <h1 className="t-page-title" style={{ margin: 0 }}>
-          Purchase Details
+          {D.title}
         </h1>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <Link href="/purchases" className="sp-btn sp-btn--secondary">
             <Icon name="arrow-left" size={18} />
-            Back
+            {D.back}
           </Link>
           {receivable && (
             <button type="button" className="sp-btn sp-btn--primary" onClick={() => setConfirm(true)}>
               <Icon name="package-plus" size={18} />
-              Mark as Received
+              {D.markReceived}
             </button>
           )}
           {p.canReturn && (
             <Link href={`/purchases/returns/create?purchase=${encodeURIComponent(p.id)}`} className="sp-btn sp-btn--secondary">
               <Icon name="arrow-left-right" size={18} />
-              Return Items
+              {D.returnItems}
             </Link>
           )}
           {p.canPay && (
             <Link href={`/supplier-payments/record?purchase=${encodeURIComponent(p.id)}`} className="sp-btn sp-btn--secondary">
               <Icon name="wallet" size={18} />
-              Record Payment
+              {D.recordPayment}
             </Link>
           )}
         </div>
@@ -102,59 +107,59 @@ export default function PurchaseDetails({ purchase: p, supplier, company }: { pu
 
       <div className="sp-card" style={{ padding: 32 }} data-testid="purchase-details">
         <h2 className="t-section-title" style={{ textAlign: "center", margin: "0 0 24px" }}>
-          Purchase Details : {p.reference}
+          {fmt(D.headline, { ref: p.reference })}
         </h2>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 24 }}>
           <div data-testid="supplier-info">
-            <div className="sp-band">Supplier Info</div>
+            <div className="sp-band">{D.supplierInfo}</div>
             <div className="sp-info">
               <L i="user">{supplier.name}</L>
-              <L i="mail">{supplier.email}</L>
-              <L i="smartphone">{supplier.phone}</L>
+              <L i="mail" d="ltr">{supplier.email}</L>
+              <L i="smartphone" d="ltr">{supplier.phone}</L>
               <L i="map-pin">{supplier.address}</L>
             </div>
           </div>
           <div data-testid="company-info">
-            <div className="sp-band">Company Info</div>
+            <div className="sp-band">{D.companyInfo}</div>
             <div className="sp-info">
               <L i="user">{company.name}</L>
-              <L i="mail">{company.email}</L>
-              <L i="smartphone">{company.phone}</L>
+              <L i="mail" d="ltr">{company.email}</L>
+              <L i="smartphone" d="ltr">{company.phone}</L>
               <L i="map-pin">{company.address}</L>
             </div>
           </div>
           <div data-testid="purchase-info">
-            <div className="sp-band">Purchase Info</div>
+            <div className="sp-band">{D.purchaseInfo}</div>
             <div className="sp-info">
               <span>
-                Reference : <b style={{ fontWeight: 600 }}>{p.reference}</b>
+                {D.reference} : <b style={{ fontWeight: 600 }} dir="ltr">{p.reference}</b>
               </span>
               <span>
-                Status :{" "}
+                {D.status} :{" "}
                 <span className={`sp-badge sp-badge--${PURCHASE_STATUS_TONE[p.status]}`} data-status={p.status}>
                   <i />
-                  {PURCHASE_STATUS_LABEL[p.status]}
+                  {T.purchases.status[p.status]}
                 </span>
               </span>
               <span>
-                Warehouse : <b style={{ fontWeight: 600 }}>{p.warehouse}</b>
+                {D.warehouse} : <b style={{ fontWeight: 600 }}>{p.warehouse}</b>
               </span>
               <span>
-                Date : <b style={{ fontWeight: 600 }}>{p.date}</b>
+                {D.date} : <b style={{ fontWeight: 600 }}>{p.date}</b>
               </span>
               <span>
-                Payment Status :{" "}
+                {D.paymentStatus} :{" "}
                 <span className={`sp-badge sp-badge--${PAYMENT_STATUS_TONE[p.paymentStatus]}`} data-payment={p.paymentStatus}>
                   <i />
-                  {PAYMENT_STATUS_LABEL[p.paymentStatus]}
+                  {T.sales.payStatus[p.paymentStatus]}
                 </span>
               </span>
               <span>
-                Paid : <b style={{ fontWeight: 600 }}>{p.paid}</b> · Due : <b style={{ fontWeight: 600 }}>{p.due}</b>
+                {D.paid} : <b style={{ fontWeight: 600 }}>{p.paid}</b> · {D.due} : <b style={{ fontWeight: 600 }}>{p.due}</b>
               </span>
               {p.returns.length > 0 && (
                 <span>
-                  Returned : <b style={{ fontWeight: 600 }}>{p.returned}</b>
+                  {D.returned} : <b style={{ fontWeight: 600 }}>{p.returned}</b>
                 </span>
               )}
             </div>
@@ -162,20 +167,20 @@ export default function PurchaseDetails({ purchase: p, supplier, company }: { pu
         </div>
 
         <div className="sp-band" style={{ margin: "32px 0 16px" }}>
-          Order Summary
+          {D.orderSummary}
         </div>
         <div className="sp-table-card" style={{ boxShadow: "none" }}>
           <div className="sp-table-scroll">
             <table className="sp-table" data-testid="order-summary">
               <thead>
                 <tr>
-                  <th>Product</th>
-                  <th className="num">Net Unit Cost</th>
-                  <th className="num">Quantity</th>
-                  <th className="num">Unit Cost</th>
-                  <th className="num">Discount</th>
-                  <th className="num">Tax</th>
-                  <th className="num">Subtotal</th>
+                  <th>{D.colProduct}</th>
+                  <th className="num">{D.colNet}</th>
+                  <th className="num">{D.colQuantity}</th>
+                  <th className="num">{D.colUnitCost}</th>
+                  <th className="num">{D.colDiscount}</th>
+                  <th className="num">{D.colTax}</th>
+                  <th className="num">{D.colSubtotal}</th>
                 </tr>
               </thead>
               <tbody>
@@ -197,19 +202,19 @@ export default function PurchaseDetails({ purchase: p, supplier, company }: { pu
 
         <div className="sp-sum" style={{ marginTop: 32 }} data-testid="details-summary">
           <div>
-            <span>Order Tax</span>
+            <span>{D.orderTax}</span>
             <span>{p.orderTax}</span>
           </div>
           <div>
-            <span>Discount</span>
+            <span>{D.discount}</span>
             <span>{p.discount}</span>
           </div>
           <div>
-            <span>Shipping</span>
+            <span>{D.shipping}</span>
             <span>{p.shipping}</span>
           </div>
           <div>
-            <span>Grand Total</span>
+            <span>{D.grandTotal}</span>
             <span data-testid="details-grand">{p.grandTotal}</span>
           </div>
         </div>
@@ -217,15 +222,15 @@ export default function PurchaseDetails({ purchase: p, supplier, company }: { pu
         {p.returns.length > 0 && (
           <>
             <div className="sp-band" style={{ margin: "32px 0 16px" }}>
-              Purchase Returns
+              {D.purchaseReturns}
             </div>
             <div className="sp-table-card" style={{ boxShadow: "none" }}>
               <table className="sp-table" data-testid="purchase-returns">
                 <thead>
                   <tr>
-                    <th>Reference</th>
-                    <th>Date</th>
-                    <th className="num">Grand Total</th>
+                    <th>{D.colReference}</th>
+                    <th>{D.colDate}</th>
+                    <th className="num">{D.grandTotal}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -249,17 +254,17 @@ export default function PurchaseDetails({ purchase: p, supplier, company }: { pu
         {p.payments.length > 0 && (
           <>
             <div className="sp-band" style={{ margin: "32px 0 16px" }}>
-              Supplier Payments
+              {D.supplierPayments}
             </div>
             <div className="sp-table-card" style={{ boxShadow: "none" }}>
               <table className="sp-table" data-testid="purchase-payments">
                 <thead>
                   <tr>
-                    <th>Reference</th>
-                    <th>Date</th>
-                    <th>Method</th>
-                    <th>Paid From</th>
-                    <th className="num">Applied</th>
+                    <th>{D.colReference}</th>
+                    <th>{D.colDate}</th>
+                    <th>{D.colMethod}</th>
+                    <th>{D.colPaidFrom}</th>
+                    <th className="num">{D.colApplied}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -269,7 +274,7 @@ export default function PurchaseDetails({ purchase: p, supplier, company }: { pu
                         <span className="sp-code">{r.reference}</span>
                       </td>
                       <td>{r.date}</td>
-                      <td>{r.method}</td>
+                      <td>{(T.sales.methods as Record<string, string>)[r.method] ?? r.method}</td>
                       <td>{r.account}</td>
                       <td className="num">{r.amount}</td>
                     </tr>
@@ -281,31 +286,29 @@ export default function PurchaseDetails({ purchase: p, supplier, company }: { pu
         )}
 
         <div className="t-caption" style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 4 }}>
-          <span>
-            Created by {p.createdBy} · {p.createdOn}
-          </span>
-          {p.receivedOn ? <span>Stock received {p.receivedOn}</span> : <span>Stock not received yet — no quantities have been added to {p.warehouse}.</span>}
-          {p.notes && <span>Notes: {p.notes}</span>}
+          <span>{fmt(D.createdBy, { by: p.createdBy, on: p.createdOn })}</span>
+          {p.receivedOn ? <span>{fmt(D.receivedLine, { on: p.receivedOn })}</span> : <span>{fmt(D.notReceived, { warehouse: p.warehouse })}</span>}
+          {p.notes && <span>{fmt(D.notesLine, { notes: p.notes })}</span>}
         </div>
       </div>
 
       {confirm && (
         <Modal
-          title={`Receive ${p.reference}?`}
+          title={fmt(D.confirmTitle, { ref: p.reference })}
           onClose={() => !pending && setConfirm(false)}
           footer={
             <>
               <button type="button" className="sp-btn sp-btn--secondary" onClick={() => setConfirm(false)} disabled={pending}>
-                Cancel
+                {D.cancel}
               </button>
               <button type="button" className="sp-btn sp-btn--primary" onClick={receive} disabled={pending}>
-                {pending ? "Saving…" : "Mark as Received"}
+                {pending ? D.saving : D.markReceived}
               </button>
             </>
           }
         >
           <p className="t-body" style={{ margin: 0, color: "var(--text-2)" }}>
-            The ordered quantities will be added to the stock of {p.warehouse} now. This can only be done once.
+            {fmt(D.confirmBody, { warehouse: p.warehouse })}
           </p>
         </Modal>
       )}

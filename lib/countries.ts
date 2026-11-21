@@ -46,7 +46,12 @@ let cached: CountryOption[] | null = null;
  * Call on the server and pass the result to client components, so server and browser
  * always render identical labels (ICU data can differ between Node and browsers).
  */
-export function getCountryOptions(): CountryOption[] {
+/** Country names for display (English by default; pass "ar" for Arabic names). The stored value is always the ISO code. */
+export function getCountryOptions(locale: string = "en"): CountryOption[] {
+  if (locale !== "en") {
+    const loc = new Intl.DisplayNames([locale], { type: "region", fallback: "code" });
+    return COUNTRY_CODES.map((code) => ({ code, name: loc.of(code) ?? code }));
+  }
   if (cached) return cached;
   const names = new Intl.DisplayNames(["en"], { type: "region", fallback: "code" });
   cached = COUNTRY_CODES.map((code) => ({ code, name: names.of(code) ?? code })).sort((a, b) =>

@@ -4,9 +4,12 @@ import { connection } from "next/server";
 import { auth } from "@/auth";
 import { getCountryOptions } from "@/lib/countries";
 import { canManageSuppliers } from "@/lib/roles";
+import { getDict, getLocale } from "@/lib/i18n/server";
 import SupplierForm from "@/components/suppliers/SupplierForm";
 
-export const metadata: Metadata = { title: "Create Supplier" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).suppliers.form.createTitle };
+}
 
 export const instant = false;
 
@@ -17,5 +20,5 @@ export default async function CreateSupplierPage() {
   if (!session?.user?.id) redirect("/");
   if (!canManageSuppliers(session.user.role)) redirect("/suppliers");
 
-  return <SupplierForm countries={getCountryOptions()} />;
+  return <SupplierForm countries={getCountryOptions(await getLocale())} />;
 }

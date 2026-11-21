@@ -11,6 +11,8 @@ import { formatMoney, formatQuantity } from "@/lib/money";
 import { fromUnits, isQuantity, toUnits } from "@/lib/transfers";
 import { calcReturn } from "@/lib/purchase-return-calc";
 import type { SaleReturnField, SaleReturnSourceLine, SaleReturnSource } from "@/lib/sale-returns";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
 
 // Port of design/Create Sale Return.html: PageHeader (+ Back), FormCard with Date / Warehouse /
 // Customer, the Order items table (Product / Net Unit Price / Stock / Qty −/+ / Discount / Tax /
@@ -24,6 +26,9 @@ import type { SaleReturnField, SaleReturnSourceLine, SaleReturnSource } from "@/
 
 export default function SaleReturnForm({ sources, today, initialSale }: { sources: SaleReturnSource[]; today: string; initialSale: string }) {
   const router = useRouter();
+  const T = useT();
+  const R = T.salesReturns;
+  const F = R.form;
   const [date, setDate] = useState(today);
   const [saleId, setSaleId] = useState(initialSale);
   const [qty, setQty] = useState<Record<string, string>>({});
@@ -67,7 +72,7 @@ export default function SaleReturnForm({ sources, today, initialSale }: { source
     if (next < BigInt(0)) next = BigInt(0);
     if (next > max) {
       next = max;
-      toast.error(`At most ${formatQuantity(fromUnits(max, 3))} ${l.unit} can be returned`, { id: "sale-return" });
+      toast.error(fmt(F.atMost, { max: formatQuantity(fromUnits(max, 3)), unit: l.unit }), { id: "sale-return" });
     }
     setLine(l.saleItemId, formatQuantity(fromUnits(next, 3)).replace(/,/g, ""));
   };
@@ -75,26 +80,26 @@ export default function SaleReturnForm({ sources, today, initialSale }: { source
   function problem(l: SaleReturnSourceLine): string {
     const v = q(l.saleItemId).trim();
     if (v === "" || v === "0") return "";
-    if (!/^\d{1,11}(\.\d{1,3})?$/.test(v)) return "Enter a quantity with up to 3 decimals";
-    if (toUnits(v, 3) > toUnits(returnable(l), 3)) return `Only ${formatQuantity(returnable(l))} can still be returned`;
+    if (!/^\d{1,11}(\.\d{1,3})?$/.test(v)) return F.qtyDecimals;
+    if (toUnits(v, 3) > toUnits(returnable(l), 3)) return fmt(F.onlyCan, { max: formatQuantity(returnable(l)) });
     return "";
   }
 
   function save() {
     const n: Partial<Record<SaleReturnField, string>> = {};
     const ie: Record<string, string> = {};
-    if (!src) n.saleId = "Choose a completed sale";
-    if (!date) n.returnDate = "Date is required";
-    else if (date > today) n.returnDate = "The date can't be in the future";
-    else if (src && date < src.date) n.returnDate = `The return date can't be before the sale date (${src.dateLabel})`;
+    if (!src) n.saleId = R.val.chooseSale;
+    if (!date) n.returnDate = T.sales.val.dateRequired;
+    else if (date > today) n.returnDate = T.sales.val.dateFuture;
+    else if (src && date < src.date) n.returnDate = fmt(F.dateBefore, { date: src.dateLabel });
     for (const l of lines) {
       const p = problem(l);
       if (p) ie[l.saleItemId] = p;
     }
     const send = lines.filter((l) => isQuantity(q(l.saleItemId)) && !ie[l.saleItemId]);
-    if (src && !Object.keys(ie).length && !send.length) n.items = "Enter a return quantity for at least one line";
+    if (src && !Object.keys(ie).length && !send.length) n.items = R.val.minLine;
     if (Object.keys(ie).length) n.items = Object.values(ie)[0];
-    else if (src && calc && toUnits(calc.grandTotal, 2) > toUnits(src.due, 2)) n.items = `This return is worth ${money(calc.grandTotal)} but only ${money(src.due)} is still unpaid on ${src.reference}. Refunds and customer credit for paid amounts aren't available yet.`;
+    else if (src && calc && toUnits(calc.grandTotal, 2) > toUnits(src.due, 2)) n.items = fmt(R.err.dueExceeded, { worth: money(calc.grandTotal), due: money(src.due), ref: src.reference });
     setE(n);
     setItemErr(ie);
     if (Object.keys(n).length) return void toast.error(Object.values(n)[0]!, { id: "sale-return" });
@@ -105,7 +110,7 @@ export default function SaleReturnForm({ sources, today, initialSale }: { source
       try {
         r = await createSaleReturn(payload);
       } catch {
-        return void toast.error("Something went wrong. Please try again.", { id: "sale-return" });
+        return void toast.error(T.common.somethingWrong, { id: "sale-return" });
       }
       if (!r.ok) {
         if (r.fieldErrors) setE(r.fieldErrors);
@@ -135,12 +140,12 @@ export default function SaleReturnForm({ sources, today, initialSale }: { source
     <>
       <div className="sp-page-head">
         <h1 className="t-page-title" style={{ margin: 0 }}>
-          Create Sale Return
+          {F.title}
         </h1>
         <div style={{ display: "flex", gap: 12 }}>
           <Link href="/sales/returns" className="sp-btn sp-btn--secondary">
             <Icon name="arrow-left" size={18} />
-            Back
+            {F.back}
           </Link>
         </div>
       </div>
@@ -148,10 +153,10 @@ export default function SaleReturnForm({ sources, today, initialSale }: { source
       {sources.length === 0 ? (
         <div className="sp-card sp-empty" data-testid="return-setup">
           <Icon name="receipt" size={36} />
-          <div className="t-section-title">No completed sales to return</div>
-          <span>A return must come from a Completed sale that still has items left to return and an unpaid balance (refunds for paid sales aren&apos;t available yet).</span>
+          <div className="t-section-title">{F.noSalesTitle}</div>
+          <span>{F.noSalesBody}</span>
           <Link href="/sales" className="sp-btn sp-btn--secondary">
-            Go to Sales
+            {F.goSales}
           </Link>
         </div>
       ) : (
@@ -159,53 +164,53 @@ export default function SaleReturnForm({ sources, today, initialSale }: { source
           <div className="sp-card sp-form-card">
             <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
               <div className="sp-form-grid" style={{ "--cols": 3 } as CSSProperties}>
-                {field("returnDate", "Date", <input id="sr-returnDate" type="date" className="sp-input " min={src?.date} max={today} value={date} onChange={(ev) => { setDate(ev.target.value); setE((x) => ({ ...x, returnDate: "" })); }} aria-invalid={!!e.returnDate || undefined} />, true)}
-                {field("warehouse", "Warehouse", <select id="sr-warehouse" className="sp-select " disabled value="w"><option value="w">{src?.warehouse ?? "From the sale"}</option></select>, true)}
-                {field("customer", "Customer", <select id="sr-customer" className="sp-select " disabled value="s"><option value="s">{src?.customer ?? "From the sale"}</option></select>, true)}
+                {field("returnDate", F.date, <input id="sr-returnDate" type="date" className="sp-input " min={src?.date} max={today} value={date} onChange={(ev) => { setDate(ev.target.value); setE((x) => ({ ...x, returnDate: "" })); }} aria-invalid={!!e.returnDate || undefined} />, true)}
+                {field("warehouse", F.warehouse, <select id="sr-warehouse" className="sp-select " disabled value="w"><option value="w">{src?.warehouse ?? F.fromSale}</option></select>, true)}
+                {field("customer", F.customer, <select id="sr-customer" className="sp-select " disabled value="s"><option value="s">{src?.customer ?? F.fromSale}</option></select>, true)}
               </div>
 
               {field(
                 "saleId",
-                "Sale",
+                F.sale,
                 <select id="sr-saleId" className={"sp-select " + (saleId ? "" : "sp-select--placeholder")} value={saleId} onChange={(ev) => pick(ev.target.value)} aria-invalid={!!e.saleId || undefined}>
                   <option value="" disabled>
-                    Choose a Completed Sale
+                    {F.chooseSale}
                   </option>
                   {sources.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.reference} · {s.customer} · {s.dateLabel}
+                      {fmt(F.saleOption, { ref: s.reference, customer: s.customer, date: s.dateLabel })}
                     </option>
                   ))}
                 </select>,
                 true,
                 undefined,
-                src ? `Still unpaid on ${src.reference}: ${money(src.due)} — a return can't exceed it (customer refunds/credit aren't available yet).` : "Only completed sales with items left to return and an unpaid balance are listed.",
+                src ? fmt(F.stillUnpaid, { ref: src.reference, due: money(src.due) }) : F.onlyCompleted,
               )}
 
               <div className={"sp-field" + (e.items ? " sp-field--error" : "")}>
                 <span className="sp-label">
-                  Order items<i>*</i>
+                  {F.orderItems}<i>*</i>
                 </span>
                 <div className="sp-table-card" style={{ boxShadow: "none" }}>
                   <div className="sp-table-scroll">
                     <table className="sp-table" data-testid="return-items">
                       <thead>
                         <tr>
-                          <th>Product</th>
-                          <th>Net Unit Price</th>
-                          <th>Stock</th>
-                          <th>Qty</th>
-                          <th>Discount</th>
-                          <th>Tax</th>
-                          <th>Subtotal</th>
-                          <th className="act">Action</th>
+                          <th>{F.colProduct}</th>
+                          <th>{F.colNet}</th>
+                          <th>{F.colStock}</th>
+                          <th>{F.colQty}</th>
+                          <th>{F.colDiscount}</th>
+                          <th>{F.colTax}</th>
+                          <th>{F.colSubtotal}</th>
+                          <th className="act">{F.colAction}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {lines.length === 0 && (
                           <tr>
                             <td colSpan={8} style={{ color: "var(--text-3)" }}>
-                              {src ? "No order items" : "Choose a sale to load its items"}
+                              {src ? F.noItems : F.chooseToLoad}
                             </td>
                           </tr>
                         )}
@@ -217,7 +222,7 @@ export default function SaleReturnForm({ sources, today, initialSale }: { source
                                 <div style={{ fontWeight: 600, marginBottom: 4 }}>{l.code}</div>
                                 <span className="sp-badge sp-badge--success">{l.name}</span>
                                 <div className="t-caption" style={{ marginTop: 6 }} data-testid="returnable">
-                                  Sold {formatQuantity(l.quantity)} · returned {formatQuantity(l.returned)} · returnable {formatQuantity(returnable(l))} {l.unit}
+                                  {fmt(F.returnable, { sold: formatQuantity(l.quantity), returned: formatQuantity(l.returned), returnable: formatQuantity(returnable(l)), unit: l.unit })}
                                 </div>
                                 {itemErr[l.saleItemId] && (
                                   <div className="sp-error" style={{ marginTop: 6 }}>
@@ -227,17 +232,17 @@ export default function SaleReturnForm({ sources, today, initialSale }: { source
                               </td>
                               <td>{money(l.netUnitPrice)}</td>
                               <td>
-                                <span className="sp-badge sp-badge--warning" data-testid="stock" title="Current stock in the sale warehouse — the return adds to it">
+                                <span className="sp-badge sp-badge--warning" data-testid="stock" title={F.stockTitle}>
                                   {formatQuantity(l.stock)} {l.unit}
                                 </span>
                               </td>
                               <td>
                                 <span className="sp-qty">
-                                  <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={`Decrease ${l.name}`} onClick={() => step(l, -1)}>
+                                  <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={fmt(F.decrease, { name: l.name })} onClick={() => step(l, -1)}>
                                     <Icon name="minus" size={18} />
                                   </button>
-                                  <input className="sp-input" aria-label={`Return quantity of ${l.name}`} inputMode="decimal" value={q(l.saleItemId)} onChange={(ev) => setLine(l.saleItemId, ev.target.value)} />
-                                  <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={`Increase ${l.name}`} onClick={() => step(l, 1)}>
+                                  <input className="sp-input" aria-label={fmt(F.qtyOf, { name: l.name })} inputMode="decimal" value={q(l.saleItemId)} onChange={(ev) => setLine(l.saleItemId, ev.target.value)} />
+                                  <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={fmt(F.increase, { name: l.name })} onClick={() => step(l, 1)}>
                                     <Icon name="plus" size={18} />
                                   </button>
                                 </span>
@@ -246,7 +251,7 @@ export default function SaleReturnForm({ sources, today, initialSale }: { source
                               <td data-col="tax">{money(c?.taxAmount ?? "0.00")}</td>
                               <td data-col="subtotal">{money(c?.subtotal ?? "0.00")}</td>
                               <td className="act">
-                                <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={`Remove ${l.name}`} style={{ color: "var(--danger-500)" }} onClick={() => setRemove(l)}>
+                                <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={fmt(F.remove, { name: l.name })} style={{ color: "var(--danger-500)" }} onClick={() => setRemove(l)}>
                                   <Icon name="trash-2" size={16} />
                                 </button>
                               </td>
@@ -262,37 +267,35 @@ export default function SaleReturnForm({ sources, today, initialSale }: { source
 
               <div className="sp-sum" data-testid="return-summary">
                 <div>
-                  <span>Order Tax</span>
+                  <span>{F.orderTax}</span>
                   <span data-testid="sum-tax">
                     {money(calc?.orderTaxAmount ?? "0.00")} ({src ? src.orderTaxRate : "0.00"}) %
                   </span>
                 </div>
                 <div>
-                  <span>Discount</span>
+                  <span>{F.discount}</span>
                   <span data-testid="sum-discount">{money(calc?.discount ?? "0.00")}</span>
                 </div>
                 <div>
-                  <span>Shipping</span>
+                  <span>{F.shipping}</span>
                   <span data-testid="sum-shipping">{money("0.00")}</span>
                 </div>
                 <div>
-                  <span>Grand Total</span>
+                  <span>{F.grandTotal}</span>
                   <span data-testid="sum-grand">{money(calc?.grandTotal ?? "0.00")}</span>
                 </div>
               </div>
-              <span className="t-caption">
-                Prices, tax and discounts come from the original sale. Order tax and discount are shared out in proportion to what is returned; shipping is not returned. The return reduces the sale&apos;s due — no cash/bank, refund or payment is recorded.
-              </span>
+              <span className="t-caption">{F.note}</span>
 
-              {field("status", "Status", <select id="sr-status" className="sp-select " disabled value="c"><option value="c">Completed</option></select>, true, { width: "33%", minWidth: 260 }, "Saving adds the returned quantities back to the warehouse stock.")}
-              {field("notes", "Notes", <textarea id="sr-notes" className="sp-textarea " rows={4} placeholder="Enter Notes (e.g. reason for the return)" maxLength={2000} value={notes} onChange={(ev) => setNotes(ev.target.value)} />)}
+              {field("status", F.status, <select id="sr-status" className="sp-select " disabled value="c"><option value="c">{F.completed}</option></select>, true, { width: "33%", minWidth: 260 }, F.statusHint)}
+              {field("notes", F.notes, <textarea id="sr-notes" className="sp-textarea " rows={4} placeholder={F.notesPh} maxLength={2000} value={notes} onChange={(ev) => setNotes(ev.target.value)} />)}
             </div>
             <div className="sp-form-actions">
               <button type="button" className="sp-btn sp-btn--secondary" onClick={() => router.push("/sales/returns")} disabled={pending}>
-                Cancel
+                {F.cancel}
               </button>
               <button type="submit" className="sp-btn sp-btn--primary" disabled={pending}>
-                {pending ? "Saving…" : "Save"}
+                {pending ? F.saving : F.save}
               </button>
             </div>
           </div>
@@ -301,7 +304,7 @@ export default function SaleReturnForm({ sources, today, initialSale }: { source
 
       {remove && (
         <ConfirmDeleteModal
-          itemType="product"
+          itemType={F.productType}
           itemName={remove.name}
           onCancel={() => setRemove(null)}
           onConfirm={() => {

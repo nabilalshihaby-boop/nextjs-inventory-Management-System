@@ -7,9 +7,12 @@ import { formatDateTime } from "@/lib/format";
 import { canManagePurchaseReturns } from "@/lib/roles";
 import { getDefaultCurrency, getSystemSettings } from "@/lib/settings";
 import type { PurchaseReturnRow } from "@/lib/purchase-returns";
+import { getDict, getLocale } from "@/lib/i18n/server";
 import PurchaseReturnsTable from "@/components/purchases/PurchaseReturnsTable";
 
-export const metadata: Metadata = { title: "Purchases Returns" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).purchaseReturns.list.title };
+}
 
 export const instant = false;
 
@@ -21,6 +24,7 @@ export default async function PurchaseReturnsPage() {
   if (!session?.user?.id) redirect("/");
   if (!canManagePurchaseReturns(session.user.role)) redirect("/dashboard");
 
+  const locale = await getLocale();
   const [returns, settings, currency] = await Promise.all([
     db.purchaseReturn.findMany({
       orderBy: { number: "desc" },
@@ -39,7 +43,7 @@ export default async function PurchaseReturnsPage() {
     grandTotal: r.grandTotal.toFixed(2),
     currency: { code: r.currency.code, symbol: r.currency.symbol, right: !!settings?.currencyIconRight },
     inDefaultCurrency: !!currency && r.currencyId === currency.id,
-    createdOn: formatDateTime(r.createdAt, settings?.dateFormat),
+    createdOn: formatDateTime(r.createdAt, settings?.dateFormat, locale),
   }));
   return <PurchaseReturnsTable rows={rows} />;
 }

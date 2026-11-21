@@ -1,6 +1,8 @@
 "use client";
 
 import Icon from "@/components/layout/Icon";
+import { fmt } from "@/lib/i18n/config";
+import { useT } from "@/components/i18n/I18nProvider";
 
 /** Client-side paging state helper: slices `items` for the current page. */
 export function paginate<T>(items: T[], page: number, pageSize: number) {
@@ -39,6 +41,7 @@ export default function Pagination({
   onPage: (p: number) => void;
   onPageSize: (n: number) => void;
 }) {
+  const t = useT();
   const button = (icon: Nav, go: number, disabled: boolean, label: string) => (
     <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={label} disabled={disabled} onClick={() => onPage(go)}>
       <Icon name={icon} size={18} />
@@ -47,21 +50,21 @@ export default function Pagination({
   return (
     <div className="sp-pager">
       <div className="sp-pager-l">
-        <span>Rows per page</span>
-        <select className="sp-select" value={pageSize} onChange={(e) => onPageSize(+e.target.value)} aria-label="Rows per page">
+        <span>{t.common.rowsPerPage}</span>
+        <select className="sp-select" value={pageSize} onChange={(e) => onPageSize(+e.target.value)} aria-label={t.common.rowsPerPage}>
           {[10, 25, 50, 100].map((n) => (
             <option key={n}>{n}</option>
           ))}
         </select>
         <span>
-          {from}–{to} of {total}
+          {fmt(t.common.pageRange, { from, to, total })}
         </span>
       </div>
       <div className="sp-pager-r">
-        {button("chevrons-left", 1, page <= 1, "First")}
-        {button("chevron-left", page - 1, page <= 1, "Previous")}
-        {button("chevron-right", page + 1, page >= last, "Next")}
-        {button("chevrons-right", last, page >= last, "Last")}
+        {button("chevrons-left", 1, page <= 1, t.common.pageFirst)}
+        {button("chevron-left", page - 1, page <= 1, t.common.pagePrev)}
+        {button("chevron-right", page + 1, page >= last, t.common.pageNext)}
+        {button("chevrons-right", last, page >= last, t.common.pageLast)}
       </div>
     </div>
   );

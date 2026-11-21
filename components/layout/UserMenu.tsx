@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { signOut } from "next-auth/react";
 import Icon from "./Icon";
+import LanguageSwitch from "@/components/i18n/LanguageSwitch";
+import { useT } from "@/components/i18n/I18nProvider";
 
 export type TopbarUser = {
   name: string;
@@ -13,6 +15,7 @@ export type TopbarUser = {
 
 // Topbar user block + dropdown. Uses the design's .sp-user / .sp-menu pattern (same as RowMenu).
 export default function UserMenu({ user }: { user: TopbarUser }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
   // A new image URL (e.g. after a profile update) gets a fresh chance to load.
@@ -92,7 +95,7 @@ export default function UserMenu({ user }: { user: TopbarUser }) {
         <div className="sp-menu" id="bp-user-menu" role="menu">
           <Link href="/profile" className="sp-menu-item" role="menuitem" style={{ textDecoration: "none" }} onClick={close}>
             <Icon name="user" size={16} />
-            Profile
+            {t.shell.profile}
           </Link>
           <Link
             href="/change-password"
@@ -102,12 +105,16 @@ export default function UserMenu({ user }: { user: TopbarUser }) {
             onClick={close}
           >
             <Icon name="key-round" size={16} />
-            Change Password
+            {t.shell.changePassword}
           </Link>
           <Link href="/preferences" className="sp-menu-item" role="menuitem" style={{ textDecoration: "none" }} onClick={close}>
             <Icon name="palette" size={16} />
-            Appearance &amp; Cache
+            {t.shell.appearance}
           </Link>
+          <div className="sp-menu-sep" role="separator" />
+          <div style={{ padding: "6px 10px" }}>
+            <LanguageSwitch />
+          </div>
           <div className="sp-menu-sep" role="separator" />
           <button
             type="button"
@@ -117,7 +124,7 @@ export default function UserMenu({ user }: { user: TopbarUser }) {
             onClick={logout}
           >
             <Icon name="log-out" size={16} />
-            Logout
+            {t.shell.logout}
           </button>
         </div>
       )}

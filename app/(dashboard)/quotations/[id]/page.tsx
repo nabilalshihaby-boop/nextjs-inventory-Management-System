@@ -7,11 +7,14 @@ import { getCountryOptions } from "@/lib/countries";
 import { formatDateOnly, formatDateTime } from "@/lib/format";
 import { formatMoney, formatQuantity } from "@/lib/money";
 import { canManageQuotations } from "@/lib/roles";
-import { QUOTATION_STATUS_LABEL } from "@/lib/quotations";
 import { getSystemSettings } from "@/lib/settings";
+import { getDict, getLocaleInfo } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n/config";
 import QuotationDetails from "@/components/quotations/QuotationDetails";
 
-export const metadata: Metadata = { title: "Quotation Details" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).quotations.details.title };
+}
 
 export const instant = false;
 
@@ -24,6 +27,8 @@ export default async function QuotationDetailsPage({ params }: PageProps<"/quota
   if (!canManageQuotations(session.user.role)) redirect("/dashboard");
 
   const { id } = await params;
+  const { locale, dict: T } = await getLocaleInfo();
+  const D = T.quotations.details;
   const q = await db.quotation.findUnique({
     where: { id },
     include: { customer: true, warehouse: { select: { name: true } }, currency: { select: { code: true, symbol: true } }, items: { orderBy: { id: "asc" } }, sale: { select: { id: true, reference: true } } },
@@ -32,7 +37,7 @@ export default async function QuotationDetailsPage({ params }: PageProps<"/quota
   const settings = await getSystemSettings();
   const cur = { code: q.currency.code, symbol: q.currency.symbol, right: !!settings?.currencyIconRight };
   const m = (v: { toFixed: (n: number) => string }) => formatMoney(v.toFixed(2), cur);
-  const country = new Map<string, string>(getCountryOptions().map((c) => [c.code, c.name]));
+  const country = new Map<string, string>(getCountryOptions(locale).map((c) => [c.code, c.name]));
   const userIds = [q.createdById, q.statusChangedById].filter((x): x is string => !!x);
   const users = new Map((userIds.length ? await db.user.findMany({ where: { id: { in: userIds } }, select: { id: true, firstName: true, lastName: true } }) : []).map((u) => [u.id, `${u.firstName} ${u.lastName}`]));
 
@@ -45,8 +50,8 @@ export default async function QuotationDetailsPage({ params }: PageProps<"/quota
         date: formatDateOnly(q.quotationDate, settings?.dateFormat),
         warehouse: q.warehouse.name,
         createdBy: (q.createdById && users.get(q.createdById)) || "—",
-        createdOn: formatDateTime(q.createdAt, settings?.dateFormat),
-        statusChanged: q.statusChangedAt ? `Marked as ${QUOTATION_STATUS_LABEL[q.status]} ${formatDateTime(q.statusChangedAt, settings?.dateFormat)}${q.statusChangedById && users.get(q.statusChangedById) ? ` by ${users.get(q.statusChangedById)}` : ""}` : null,
+        createdOn: formatDateTime(q.createdAt, settings?.dateFormat, locale),
+        statusChanged: q.statusChangedAt ? (q.statusChangedById && users.get(q.statusChangedById) ? fmt(D.markedAsBy, { status: T.quotations.status[q.status], on: formatDateTime(q.statusChangedAt, settings?.dateFormat, locale), by: users.get(q.statusChangedById)! }) : fmt(D.markedAs, { status: T.quotations.status[q.status], on: formatDateTime(q.statusChangedAt, settings?.dateFormat, locale) })) : null,
         notes: q.notes ?? "",
         sale: q.sale,
         orderTax: `${m(q.orderTaxAmount)} (${q.orderTaxRate.toFixed(2)}%)`,
@@ -60,7 +65,7 @@ export default async function QuotationDetailsPage({ params }: PageProps<"/quota
           quantity: `${formatQuantity(i.quantity.toFixed(3))} ${i.unitName}`,
           unitPrice: m(i.unitPrice),
           discount: m(i.discountAmount),
-          tax: `${m(i.taxAmount)}${i.taxRate.isZero() ? "" : ` (${i.taxRate.toFixed(2)}% ${i.taxType === "EXCLUSIVE" ? "excl." : "incl."})`}`,
+          tax: `${m(i.taxAmount)}${i.taxRate.isZero() ? "" : ` (${fmt(i.taxType === "EXCLUSIVE" ? D.taxExcl : D.taxIncl, { rate: i.taxRate.toFixed(2) })})`}`,
           subtotal: m(i.subtotal),
         })),
       }}

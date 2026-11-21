@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import toast from "react-hot-toast";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
 import Icon from "@/components/layout/Icon";
 import Pagination, { paginate } from "@/components/ui/Pagination";
 import RowMenu from "@/components/ui/RowMenu";
@@ -15,15 +17,13 @@ import type { PurchaseReturnRow } from "@/lib/purchase-returns";
 // immutable. "Paid" = refunded by the supplier (no supplier payments yet → 0); the return value is
 // credited against the original purchase's due, so nothing is outstanding on the return itself.
 // Deferred (disabled, "coming soon"): Filter, Download PDF, Edit, Delete.
-const SOON = {
-  filter: "Advanced return filters are coming soon.",
-  pdf: "Download PDF — coming soon",
-  edit: "Edit Purchases Return — coming soon (returns are immutable)",
-  del: "Delete Purchases Return — coming soon (returns are immutable)",
-};
 type Currency = { code: string; symbol: string; right: boolean };
 
 export default function PurchaseReturnsTable({ rows }: { rows: PurchaseReturnRow[] }) {
+  const T = useT();
+  const R = T.purchaseReturns;
+  const L = R.list;
+  const SOON = R.soon;
   const [q, setQ] = useState("");
   const [date, setDate] = useState("");
   const [page, setPage] = useState(1);
@@ -39,18 +39,18 @@ export default function PurchaseReturnsTable({ rows }: { rows: PurchaseReturnRow
       <div className="sp-toolbar">
         <div className="sp-group">
           <Icon name="search" size={18} className="sp-input-icon" />
-          <input className="sp-input " placeholder="Search" aria-label="Search purchase returns" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+          <input className="sp-input " placeholder={L.search} aria-label={L.searchAria} value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
         </div>
         <div className="sp-grow" />
-        <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label="Filter (coming soon)" aria-disabled="true" title={SOON.filter} style={{ opacity: 0.5, cursor: "not-allowed" }} onClick={() => toast(SOON.filter, { id: "returns-soon", icon: "ℹ️" })}>
+        <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={L.filterSoonAria} aria-disabled="true" title={SOON.filter} style={{ opacity: 0.5, cursor: "not-allowed" }} onClick={() => toast(SOON.filter, { id: "returns-soon", icon: "ℹ️" })}>
           <Icon name="filter" size={18} />
         </button>
         <div style={{ width: 240 }}>
-          <input type="date" className="sp-input " aria-label="Select Date" title="Show returns dated on this day" value={date} onChange={(e) => { setDate(e.target.value); setPage(1); }} />
+          <input type="date" className="sp-input " aria-label={L.dateAria} title={L.dateTitle} value={date} onChange={(e) => { setDate(e.target.value); setPage(1); }} />
         </div>
         <Link href="/purchases/returns/create" className="sp-btn sp-btn--primary">
           <Icon name="plus" size={18} />
-          Create Purchase Return
+          {L.create}
         </Link>
       </div>
 
@@ -59,16 +59,16 @@ export default function PurchaseReturnsTable({ rows }: { rows: PurchaseReturnRow
           <table className="sp-table">
             <thead>
               <tr>
-                <th>Reference</th>
-                <th>Supplier</th>
-                <th>Warehouse</th>
-                <th>Status</th>
-                <th className="num">Grand Total</th>
-                <th className="num">Paid</th>
-                <th className="num">Due</th>
-                <th>Payment Type</th>
-                <th>Created On</th>
-                <th className="act">Action</th>
+                <th>{L.reference}</th>
+                <th>{L.supplier}</th>
+                <th>{L.warehouse}</th>
+                <th>{L.status}</th>
+                <th className="num">{L.grandTotal}</th>
+                <th className="num">{L.paid}</th>
+                <th className="num">{L.due}</th>
+                <th>{L.paymentType}</th>
+                <th>{L.createdOn}</th>
+                <th className="act">{L.action}</th>
               </tr>
             </thead>
             <tbody>
@@ -77,7 +77,7 @@ export default function PurchaseReturnsTable({ rows }: { rows: PurchaseReturnRow
                   <td>
                     <span className="sp-code">{r.reference}</span>
                     <div className="t-caption" style={{ marginTop: 4 }}>
-                      From {r.purchaseRef}
+                      {fmt(L.fromPurchase, { purchase: r.purchaseRef })}
                     </div>
                   </td>
                   <td className="primary-cell">{r.supplier}</td>
@@ -85,15 +85,15 @@ export default function PurchaseReturnsTable({ rows }: { rows: PurchaseReturnRow
                   <td>
                     <span className="sp-badge sp-badge--success" data-status="COMPLETED">
                       <i />
-                      Completed
+                      {T.sales.status.COMPLETED}
                     </span>
                   </td>
                   <td className="num" data-col="total">{money(r.grandTotal, r.currency)}</td>
-                  <td className="num" data-col="paid" title="Refunded by the supplier (supplier refunds aren't available yet)">{money("0.00", r.currency)}</td>
-                  <td className="num" data-col="due" title={`Credited against the due of ${r.purchaseRef}`}>{money("0.00", r.currency)}</td>
+                  <td className="num" data-col="paid" title={L.paidTitle}>{money("0.00", r.currency)}</td>
+                  <td className="num" data-col="due" title={fmt(L.dueTitle, { purchase: r.purchaseRef })}>{money("0.00", r.currency)}</td>
                   <td>
-                    <span className="sp-badge sp-badge--primary" title={`The return value reduced the unpaid balance of ${r.purchaseRef}`}>
-                      Purchase credit
+                    <span className="sp-badge sp-badge--primary" title={fmt(L.creditTitle, { purchase: r.purchaseRef })}>
+                      {L.purchaseCredit}
                     </span>
                   </td>
                   <td>
@@ -103,11 +103,11 @@ export default function PurchaseReturnsTable({ rows }: { rows: PurchaseReturnRow
                     <RowMenu
                       label={r.reference}
                       items={[
-                        { label: "View Purchases Return", icon: "eye", href: `/purchases/returns/${encodeURIComponent(r.id)}` },
-                        { label: "Download PDF", icon: "file-down", disabled: SOON.pdf },
-                        { label: "Edit Purchases Return", icon: "pencil", disabled: SOON.edit },
+                        { label: L.view, icon: "eye", href: `/purchases/returns/${encodeURIComponent(r.id)}` },
+                        { label: L.pdf, icon: "file-down", disabled: SOON.pdf },
+                        { label: L.edit, icon: "pencil", disabled: SOON.edit },
                         "-",
-                        { label: "Delete Purchases Return", icon: "trash-2", danger: true, disabled: SOON.del },
+                        { label: L.delete, icon: "trash-2", danger: true, disabled: SOON.del },
                       ]}
                     />
                   </td>
@@ -118,10 +118,10 @@ export default function PurchaseReturnsTable({ rows }: { rows: PurchaseReturnRow
                   <td colSpan={10} style={{ textAlign: "center", color: "var(--text-2)" }} data-testid="empty">
                     {rows.length === 0 ? (
                       <span>
-                        <b style={{ color: "var(--text-1)" }}>No purchase returns yet</b> — use Create Purchase Return to send received goods back to a supplier.
+                        <b style={{ color: "var(--text-1)" }}>{L.emptyTitle}</b> — {L.emptyHint}
                       </span>
                     ) : (
-                      "No purchase returns match your search."
+                      L.noMatch
                     )}
                   </td>
                 </tr>

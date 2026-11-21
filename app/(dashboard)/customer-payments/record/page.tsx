@@ -5,9 +5,12 @@ import { auth } from "@/auth";
 import { todayLocal } from "@/lib/cash-bank";
 import { canManageCustomerPayments } from "@/lib/roles";
 import { getCustomerPaymentFormData } from "@/lib/customer-payment-data";
+import { getDict } from "@/lib/i18n/server";
 import CustomerPaymentForm from "@/components/customer-payments/CustomerPaymentForm";
 
-export const metadata: Metadata = { title: "Record Customer Payment" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).custPay.form.title };
+}
 
 export const instant = false;
 

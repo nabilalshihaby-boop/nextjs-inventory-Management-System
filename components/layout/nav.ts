@@ -92,7 +92,7 @@ export const NAV: NavItem[] = [
   { id: "wh", label: "Warehouse", icon: "warehouse", href: "/warehouse" },
   { id: "re", label: "Reports", icon: "chart-column", href: "/reports" },
   { id: "cu", label: "Currencies", icon: "circle-dollar-sign", href: "/currencies" },
-  { id: "la", label: "Languages", icon: "languages", href: "/languages" },
+  { id: "la", label: "Languages", icon: "languages", href: "/settings/languages", roles: OWNER_ONLY },
   {
     id: "te",
     label: "Templates",
@@ -141,16 +141,30 @@ const EXTRA_TITLES: { href: string; title: string }[] = [
 ];
 
 /**
- * Topbar title for the current route. The extra pages are checked first because some are nested
- * under a sidebar page (/settings/theme would otherwise show the sidebar's "Settings").
+ * Topbar title for the current route, translated through the dictionary (dict.nav). The extra pages are
+ * checked first because some are nested under a sidebar page (/settings/theme would otherwise show
+ * the sidebar Settings entry). The English text here is only a fallback for a missing key.
  */
-export function findPageTitle(pathname: string | null): string {
+export function findPageTitle(pathname: string | null, dict?: Record<string, string>): string {
   if (!pathname) return "";
   const extra = EXTRA_TITLES.find((p) => matches(pathname, p.href));
-  if (extra) return extra.title;
+  if (extra) return dict?.[EXTRA_KEYS[extra.href]] ?? extra.title;
   const active = findActive(pathname);
-  return active ? (active.title ?? active.label) : "";
+  if (!active) return "";
+  return dict?.[active.id === "ro" ? "roTitle" : active.id] ?? active.title ?? active.label;
 }
+/** Dictionary key (dict.nav) for each extra page title. */
+const EXTRA_KEYS: Record<string, string> = {
+  "/profile": "profile",
+  "/change-password": "changePassword",
+  "/settings/theme": "themeSettings",
+  "/preferences": "preferences",
+  "/suppliers/statement": "supplierStatement",
+  "/reports/supplier-statement": "supplierStatementReport",
+  "/settings/denominations": "denominations",
+  "/customers/statement": "customerStatement",
+  "/reports/customer-statement": "customerStatementReport",
+};
 
 /** Id of the group that owns the active leaf, if any. */
 export function findOwnerGroup(activeId: string | undefined): string | null {

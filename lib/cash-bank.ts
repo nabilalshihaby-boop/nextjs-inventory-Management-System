@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { fmt } from "@/lib/i18n/config";
+import { en } from "@/lib/i18n/dictionaries/en";
+import type { Dictionary } from "@/lib/i18n";
 
 // Shared Cash & Bank rules (client + server). Money is a 2-dp decimal string end-to-end (stored as
 // DECIMAL(14,2)); arithmetic on the client uses scaled BigInt (lib/transfers.ts), never floats.
@@ -60,54 +63,83 @@ function isRealDate(v: string) {
   const d = new Date(`${v}T00:00:00.000Z`);
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v && d.getUTCFullYear() >= 2000;
 }
-const txDate = z
-  .string({ error: "Date is required" })
-  .trim()
-  .min(1, "Date is required")
-  .refine(isRealDate, "Enter a valid date")
-  .refine((v) => !isRealDate(v) || v <= todayLocal(), "The date can't be in the future");
+/** Date rule with overridable messages (localized modules pass dictionary text; the default is English). */
+export const makeTxDate = (m: { required: string; invalid: string; future: string } = { required: "Date is required", invalid: "Enter a valid date", future: "The date can't be in the future" }) =>
+  z
+    .string({ error: m.required })
+    .trim()
+    .min(1, m.required)
+    .refine(isRealDate, m.invalid)
+    .refine((v) => !isRealDate(v) || v <= todayLocal(), m.future);
+const txDate = makeTxDate();
 
 /** Shared with Expenses: a valid, non-future date and positive 2-dp money (same rules as the ledger). */
 export const transactionDateSchema = txDate;
 export const positiveMoneySchema = (label: string) => money(label, { positive: true });
+/** Positive 2-dp money with dictionary messages ({label} placeholders already resolved by the caller). */
+export const positiveMoneyWith = (m: { required: string; format: string; positive: string }) =>
+  z
+    .string({ error: m.required })
+    .trim()
+    .min(1, m.required)
+    .refine((v) => MONEY_RE.test(v), m.format)
+    .refine((v) => !MONEY_RE.test(v) || /[1-9]/.test(v), m.positive);
 
-const accountFields = {
-  name: z.string().trim().min(1, "Account name is required").max(120, "Account name is too long"),
-  type: z.enum(ACCOUNT_TYPES, { error: "Choose Cash or Bank" }),
-  reference: optText(64, "Reference"),
-  bankName: optText(120, "Bank name"),
-  status: z.enum(ACCOUNT_STATUSES, { error: "Choose a status" }),
-  notes: optText(2000, "Notes"),
-};
-function bankRules(v: { type: AccountTypeValue; reference: string; bankName: string }, ctx: z.RefinementCtx) {
-  if (v.type !== "BANK") return;
-  if (!v.bankName) ctx.addIssue({ code: "custom", path: ["bankName"], message: "Bank name is required" });
-  if (!v.reference) ctx.addIssue({ code: "custom", path: ["reference"], message: "Account number is required for bank accounts" });
+type FinVal = Dictionary["finance"]["val"];
+/** All Cash & Bank input schemas built with a message set (dictionary text; English by default). */
+export function makeCashBankSchemas(m: FinVal = en.finance.val) {
+  const money = (label: string, positive: boolean) => {
+    const req = fmt(m.required, { label });
+    const base = z.string({ error: req }).trim().min(1, req).refine((v) => MONEY_RE.test(v), fmt(m.money, { label }));
+    return positive ? base.refine((v) => !MONEY_RE.test(v) || /[1-9]/.test(v), fmt(m.positive, { label })) : base;
+  };
+  const optional = (max: number, label: string) => z.string().trim().max(max, fmt(m.tooLong, { label })).optional().default("");
+  const date = makeTxDate({ required: m.dateRequired, invalid: m.dateInvalid, future: m.dateFuture });
+  const accountFields = {
+    name: z.string().trim().min(1, m.nameRequired).max(120, m.nameLong),
+    type: z.enum(ACCOUNT_TYPES, { error: m.chooseType }),
+    reference: optional(64, m.labels.reference),
+    bankName: optional(120, m.labels.bankName),
+    status: z.enum(ACCOUNT_STATUSES, { error: m.chooseStatus }),
+    notes: optional(2000, m.labels.notes),
+  };
+  const bankRules = (v: { type: AccountTypeValue; reference: string; bankName: string }, ctx: z.RefinementCtx) => {
+    if (v.type !== "BANK") return;
+    if (!v.bankName) ctx.addIssue({ code: "custom", path: ["bankName"], message: m.bankNameRequired });
+    if (!v.reference) ctx.addIssue({ code: "custom", path: ["reference"], message: m.accountNumberRequired });
+  };
+  const depositSchema = z.object({
+    transactionDate: date,
+    accountId: id(m.accountRequired),
+    amount: money(m.labels.amount, true),
+    paymentMethod: z.enum(PAYMENT_METHODS, { error: m.chooseMethod }),
+    purpose: z.enum(DEPOSIT_SOURCES, { error: m.chooseSource }),
+    notes: optional(2000, m.labels.notes),
+  });
+  return {
+    /** Create: opening balance (>= 0) is entered only here. Currency is never accepted from the client. */
+    accountCreateSchema: z.object({ ...accountFields, openingBalance: money(m.labels.openingBalance, false) }).superRefine(bankRules),
+    /** Edit: no balance of any kind (opening balance is fixed; current balance is always computed). */
+    accountUpdateSchema: z.object(accountFields).superRefine(bankRules),
+    depositSchema,
+    withdrawalSchema: depositSchema.extend({ purpose: z.enum(WITHDRAWAL_PURPOSES, { error: m.choosePurpose }) }),
+    transferSchema: z
+      .object({
+        transactionDate: date,
+        fromAccountId: id(m.chooseFrom),
+        toAccountId: id(m.chooseTo),
+        amount: money(m.labels.amount, true),
+        notes: optional(2000, m.labels.notes),
+      })
+      .refine((v) => v.fromAccountId !== v.toAccountId, { path: ["toAccountId"], message: m.differ }),
+  };
 }
-
-/** Create: opening balance (≥ 0) is entered only here. Currency is never accepted from the client. */
-export const accountCreateSchema = z.object({ ...accountFields, openingBalance: money("Opening balance", { positive: false }) }).superRefine(bankRules);
-/** Edit: no balance of any kind (opening balance is fixed; current balance is always computed). */
-export const accountUpdateSchema = z.object(accountFields).superRefine(bankRules);
-
-export const depositSchema = z.object({
-  transactionDate: txDate,
-  accountId: id("Account is required"),
-  amount: money("Amount", { positive: true }),
-  paymentMethod: z.enum(PAYMENT_METHODS, { error: "Choose a payment method" }),
-  purpose: z.enum(DEPOSIT_SOURCES, { error: "Choose an available deposit source" }),
-  notes: optText(2000, "Notes"),
-});
-export const withdrawalSchema = depositSchema.extend({ purpose: z.enum(WITHDRAWAL_PURPOSES, { error: "Choose an available withdrawal purpose" }) });
-export const transferSchema = z
-  .object({
-    transactionDate: txDate,
-    fromAccountId: id("Choose the source account"),
-    toAccountId: id("Choose the destination account"),
-    amount: money("Amount", { positive: true }),
-    notes: optText(2000, "Notes"),
-  })
-  .refine((v) => v.fromAccountId !== v.toAccountId, { path: ["toAccountId"], message: "Source and destination must differ" });
+const english = makeCashBankSchemas();
+export const accountCreateSchema = english.accountCreateSchema;
+export const accountUpdateSchema = english.accountUpdateSchema;
+export const depositSchema = english.depositSchema;
+export const withdrawalSchema = english.withdrawalSchema;
+export const transferSchema = english.transferSchema;
 
 export type AccountField = "name" | "type" | "reference" | "bankName" | "openingBalance" | "status" | "notes" | "currency";
 export type TxField = "transactionDate" | "accountId" | "fromAccountId" | "toAccountId" | "amount" | "paymentMethod" | "purpose" | "notes";

@@ -9,7 +9,10 @@ import { formatMoney, formatQuantity } from "@/lib/money";
 import { canManageSaleReturns } from "@/lib/roles";
 import { getSystemSettings } from "@/lib/settings";
 import { calcReturn } from "@/lib/purchase-return-calc";
-import { formatSaleReturnReference, saleReturnInputSchema, type SaleReturnField } from "@/lib/sale-returns";
+import { formatSaleReturnReference, makeSaleReturnSchema, type SaleReturnField } from "@/lib/sale-returns";
+import { getDict } from "@/lib/i18n/server";
+import { LocalizedError, errorMessage, tr, type Vars } from "@/lib/i18n/messages";
+import type { Dictionary } from "@/lib/i18n";
 
 // Sales Returns. Integrity rules (server-side, all inside ONE transaction):
 // - OWNER/ADMIN only; auth() is re-read and the role never comes from the client.
@@ -33,32 +36,34 @@ export type SaleReturnResult =
   | { ok: true; message: string; id?: string }
   | { ok: false; message: string; fieldErrors?: Partial<Record<SaleReturnField, string>>; itemErrors?: Record<string, string> };
 
-class ReturnError extends Error {
-  constructor(message: string, readonly field?: SaleReturnField, readonly itemId?: string) {
-    super(message);
+class ReturnError extends LocalizedError {
+  constructor(key: string, vars: Vars, readonly field?: SaleReturnField, itemId?: string) {
+    super(key, vars, itemId);
   }
 }
-const fail = (message: string, field?: SaleReturnField, itemId?: string): never => {
-  throw new ReturnError(message, field, itemId);
+const fail = (key: string, vars: Vars = {}, field?: SaleReturnField, itemId?: string): never => {
+  throw new ReturnError(key, vars, field, itemId);
 };
 const isKnown = (e: unknown, ...codes: string[]) => e instanceof Prisma.PrismaClientKnownRequestError && codes.includes(e.code);
 const dateOnly = (v: string) => new Date(`${v}T00:00:00.000Z`);
 
-async function authorize(): Promise<{ userId: string } | { error: SaleReturnResult }> {
+async function authorize(): Promise<{ userId: string; t: Dictionary } | { error: SaleReturnResult }> {
   const s = await auth();
-  if (!s?.user?.id) return { error: { ok: false, message: "Your session has expired. Please sign in again." } };
-  if (!canManageSaleReturns(s.user.role)) return { error: { ok: false, message: "You don't have permission to create sales returns." } };
-  return { userId: s.user.id };
+  const t = await getDict();
+  if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
+  if (!canManageSaleReturns(s.user.role)) return { error: { ok: false, message: t.salesReturns.err.noPermission } };
+  return { userId: s.user.id, t };
 }
 
 export async function createSaleReturn(input: unknown): Promise<SaleReturnResult> {
   const a = await authorize();
   if ("error" in a) return a.error;
-  const v = saleReturnInputSchema.safeParse(input);
+  const t = a.t;
+  const v = makeSaleReturnSchema(t.salesReturns.val, t.sales.val).safeParse(input);
   if (!v.success) {
     const fieldErrors: Partial<Record<SaleReturnField, string>> = {};
-    for (const i of v.error.issues) fieldErrors[(i.path[0] as SaleReturnField) ?? "items"] ??= i.code === "unrecognized_keys" ? "Unexpected fields were sent" : i.message;
-    return { ok: false, message: Object.values(fieldErrors)[0] ?? "Please check the form", fieldErrors };
+    for (const i of v.error.issues) fieldErrors[(i.path[0] as SaleReturnField) ?? "items"] ??= i.code === "unrecognized_keys" ? t.common.unexpectedFields : i.message;
+    return { ok: false, message: Object.values(fieldErrors)[0] ?? t.common.checkForm, fieldErrors };
   }
   const d = v.data;
   const settings = await getSystemSettings();
@@ -69,7 +74,7 @@ export async function createSaleReturn(input: unknown): Promise<SaleReturnResult
         async (tx) => {
           // 1. Lock the sale, then re-read it (current committed data only).
           const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM sales WHERE id = ${d.saleId} FOR UPDATE`;
-          if (!locked.length) fail("Choose a completed sale", "saleId");
+          if (!locked.length) fail("salesReturns.val.chooseSale", {}, "saleId");
           const s = await tx.sale.findUniqueOrThrow({
             where: { id: d.saleId },
             select: {
@@ -79,8 +84,8 @@ export async function createSaleReturn(input: unknown): Promise<SaleReturnResult
               items: { select: { id: true, productId: true, productCode: true, productName: true, unitName: true, quantity: true, unitPrice: true, netUnitPrice: true, taxType: true, taxRate: true, discountType: true, discountValue: true, discountAmount: true, taxAmount: true, subtotal: true } },
             },
           });
-          if (s.status !== "COMPLETED") fail(`${s.reference} hasn't been completed, so nothing can be returned from it.`, "saleId");
-          if (dateOnly(d.returnDate) < s.saleDate) fail(`The return date can't be before the sale date of ${s.reference}.`, "returnDate");
+          if (s.status !== "COMPLETED") fail("salesReturns.err.notCompleted", { ref: s.reference }, "saleId");
+          if (dateOnly(d.returnDate) < s.saleDate) fail("salesReturns.err.beforeSale", { ref: s.reference }, "returnDate");
 
           // 2. Everything already returned from this sale.
           const [priorByLine, prior] = await Promise.all([
@@ -92,11 +97,11 @@ export async function createSaleReturn(input: unknown): Promise<SaleReturnResult
 
           // 3. Lines: must belong to this sale and stay within the returnable quantity.
           const lines = d.items.map((it) => {
-            const si = byId.get(it.saleItemId) ?? fail("A return line doesn't belong to this sale.", "items", it.saleItemId);
+            const si = byId.get(it.saleItemId) ?? fail("salesReturns.err.wrongSale", {}, "items", it.saleItemId);
             const returned = returnedOf.get(si.id) ?? new Prisma.Decimal(0);
             const returnable = new Prisma.Decimal(si.quantity).minus(returned);
             if (new Prisma.Decimal(it.quantity).gt(returnable)) {
-              fail(`Only ${formatQuantity(returnable.toFixed(3))} of ${si.productCode} ${si.productName} can still be returned (sold ${formatQuantity(si.quantity.toFixed(3))}, already returned ${formatQuantity(returned.toFixed(3))}).`, "items", si.id);
+              fail("salesReturns.err.exceeds", { returnable: formatQuantity(returnable.toFixed(3)), code: si.productCode, name: si.productName, sold: formatQuantity(si.quantity.toFixed(3)), returned: formatQuantity(returned.toFixed(3)) }, "items", si.id);
             }
             return { si, quantity: it.quantity, returned: returned.toFixed(3) };
           });
@@ -111,12 +116,8 @@ export async function createSaleReturn(input: unknown): Promise<SaleReturnResult
           const due = new Prisma.Decimal(s.grandTotal).minus(s.paidAmount).minus(prior._sum.grandTotal ?? 0);
           if (new Prisma.Decimal(calc.grandTotal).gt(due)) {
             const m = (x: Prisma.Decimal) => formatMoney(x.toFixed(2), { code: "", symbol: s.currency.symbol, right: !!settings?.currencyIconRight });
-            fail(
-              due.gt(0)
-                ? `This return is worth ${m(new Prisma.Decimal(calc.grandTotal))} but only ${m(due)} is still unpaid on ${s.reference}. Refunds and customer credit for paid amounts aren't available yet.`
-                : `${s.reference} has nothing left unpaid. Returns of paid sales need a customer refund/credit, which isn't available yet.`,
-              "items",
-            );
+            if (due.gt(0)) fail("salesReturns.err.dueExceeded", { worth: m(new Prisma.Decimal(calc.grandTotal)), due: m(due), ref: s.reference }, "items");
+            fail("salesReturns.err.nothingUnpaid", { ref: s.reference }, "items");
           }
 
           // 5. Add the returned quantities back to the sale's warehouse (stable lock order).
@@ -176,11 +177,14 @@ export async function createSaleReturn(input: unknown): Promise<SaleReturnResult
       revalidatePath("/sales");
       revalidatePath(`/sales/${created.saleId}`);
       revalidatePath("/products");
-      return { ok: true, message: `Sale return ${created.reference} created — stock added back and the due of ${created.saleRef} reduced`, id: created.id };
+      return { ok: true, message: tr(t, "salesReturns.ok.created", { ref: created.reference, sale: created.saleRef }), id: created.id };
     } catch (e) {
-      if (e instanceof ReturnError) return { ok: false, message: e.message, fieldErrors: e.field ? { [e.field]: e.message } : undefined, itemErrors: e.itemId ? { [e.itemId]: e.message } : undefined };
+      if (e instanceof ReturnError) {
+        const message = errorMessage(t, e);
+        return { ok: false, message, fieldErrors: e.field ? { [e.field]: message } : undefined, itemErrors: e.itemId ? { [e.itemId]: message } : undefined };
+      }
       if (attempt < 4 && isKnown(e, "P2034", "P2002")) continue; // deadlock / new stock-row race → retry
-      if (isKnown(e, "P2003")) return { ok: false, message: "The sale or a product no longer exists. Refresh and try again." };
+      if (isKnown(e, "P2003")) return { ok: false, message: t.salesReturns.err.refsGone };
       throw e;
     }
   }

@@ -2,12 +2,15 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { auth } from "@/auth";
+import { getDict } from "@/lib/i18n/server";
 import { getPosData } from "@/lib/pos-data";
 import { getHeldOrders } from "@/lib/pos-held-data";
 import { canUsePos } from "@/lib/roles";
 import PosView from "@/components/pos/PosView";
 
-export const metadata: Metadata = { title: "POS" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).shell.pos };
+}
 
 export const instant = false;
 

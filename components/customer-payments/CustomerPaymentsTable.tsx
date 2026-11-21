@@ -9,7 +9,9 @@ import RowMenu from "@/components/ui/RowMenu";
 import { PAYMENT_METHODS } from "@/lib/cash-bank";
 import { formatMoney } from "@/lib/money";
 import { fromUnits, toUnits } from "@/lib/transfers";
-import { PAYMENT_IMMUTABLE, type CustomerPaymentRow } from "@/lib/customer-payments";
+import type { CustomerPaymentRow } from "@/lib/customer-payments";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
 
 // Port of design/Customer Payments.html: PageHeader (+ Record Customer Payment), TableToolbar
 // (search, Customer, Payment Method, Deposited To, From/To date), DataTable (Payment Date /
@@ -20,6 +22,10 @@ import { PAYMENT_IMMUTABLE, type CustomerPaymentRow } from "@/lib/customer-payme
 type Currency = { code: string; symbol: string; right: boolean };
 
 export default function CustomerPaymentsTable({ rows, customers, currency, initialQuery = "" }: { rows: CustomerPaymentRow[]; customers: { id: string; name: string }[]; currency: Currency | null; initialQuery?: string }) {
+  const T = useT();
+  const C = T.custPay;
+  const L = C.list;
+  const meth = (m: string) => (T.sales.methods as Record<string, string>)[m] ?? m;
   const [q, setQ] = useState(initialQuery);
   const [sup, setSup] = useState("ALL");
   const [method, setMethod] = useState("ALL");
@@ -64,23 +70,23 @@ export default function CustomerPaymentsTable({ rows, customers, currency, initi
     <>
       <div className="sp-page-head">
         <h1 className="t-page-title" style={{ margin: 0 }}>
-          Customer Payments
+          {L.title}
         </h1>
         <Link href="/customer-payments/record" className="sp-btn sp-btn--primary">
           <Icon name="plus" size={18} />
-          Record Customer Payment
+          {L.record}
         </Link>
       </div>
 
       <div className="sp-toolbar" style={{ flexWrap: "wrap" }}>
         <div className="sp-group">
           <Icon name="search" size={18} className="sp-input-icon" />
-          <input className="sp-input " placeholder="Search payments" aria-label="Search payments" value={q} onChange={(e) => reset(() => setQ(e.target.value))} />
+          <input className="sp-input " placeholder={L.search} aria-label={L.search} value={q} onChange={(e) => reset(() => setQ(e.target.value))} />
         </div>
         <div className="sp-grow" />
         <div style={{ width: 190 }}>
-          <select className="sp-select " aria-label="Customer" value={sup} onChange={(e) => reset(() => setSup(e.target.value))}>
-            <option value="ALL">All Customers</option>
+          <select className="sp-select " aria-label={L.customer} value={sup} onChange={(e) => reset(() => setSup(e.target.value))}>
+            <option value="ALL">{L.allCustomers}</option>
             {customers.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
@@ -89,18 +95,18 @@ export default function CustomerPaymentsTable({ rows, customers, currency, initi
           </select>
         </div>
         <div style={{ width: 170 }}>
-          <select className="sp-select " aria-label="Payment Method" value={method} onChange={(e) => reset(() => setMethod(e.target.value))}>
-            <option value="ALL">All</option>
+          <select className="sp-select " aria-label={L.method} value={method} onChange={(e) => reset(() => setMethod(e.target.value))}>
+            <option value="ALL">{L.all}</option>
             {PAYMENT_METHODS.map((m) => (
               <option key={m} value={m}>
-                {m}
+                {meth(m)}
               </option>
             ))}
           </select>
         </div>
         <div style={{ width: 170 }}>
-          <select className="sp-select " aria-label="Deposited To" value={account} onChange={(e) => reset(() => setAccount(e.target.value))}>
-            <option value="ALL">All Accounts</option>
+          <select className="sp-select " aria-label={L.depositedTo} value={account} onChange={(e) => reset(() => setAccount(e.target.value))}>
+            <option value="ALL">{L.allAccounts}</option>
             {accounts.map((a) => (
               <option key={a} value={a}>
                 {a}
@@ -109,25 +115,25 @@ export default function CustomerPaymentsTable({ rows, customers, currency, initi
           </select>
         </div>
         <div style={{ width: 160 }}>
-          <input type="date" className="sp-input " aria-label="From date" value={from} onChange={(e) => reset(() => setFrom(e.target.value))} />
+          <input type="date" className="sp-input " aria-label={L.fromDate} value={from} onChange={(e) => reset(() => setFrom(e.target.value))} />
         </div>
         <div style={{ width: 160 }}>
-          <input type="date" className="sp-input " aria-label="To date" value={to} onChange={(e) => reset(() => setTo(e.target.value))} />
+          <input type="date" className="sp-input " aria-label={L.toDate} value={to} onChange={(e) => reset(() => setTo(e.target.value))} />
         </div>
       </div>
 
       {filtered.length === 0 ? (
         <div className="sp-card sp-empty" data-testid="empty">
           <Icon name="inbox" size={36} />
-          <div className="t-section-title">{filtering ? "No payments match your filters" : "No customer payments yet"}</div>
+          <div className="t-section-title">{filtering ? L.noMatch : L.none}</div>
           {filtering ? (
             <button type="button" className="sp-btn sp-btn--secondary" onClick={clear}>
-              Clear filters
+              {L.clear}
             </button>
           ) : (
             <Link href="/customer-payments/record" className="sp-btn sp-btn--primary">
               <Icon name="plus" size={18} />
-              Record Customer Payment
+              {L.record}
             </Link>
           )}
         </div>
@@ -137,14 +143,14 @@ export default function CustomerPaymentsTable({ rows, customers, currency, initi
             <table className="sp-table">
               <thead>
                 <tr>
-                  <th>Payment Date</th>
-                  <th>Reference No.</th>
-                  <th>Customer</th>
-                  <th>Payment Method</th>
-                  <th>Deposited To</th>
-                  <th className="num">Amount</th>
-                  <th>Applied To</th>
-                  <th className="act">Action</th>
+                  <th>{L.paymentDate}</th>
+                  <th>{L.refNo}</th>
+                  <th>{L.customer}</th>
+                  <th>{L.method}</th>
+                  <th>{L.depositedTo}</th>
+                  <th className="num">{L.amount}</th>
+                  <th>{L.appliedTo}</th>
+                  <th className="act">{L.action}</th>
                 </tr>
               </thead>
               <tbody>
@@ -156,7 +162,7 @@ export default function CustomerPaymentsTable({ rows, customers, currency, initi
                     </td>
                     <td className="primary-cell">{r.customer}</td>
                     <td>
-                      <span className="sp-badge sp-badge--primary">{r.method}</span>
+                      <span className="sp-badge sp-badge--primary">{meth(r.method)}</span>
                     </td>
                     <td>{r.account}</td>
                     <td className="num" data-col="amount">{money(r.amount, r.currency)}</td>
@@ -172,10 +178,10 @@ export default function CustomerPaymentsTable({ rows, customers, currency, initi
                       <RowMenu
                         label={r.reference}
                         items={[
-                          { label: "View", icon: "eye", onClick: () => setView(r) },
-                          { label: "Account Statement", icon: "file-text", href: `/customers/statement?customer=${encodeURIComponent(r.customerId)}` },
+                          { label: L.view, icon: "eye", onClick: () => setView(r) },
+                          { label: L.statement, icon: "file-text", href: `/customers/statement?customer=${encodeURIComponent(r.customerId)}` },
                           "-",
-                          { label: "Delete", icon: "trash-2", danger: true, disabled: PAYMENT_IMMUTABLE },
+                          { label: L.delete, icon: "trash-2", danger: true, disabled: C.immutable },
                         ]}
                       />
                     </td>
@@ -184,8 +190,8 @@ export default function CustomerPaymentsTable({ rows, customers, currency, initi
               </tbody>
               <tfoot>
                 <tr data-testid="totals" style={{ fontWeight: 700 }}>
-                  <td colSpan={5} title={mixed ? "The total includes only payments in the current default currency" : undefined}>
-                    Total{mixed ? ` (${currency?.code ?? ""} only)` : ""}
+                  <td colSpan={5} title={mixed ? L.totalMixed : undefined}>
+                    {mixed ? fmt(L.totalCur, { code: currency?.code ?? "" }) : L.total}
                   </td>
                   <td className="num" data-testid="total-amount">{money(total, currency)}</td>
                   <td colSpan={2} />
@@ -200,36 +206,36 @@ export default function CustomerPaymentsTable({ rows, customers, currency, initi
       {view && (
         <Modal
           size="md"
-          title={`Payment ${view.reference}`}
+          title={fmt(L.modalTitle, { ref: view.reference })}
           onClose={() => setView(null)}
           footer={
             <>
               <button type="button" className="sp-btn sp-btn--secondary" onClick={() => setView(null)}>
-                Close
+                {L.close}
               </button>
               <Link href={`/customers/statement?customer=${encodeURIComponent(view.customerId)}`} className="sp-btn sp-btn--primary">
                 <Icon name="file-text" size={18} />
-                Account Statement
+                {L.statement}
               </Link>
             </>
           }
         >
           <div data-testid="payment-view" style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "12px 24px", font: "400 14px/20px var(--font-body)" }}>
-            <b>Customer</b>
+            <b>{L.customer}</b>
             <span>{view.customer}</span>
-            <b>Payment Date</b>
+            <b>{L.paymentDate}</b>
             <span>{view.dateLabel}</span>
-            <b>Method</b>
-            <span>{view.method}</span>
-            <b>Amount</b>
+            <b>{T.custPay.form.method}</b>
+            <span>{meth(view.method)}</span>
+            <b>{L.amount}</b>
             <span data-testid="view-amount">{money(view.amount, view.currency)}</span>
-            <b>Deposited To</b>
+            <b>{L.depositedTo}</b>
             <span>
               {view.account} <span className="t-caption">({view.ledgerReference})</span>
             </span>
-            <b>Payment Reference</b>
+            <b>{L.paymentRef}</b>
             <span>{view.externalReference || "—"}</span>
-            <b>Applied To</b>
+            <b>{L.appliedTo}</b>
             <span data-testid="view-applied">
               {view.appliedTo.map((a, i) => (
                 <span key={a.saleId}>
@@ -238,16 +244,14 @@ export default function CustomerPaymentsTable({ rows, customers, currency, initi
                 </span>
               ))}
             </span>
-            <b>Status</b>
+            <b>{L.status}</b>
             <span>
-              <span className="sp-badge sp-badge--success">Applied</span>
+              <span className="sp-badge sp-badge--success">{L.applied}</span>
             </span>
-            <b>Notes</b>
+            <b>{L.notes}</b>
             <span style={{ whiteSpace: "pre-wrap" }}>{view.notes || "—"}</span>
-            <b>Recorded</b>
-            <span>
-              {view.createdOn} by {view.createdBy}
-            </span>
+            <b>{L.recorded}</b>
+            <span>{fmt(L.recordedBy, { on: view.createdOn, by: view.createdBy })}</span>
           </div>
         </Modal>
       )}

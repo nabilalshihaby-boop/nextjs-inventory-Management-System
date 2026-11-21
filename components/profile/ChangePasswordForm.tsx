@@ -4,6 +4,8 @@ import { startTransition, useActionState, useEffect, useState, type ChangeEvent,
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Icon from "@/components/layout/Icon";
+import { fmt } from "@/lib/i18n/config";
+import { useT } from "@/components/i18n/I18nProvider";
 import {
   changePassword,
   type ChangePasswordState,
@@ -15,6 +17,7 @@ const EMPTY: Record<PasswordField, string> = { currentPassword: "", newPassword:
 // Same structure as ProfileForm / design/Create User.html: sp-card sp-form-card + sp-form-grid + sp-form-actions.
 // Password inputs reuse the sign-in page's show/hide pattern (.si-pw / .si-eye).
 export default function ChangePasswordForm() {
+  const t = useT();
   const router = useRouter();
   const [state, formAction, pending] = useActionState<ChangePasswordState, FormData>(changePassword, {
     status: "idle",
@@ -83,7 +86,7 @@ export default function ChangePasswordForm() {
           <button
             type="button"
             className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-            aria-label={show[k] ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+            aria-label={fmt(show[k] ? t.password.hide : t.password.show, { label: label.toLowerCase() })}
             aria-controls={`cp-${k}`}
             onClick={() => setShow({ ...show, [k]: !show[k] })}
           >
@@ -110,16 +113,16 @@ export default function ChangePasswordForm() {
       <form method="post" onSubmit={submit} noValidate aria-busy={pending}>
         <div className="sp-card sp-form-card">
           <div className="sp-form-grid" style={{ "--cols": 2 } as React.CSSProperties}>
-            {field("currentPassword", "Current Password", "Enter Current Password", "current-password", undefined, true)}
-            {field("newPassword", "New Password", "Enter New Password", "new-password", "At least 8 characters.")}
-            {field("confirmPassword", "Confirm New Password", "Enter Confirm New Password", "new-password")}
+            {field("currentPassword", t.password.current, t.password.currentPh, "current-password", undefined, true)}
+            {field("newPassword", t.password.next, t.password.nextPh, "new-password", t.password.nextHint)}
+            {field("confirmPassword", t.password.confirm, t.password.confirmPh, "new-password")}
           </div>
           <div className="sp-form-actions">
             <button type="button" className="sp-btn sp-btn--secondary" onClick={() => router.push("/dashboard")}>
-              Cancel
+              {t.common.cancel}
             </button>
             <button type="submit" className="sp-btn sp-btn--primary" disabled={!ok || pending}>
-              {pending ? "Saving…" : "Save"}
+              {pending ? t.common.saving : t.common.save}
             </button>
           </div>
         </div>

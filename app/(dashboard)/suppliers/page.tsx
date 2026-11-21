@@ -7,9 +7,12 @@ import { getCountryOptions } from "@/lib/countries";
 import { formatDateTime } from "@/lib/format";
 import { canManageSuppliers, canViewSupplierStatement } from "@/lib/roles";
 import { getSystemSettings } from "@/lib/settings";
+import { getDict, getLocale } from "@/lib/i18n/server";
 import SuppliersTable from "@/components/suppliers/SuppliersTable";
 
-export const metadata: Metadata = { title: "Suppliers" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).suppliers.list.title };
+}
 
 export const instant = false;
 
@@ -20,8 +23,9 @@ export default async function SuppliersPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/");
 
+  const locale = await getLocale();
   const [suppliers, settings] = await Promise.all([db.supplier.findMany({ orderBy: { createdAt: "desc" } }), getSystemSettings()]);
-  const countryName = new Map<string, string>(getCountryOptions().map((c) => [c.code, c.name]));
+  const countryName = new Map<string, string>(getCountryOptions(locale).map((c) => [c.code, c.name]));
 
   const rows = suppliers.map((s) => ({
     id: s.id,
@@ -30,7 +34,7 @@ export default async function SuppliersPage() {
     phoneNumber: s.phoneNumber,
     countryName: countryName.get(s.countryCode) ?? s.countryCode,
     city: s.city,
-    createdOn: formatDateTime(s.createdAt, settings?.dateFormat),
+    createdOn: formatDateTime(s.createdAt, settings?.dateFormat, locale),
   }));
 
   return <SuppliersTable rows={rows} canManage={canManageSuppliers(session.user.role)} canViewStatement={canViewSupplierStatement(session.user.role)} />;

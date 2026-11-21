@@ -2,10 +2,12 @@
 // implementation of "a sale takes stock out of a warehouse".
 import { Prisma } from "@/app/generated/prisma/client";
 import { formatQuantity } from "@/lib/money";
+import { LocalizedError, type Vars } from "@/lib/i18n/messages";
 
-export class SaleError extends Error {
-  constructor(message: string, readonly itemId?: string) {
-    super(message);
+// Carries a dictionary key (+ variables) instead of English text; the caller translates it with errorMessage().
+export class SaleError extends LocalizedError {
+  constructor(key: string, vars: Vars = {}, itemId?: string) {
+    super(key, vars, itemId);
   }
 }
 
@@ -21,7 +23,7 @@ export async function deductStock(tx: Prisma.TransactionClient, warehouseId: str
         tx.productStock.findUnique({ where: { productId_warehouseId: { productId: l.productId, warehouseId } }, select: { quantity: true } }),
         tx.warehouse.findUnique({ where: { id: warehouseId }, select: { name: true } }),
       ]);
-      throw new SaleError(`Not enough stock of ${l.productCode} ${l.productName} in ${w?.name ?? "the warehouse"}: ${formatQuantity(new Prisma.Decimal(l.quantity).toFixed(3))} needed, only ${formatQuantity((s?.quantity ?? new Prisma.Decimal(0)).toFixed(3))} available.`, l.productId);
+      throw new SaleError(w?.name ? "sales.err.notEnoughStock" : "sales.err.notEnoughStockNoWh", { code: l.productCode, name: l.productName, warehouse: w?.name ?? "", needed: formatQuantity(new Prisma.Decimal(l.quantity).toFixed(3)), available: formatQuantity((s?.quantity ?? new Prisma.Decimal(0)).toFixed(3)) }, l.productId);
     }
   }
 }

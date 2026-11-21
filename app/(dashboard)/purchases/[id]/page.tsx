@@ -10,9 +10,13 @@ import { canManagePurchases } from "@/lib/roles";
 import { getSystemSettings } from "@/lib/settings";
 import { fromUnits, toUnits } from "@/lib/transfers";
 import { paymentStatus, purchaseDue } from "@/lib/purchases";
+import { getDict, getLocaleInfo } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n/config";
 import PurchaseDetails from "@/components/purchases/PurchaseDetails";
 
-export const metadata: Metadata = { title: "Purchase Details" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).purchases.details.title };
+}
 
 export const instant = false;
 
@@ -25,6 +29,8 @@ export default async function PurchaseDetailsPage({ params }: PageProps<"/purcha
   if (!canManagePurchases(session.user.role)) redirect("/dashboard");
 
   const { id } = await params;
+  const { locale, dict: T } = await getLocaleInfo();
+  const D = T.purchases.details;
   const p = await db.purchase.findUnique({
     where: { id },
     include: {
@@ -38,7 +44,7 @@ export default async function PurchaseDetailsPage({ params }: PageProps<"/purcha
   const settings = await getSystemSettings();
   const cur = { code: p.currency.code, symbol: p.currency.symbol, right: !!settings?.currencyIconRight };
   const m = (v: { toFixed: (n: number) => string }) => formatMoney(v.toFixed(2), cur);
-  const country = new Map<string, string>(getCountryOptions().map((c) => [c.code, c.name]));
+  const country = new Map<string, string>(getCountryOptions(locale).map((c) => [c.code, c.name]));
   const [creator, receiver] = await Promise.all([
     p.createdById ? db.user.findUnique({ where: { id: p.createdById }, select: { firstName: true, lastName: true } }) : null,
     p.receivedById ? db.user.findUnique({ where: { id: p.receivedById }, select: { firstName: true, lastName: true } }) : null,
@@ -66,8 +72,8 @@ export default async function PurchaseDetailsPage({ params }: PageProps<"/purcha
         date: formatDateOnly(p.purchaseDate, settings?.dateFormat),
         warehouse: p.warehouse.name,
         createdBy: creator ? `${creator.firstName} ${creator.lastName}` : "—",
-        createdOn: formatDateTime(p.createdAt, settings?.dateFormat),
-        receivedOn: p.receivedAt ? `${formatDateTime(p.receivedAt, settings?.dateFormat)}${receiver ? ` by ${receiver.firstName} ${receiver.lastName}` : ""}` : null,
+        createdOn: formatDateTime(p.createdAt, settings?.dateFormat, locale),
+        receivedOn: p.receivedAt ? (receiver ? fmt(D.receivedBy, { on: formatDateTime(p.receivedAt, settings?.dateFormat, locale), by: `${receiver.firstName} ${receiver.lastName}` }) : formatDateTime(p.receivedAt, settings?.dateFormat, locale)) : null,
         notes: p.notes ?? "",
         paymentStatus: paymentStatus(paid, grand, returned),
         paid: formatMoney(paid, cur),
@@ -88,7 +94,7 @@ export default async function PurchaseDetailsPage({ params }: PageProps<"/purcha
           quantity: `${formatQuantity(i.quantity.toFixed(3))} ${i.product.purchaseUnit.name}`,
           unitCost: m(i.unitCost),
           discount: m(i.discountAmount),
-          tax: `${m(i.taxAmount)}${i.taxRate.isZero() ? "" : ` (${i.taxRate.toFixed(2)}% ${i.taxType === "EXCLUSIVE" ? "excl." : "incl."})`}`,
+          tax: `${m(i.taxAmount)}${i.taxRate.isZero() ? "" : ` (${fmt(i.taxType === "EXCLUSIVE" ? D.taxExcl : D.taxIncl, { rate: i.taxRate.toFixed(2) })})`}`,
           subtotal: m(i.subtotal),
         })),
       }}

@@ -8,6 +8,8 @@ import Topbar from "@/components/layout/Topbar";
 import Footer from "@/components/layout/Footer";
 import AppToaster from "@/components/layout/AppToaster";
 import { getShellBranding } from "@/lib/settings";
+import { getDict } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n/config";
 import { getEffectiveTheme } from "@/lib/preferences";
 import { themeCss } from "@/lib/theme";
 
@@ -23,11 +25,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const session = await auth();
   if (!session?.user) redirect("/");
 
+  const t = await getDict();
   // Only display fields go to the client: no id, email or anything secret.
   const { name, email, image, role } = session.user;
   const user = {
     name: name?.trim() || email || "User",
-    roleLabel: roleLabel(role),
+    roleLabel: (t.roles as Record<string, string>)[role ?? ""] ?? roleLabel(role),
     image: image || null,
   };
 
@@ -49,7 +52,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <div className="bp-main">
         <Topbar user={user} />
         <main className="bp-content">{children}</main>
-        <Footer text={brand.footerText} version={brand.version} />
+        <Footer text={brand.footerCustom || fmt(t.shell.footerDefault, { name: brand.name })} version={brand.version} />
       </div>
       <AppToaster />
     </AppShell>
