@@ -4,10 +4,13 @@ import { connection } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { getCountryOptions } from "@/lib/countries";
+import { getLocaleInfo } from "@/lib/i18n/server";
 import { canManageWarehouses } from "@/lib/roles";
 import WarehouseForm from "@/components/warehouse/WarehouseForm";
 
-export const metadata: Metadata = { title: "Edit Warehouse" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getLocaleInfo()).dict.warehouses.editTitle };
+}
 
 export const instant = false;
 
@@ -21,6 +24,7 @@ export default async function EditWarehousePage({ params }: PageProps<"/warehous
   const { id } = await params;
   const w = await db.warehouse.findUnique({ where: { id } });
   if (!w) notFound();
+  const { locale } = await getLocaleInfo();
 
   return (
     <WarehouseForm
@@ -33,7 +37,7 @@ export default async function EditWarehousePage({ params }: PageProps<"/warehous
         city: w.city,
         zipCode: w.zipCode ?? "",
       }}
-      countries={getCountryOptions()}
+      countries={getCountryOptions(locale)}
     />
   );
 }

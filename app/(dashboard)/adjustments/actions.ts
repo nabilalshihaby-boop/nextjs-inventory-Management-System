@@ -9,7 +9,10 @@ import { db } from "@/lib/db";
 import { canManageAdjustments } from "@/lib/roles";
 import { formatQuantity } from "@/lib/money";
 import { fromUnits } from "@/lib/transfers";
-import { adjustmentInputSchema, formatAdjustmentReference, signedUnits, type AdjustmentField, type AdjustmentInput, type AdjustmentTypeValue } from "@/lib/adjustments";
+import { formatAdjustmentReference, makeAdjustmentSchema, signedUnits, type AdjustmentField, type AdjustmentInput, type AdjustmentTypeValue } from "@/lib/adjustments";
+import { getDict } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n/config";
+import type { Dictionary } from "@/lib/i18n";
 
 // Stock Adjustments. Integrity rules (all enforced here, server-side):
 // - OWNER/ADMIN only; auth() is re-read in every action and the role never comes from the client.
@@ -30,7 +33,6 @@ export type AdjustmentResult =
   | { ok: false; message: string; fieldErrors?: Partial<Record<AdjustmentField, string>>; itemErrors?: Record<string, string> };
 
 const idSchema = z.string().trim().min(1).max(64);
-const NOT_FOUND = "Adjustment not found";
 
 class StockError extends Error {
   constructor(readonly productId: string, readonly label: string, readonly available: string, readonly needed: string) {
@@ -39,17 +41,17 @@ class StockError extends Error {
 }
 class GoneError extends Error {}
 
-async function authorize(): Promise<{ userId: string } | { error: AdjustmentResult }> {
+async function authorize(t: Dictionary): Promise<{ userId: string } | { error: AdjustmentResult }> {
   const session = await auth();
-  if (!session?.user?.id) return { error: { ok: false, message: "Your session has expired. Please sign in again." } };
-  if (!canManageAdjustments(session.user.role)) return { error: { ok: false, message: "You don't have permission to change adjustments." } };
+  if (!session?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
+  if (!canManageAdjustments(session.user.role)) return { error: { ok: false, message: t.adjustments.err.noPermission } };
   return { userId: session.user.id };
 }
 
 const isKnown = (e: unknown, ...codes: string[]) => e instanceof Prisma.PrismaClientKnownRequestError && codes.includes(e.code);
 
-function parse(input: unknown): { ok: true; data: AdjustmentInput } | { ok: false; error: AdjustmentResult } {
-  const parsed = adjustmentInputSchema.safeParse(input);
+function parse(input: unknown, t: Dictionary): { ok: true; data: AdjustmentInput } | { ok: false; error: AdjustmentResult } {
+  const parsed = makeAdjustmentSchema(t.adjustments.val).safeParse(input);
   if (parsed.success) return { ok: true, data: parsed.data };
   const fieldErrors: Partial<Record<AdjustmentField, string>> = {};
   const itemErrors: Record<string, string> = {};
@@ -61,20 +63,20 @@ function parse(input: unknown): { ok: true; data: AdjustmentInput } | { ok: fals
     }
     fieldErrors[(k as AdjustmentField) ?? "items"] ??= issue.message;
   }
-  return { ok: false, error: { ok: false, message: Object.values(fieldErrors)[0] ?? "Please check the form", fieldErrors, itemErrors } };
+  return { ok: false, error: { ok: false, message: Object.values(fieldErrors)[0] ?? t.common.checkForm, fieldErrors, itemErrors } };
 }
 
 /** Warehouse and every product must exist in MySQL. Returns product labels for messages. */
-async function resolve(d: AdjustmentInput): Promise<{ ok: true; labels: Map<string, string> } | { ok: false; error: AdjustmentResult }> {
+async function resolve(d: AdjustmentInput, t: Dictionary): Promise<{ ok: true; labels: Map<string, string> } | { ok: false; error: AdjustmentResult }> {
   const [warehouse, products] = await Promise.all([
     db.warehouse.findUnique({ where: { id: d.warehouseId }, select: { id: true } }),
     db.product.findMany({ where: { id: { in: d.items.map((i) => i.productId) } }, select: { id: true, code: true, name: true } }),
   ]);
   const fieldErrors: Partial<Record<AdjustmentField, string>> = {};
   const itemErrors: Record<string, string> = {};
-  if (!warehouse) fieldErrors.warehouseId = "Choose a valid warehouse";
+  if (!warehouse) fieldErrors.warehouseId = t.adjustments.err.validWarehouse;
   const labels = new Map(products.map((p) => [p.id, `${p.code} ${p.name}`]));
-  for (const i of d.items) if (!labels.has(i.productId)) itemErrors[i.productId] = "This product no longer exists";
+  for (const i of d.items) if (!labels.has(i.productId)) itemErrors[i.productId] = t.adjustments.err.productGone;
   if (Object.keys(itemErrors).length) fieldErrors.items ??= Object.values(itemErrors)[0];
   if (Object.keys(fieldErrors).length) return { ok: false, error: { ok: false, message: Object.values(fieldErrors)[0]!, fieldErrors, itemErrors } };
   return { ok: true, labels };
@@ -93,7 +95,7 @@ function addEffect(m: Deltas, warehouseId: string, lines: Line[], sign: 1 | -1) 
 }
 
 /** Apply net stock changes; decreases are conditional so stock never goes below zero. */
-async function applyDeltas(tx: Tx, deltas: Deltas, labels: Map<string, string>) {
+async function applyDeltas(tx: Tx, deltas: Deltas, labels: Map<string, string>, aProduct: string) {
   // Stable lock order (product|warehouse) avoids deadlocks between concurrent adjustments.
   for (const [, d] of [...deltas].sort(([a], [b]) => a.localeCompare(b))) {
     if (d.units === BigInt(0)) continue;
@@ -111,7 +113,7 @@ async function applyDeltas(tx: Tx, deltas: Deltas, labels: Map<string, string>) 
       });
       if (r.count !== 1) {
         const s = await tx.productStock.findUnique({ where: { productId_warehouseId: { productId: d.productId, warehouseId: d.warehouseId } }, select: { quantity: true } });
-        throw new StockError(d.productId, labels.get(d.productId) ?? "a product", s ? s.quantity.toFixed(3) : "0.000", qty);
+        throw new StockError(d.productId, labels.get(d.productId) ?? aProduct, s ? s.quantity.toFixed(3) : "0.000", qty);
       }
     }
   }
@@ -141,14 +143,10 @@ async function lockOriginal(tx: Tx, id: string) {
   return { ...a, lines, labels };
 }
 
-function stockFailure(e: StockError, action: "save" | "edit" | "delete"): AdjustmentResult {
+function stockFailure(e: StockError, action: "save" | "edit" | "delete", t: Dictionary): AdjustmentResult {
   const have = formatQuantity(e.available);
-  const message =
-    action === "delete"
-      ? `This adjustment can't be deleted: reversing it would make the stock of ${e.label} negative (only ${have} left).`
-      : action === "edit"
-        ? `Not enough stock of ${e.label}: this change would make its stock negative (only ${have} available).`
-        : `Not enough stock of ${e.label} to subtract (only ${have} available).`;
+  const E = t.adjustments.err;
+  const message = fmt(action === "delete" ? E.stockDelete : action === "edit" ? E.stockEdit : E.stockSave, { label: e.label, have });
   return { ok: false, message, fieldErrors: { items: message }, itemErrors: { [e.productId]: message } };
 }
 
@@ -160,11 +158,12 @@ function revalidate() {
 const dateOf = (v: string) => new Date(`${v}T00:00:00.000Z`);
 
 export async function createAdjustment(input: unknown): Promise<AdjustmentResult> {
-  const a = await authorize();
+  const t = await getDict();
+  const a = await authorize(t);
   if ("error" in a) return a.error;
-  const v = parse(input);
+  const v = parse(input, t);
   if (!v.ok) return v.error;
-  const r = await resolve(v.data);
+  const r = await resolve(v.data, t);
   if (!r.ok) return r.error;
   const d = v.data;
 
@@ -181,32 +180,33 @@ export async function createAdjustment(input: unknown): Promise<AdjustmentResult
           },
           select: { id: true, number: true },
         });
-        const t = await tx.stockAdjustment.update({ where: { id: t0.id }, data: { reference: formatAdjustmentReference(t0.number) }, select: { id: true, reference: true } });
+        const ad = await tx.stockAdjustment.update({ where: { id: t0.id }, data: { reference: formatAdjustmentReference(t0.number) }, select: { id: true, reference: true } });
         const deltas: Deltas = new Map();
         addEffect(deltas, d.warehouseId, d.items, 1);
-        await applyDeltas(tx, deltas, r.labels);
-        return t;
+        await applyDeltas(tx, deltas, r.labels, t.adjustments.err.aProduct);
+        return ad;
       }),
     );
     revalidate();
-    return { ok: true, message: `Adjustment ${created.reference} created`, id: created.id };
+    return { ok: true, message: fmt(t.adjustments.ok.created, { ref: created.reference }), id: created.id };
   } catch (e) {
-    if (e instanceof StockError) return stockFailure(e, "save");
-    if (isKnown(e, "P2003")) return { ok: false, message: "The warehouse or a product no longer exists. Refresh and try again." };
+    if (e instanceof StockError) return stockFailure(e, "save", t);
+    if (isKnown(e, "P2003")) return { ok: false, message: t.adjustments.err.refsGone };
     throw e;
   }
 }
 
 /** Edit: reverse the original effect and apply the new one atomically (net change per product). */
 export async function updateAdjustment(id: unknown, input: unknown): Promise<AdjustmentResult> {
-  const a = await authorize();
+  const t = await getDict();
+  const a = await authorize(t);
   if ("error" in a) return a.error;
   const aid = idSchema.safeParse(id);
-  if (!aid.success) return { ok: false, message: NOT_FOUND };
-  if (!(await db.stockAdjustment.findUnique({ where: { id: aid.data }, select: { id: true } }))) return { ok: false, message: NOT_FOUND };
-  const v = parse(input);
+  if (!aid.success) return { ok: false, message: t.adjustments.err.notFound };
+  if (!(await db.stockAdjustment.findUnique({ where: { id: aid.data }, select: { id: true } }))) return { ok: false, message: t.adjustments.err.notFound };
+  const v = parse(input, t);
   if (!v.ok) return v.error;
-  const r = await resolve(v.data);
+  const r = await resolve(v.data, t);
   if (!r.ok) return r.error;
   const d = v.data;
 
@@ -220,26 +220,27 @@ export async function updateAdjustment(id: unknown, input: unknown): Promise<Adj
         await tx.stockAdjustment.update({ where: { id: orig.id }, data: { warehouseId: d.warehouseId, adjustmentDate: dateOf(d.adjustmentDate) } });
         await tx.stockAdjustmentItem.deleteMany({ where: { adjustmentId: orig.id } });
         await tx.stockAdjustmentItem.createMany({ data: d.items.map((i) => ({ adjustmentId: orig.id, productId: i.productId, quantity: i.quantity, type: i.type })) });
-        await applyDeltas(tx, deltas, new Map([...orig.labels, ...r.labels]));
+        await applyDeltas(tx, deltas, new Map([...orig.labels, ...r.labels]), t.adjustments.err.aProduct);
         return orig.reference;
       }),
     );
     revalidate();
-    return { ok: true, message: `Adjustment ${ref} updated`, id: aid.data };
+    return { ok: true, message: fmt(t.adjustments.ok.updated, { ref }), id: aid.data };
   } catch (e) {
-    if (e instanceof StockError) return stockFailure(e, "edit");
-    if (e instanceof GoneError) return { ok: false, message: NOT_FOUND };
-    if (isKnown(e, "P2003")) return { ok: false, message: "The warehouse or a product no longer exists. Refresh and try again." };
+    if (e instanceof StockError) return stockFailure(e, "edit", t);
+    if (e instanceof GoneError) return { ok: false, message: t.adjustments.err.notFound };
+    if (isKnown(e, "P2003")) return { ok: false, message: t.adjustments.err.refsGone };
     throw e;
   }
 }
 
 /** Delete: reverse the original effect atomically; refused if that would make stock negative. */
 export async function deleteAdjustment(id: unknown): Promise<AdjustmentResult> {
-  const a = await authorize();
+  const t = await getDict();
+  const a = await authorize(t);
   if ("error" in a) return a.error;
   const aid = idSchema.safeParse(id);
-  if (!aid.success) return { ok: false, message: NOT_FOUND };
+  if (!aid.success) return { ok: false, message: t.adjustments.err.notFound };
 
   try {
     const ref = await withRetry(() =>
@@ -247,16 +248,16 @@ export async function deleteAdjustment(id: unknown): Promise<AdjustmentResult> {
         const orig = await lockOriginal(tx, aid.data);
         const deltas: Deltas = new Map();
         addEffect(deltas, orig.warehouseId, orig.lines, -1);
-        await applyDeltas(tx, deltas, orig.labels);
+        await applyDeltas(tx, deltas, orig.labels, t.adjustments.err.aProduct);
         await tx.stockAdjustment.delete({ where: { id: orig.id } }); // items cascade
         return orig.reference;
       }),
     );
     revalidate();
-    return { ok: true, message: `Adjustment ${ref} deleted` };
+    return { ok: true, message: fmt(t.adjustments.ok.deleted, { ref }) };
   } catch (e) {
-    if (e instanceof StockError) return stockFailure(e, "delete");
-    if (e instanceof GoneError) return { ok: false, message: NOT_FOUND };
+    if (e instanceof StockError) return stockFailure(e, "delete", t);
+    if (e instanceof GoneError) return { ok: false, message: t.adjustments.err.notFound };
     throw e;
   }
 }

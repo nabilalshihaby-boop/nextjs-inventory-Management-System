@@ -3,10 +3,13 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { auth } from "@/auth";
 import { getCountryOptions } from "@/lib/countries";
+import { getLocaleInfo } from "@/lib/i18n/server";
 import { canManageWarehouses } from "@/lib/roles";
 import WarehouseForm from "@/components/warehouse/WarehouseForm";
 
-export const metadata: Metadata = { title: "Create Warehouse" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getLocaleInfo()).dict.warehouses.createTitle };
+}
 
 export const instant = false;
 
@@ -17,5 +20,6 @@ export default async function CreateWarehousePage() {
   if (!session?.user?.id) redirect("/");
   if (!canManageWarehouses(session.user.role)) redirect("/warehouse");
 
-  return <WarehouseForm countries={getCountryOptions()} />;
+  const { locale } = await getLocaleInfo();
+  return <WarehouseForm countries={getCountryOptions(locale)} />;
 }

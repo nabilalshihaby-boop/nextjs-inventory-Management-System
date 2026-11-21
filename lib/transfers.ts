@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { fmt } from "@/lib/i18n/config";
+import { en } from "@/lib/i18n/dictionaries/en";
+import type { Dictionary } from "@/lib/i18n";
 
 // Shared Inventory Transfer rules (client + server). Quantities (3 dp) and money (2 dp) stay
 // decimal strings; arithmetic uses scaled BigInt integers — never floating point.
@@ -65,44 +68,47 @@ function isValidDate(v: string) {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v && d.getUTCFullYear() >= 2000 && d.getUTCFullYear() <= 2199;
 }
 
-const itemSchema = z.object({
-  productId: id("Choose a valid product"),
-  quantity: z
-    .string({ error: "Quantity is required" })
-    .trim()
-    .refine((v) => QTY_RE.test(v), "Quantity must be a number with up to 3 decimal places")
-    .refine((v) => !QTY_RE.test(v) || toUnits(v, 3) > BigInt(0), "Quantity must be greater than 0"),
-});
-
 /**
  * Create/update payload. Only ids, quantities, date, status and note are accepted — any cost,
- * stock or reference values a client sends are stripped and never used.
+ * stock or reference values a client sends are stripped and never used. Messages are dictionary
+ * text (English by default).
  */
-export const transferInputSchema = z
-  .object({
-    transferDate: z.string({ error: "Date is required" }).trim().min(1, "Date is required").refine(isValidDate, "Enter a valid date"),
-    fromWarehouseId: id("From Warehouse is required"),
-    toWarehouseId: id("To Warehouse is required"),
-    status: z.enum(TRANSFER_STATUSES, { error: "Choose a valid status" }),
-    note: z.string().trim().max(2000, "Note must be 2000 characters or fewer").optional().default(""),
-    items: z
-      .array(itemSchema, { error: "Add at least one product" })
-      .min(1, "Add at least one product")
-      .max(MAX_TRANSFER_ITEMS, `Up to ${MAX_TRANSFER_ITEMS} products per transfer`),
-  })
-  .superRefine((v, ctx) => {
-    if (v.fromWarehouseId === v.toWarehouseId) {
-      ctx.addIssue({ code: "custom", path: ["toWarehouseId"], message: "From and To warehouses must be different" });
-    }
-    const seen = new Set<string>();
-    for (const i of v.items) {
-      if (seen.has(i.productId)) {
-        ctx.addIssue({ code: "custom", path: ["items"], message: "Each product can appear only once" });
-        break;
-      }
-      seen.add(i.productId);
-    }
+export function makeTransferSchema(m: Dictionary["transfers"]["val"] = en.transfers.val) {
+  const itemSchema = z.object({
+    productId: id(m.chooseProduct),
+    quantity: z
+      .string({ error: m.qtyRequired })
+      .trim()
+      .refine((v) => QTY_RE.test(v), m.qtyDecimals)
+      .refine((v) => !QTY_RE.test(v) || toUnits(v, 3) > BigInt(0), m.qtyPositive),
   });
+  return z
+    .object({
+      transferDate: z.string({ error: m.dateRequired }).trim().min(1, m.dateRequired).refine(isValidDate, m.dateInvalid),
+      fromWarehouseId: id(m.fromRequired),
+      toWarehouseId: id(m.toRequired),
+      status: z.enum(TRANSFER_STATUSES, { error: m.statusInvalid }),
+      note: z.string().trim().max(2000, m.noteLong).optional().default(""),
+      items: z
+        .array(itemSchema, { error: m.addProduct })
+        .min(1, m.addProduct)
+        .max(MAX_TRANSFER_ITEMS, fmt(m.maxItems, { max: MAX_TRANSFER_ITEMS })),
+    })
+    .superRefine((v, ctx) => {
+      if (v.fromWarehouseId === v.toWarehouseId) {
+        ctx.addIssue({ code: "custom", path: ["toWarehouseId"], message: m.sameWarehouse });
+      }
+      const seen = new Set<string>();
+      for (const i of v.items) {
+        if (seen.has(i.productId)) {
+          ctx.addIssue({ code: "custom", path: ["items"], message: m.dupProduct });
+          break;
+        }
+        seen.add(i.productId);
+      }
+    });
+}
+export const transferInputSchema = makeTransferSchema();
 
 export type TransferInput = z.infer<typeof transferInputSchema>;
 export type TransferField = "transferDate" | "fromWarehouseId" | "toWarehouseId" | "status" | "note" | "items";

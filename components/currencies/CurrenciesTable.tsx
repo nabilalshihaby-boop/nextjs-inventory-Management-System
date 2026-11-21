@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Icon from "@/components/layout/Icon";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
+import Modal, { ConfirmDeleteModal } from "@/components/ui/Modal";
+import Pagination, { paginate } from "@/components/ui/Pagination";
 import { createCurrency, deleteCurrency, updateCurrency, type CurrencyResult } from "@/app/(dashboard)/currencies/actions";
 import type { CurrencyField, CurrencyRow } from "@/lib/currencies";
 
@@ -16,6 +20,9 @@ const EMPTY: Form = { name: "", code: "", symbol: "" };
 
 export default function CurrenciesTable({ rows, canManage }: { rows: CurrencyRow[]; canManage: boolean }) {
   const router = useRouter();
+  const T = useT();
+  const C = T.currencies;
+  const L = C.list;
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -27,11 +34,7 @@ export default function CurrenciesTable({ rows, canManage }: { rows: CurrencyRow
 
   const needle = q.trim().toLowerCase();
   const filtered = needle ? rows.filter((r) => (r.name + r.code + r.symbol).toLowerCase().includes(needle)) : rows;
-  const last = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const current = Math.min(page, last);
-  const visible = filtered.slice((current - 1) * pageSize, current * pageSize);
-  const from = filtered.length ? (current - 1) * pageSize + 1 : 0;
-  const to = Math.min(filtered.length, current * pageSize);
+  const p = paginate(filtered, page, pageSize);
 
   const open = (row: CurrencyRow | null) => {
     setModal({ row });
@@ -59,10 +62,10 @@ export default function CurrenciesTable({ rows, canManage }: { rows: CurrencyRow
   function save() {
     // Same required checks as the design; the server action validates everything again.
     const n: Partial<Record<CurrencyField, string>> = {};
-    if (!f.name.trim()) n.name = "Name is required";
-    if (!f.code.trim()) n.code = "Code is required";
-    else if (!/^[A-Z]{3}$/.test(f.code.trim())) n.code = "Code must be exactly 3 letters, e.g. EGP";
-    if (!f.symbol.trim()) n.symbol = "Symbol is required";
+    if (!f.name.trim()) n.name = C.val.nameRequired;
+    if (!f.code.trim()) n.code = C.val.codeRequired;
+    else if (!/^[A-Z]{3}$/.test(f.code.trim())) n.code = C.val.codeFormat;
+    if (!f.symbol.trim()) n.symbol = C.val.symbolRequired;
     setErr(n);
     if (Object.keys(n).length) {
       toast.error(Object.values(n)[0]!, { id: "currency" });
@@ -74,7 +77,7 @@ export default function CurrenciesTable({ rows, canManage }: { rows: CurrencyRow
         const r = row ? await updateCurrency(row.id, f) : await createCurrency(f);
         handle(r, close);
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "currency" });
+        toast.error(T.common.somethingWrong, { id: "currency" });
       }
     });
   }
@@ -88,7 +91,7 @@ export default function CurrenciesTable({ rows, canManage }: { rows: CurrencyRow
         handle(r, () => setDel(null));
         if (!r.ok) setDel(null);
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "currency" });
+        toast.error(T.common.somethingWrong, { id: "currency" });
       }
     });
   }
@@ -100,8 +103,8 @@ export default function CurrenciesTable({ rows, canManage }: { rows: CurrencyRow
           <Icon name="search" size={18} className="sp-input-icon" />
           <input
             className="sp-input "
-            placeholder="Search"
-            aria-label="Search currencies"
+            placeholder={L.search}
+            aria-label={L.searchAria}
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
@@ -113,7 +116,7 @@ export default function CurrenciesTable({ rows, canManage }: { rows: CurrencyRow
         {canManage && (
           <button type="button" className="sp-btn sp-btn--primary" onClick={() => open(null)}>
             <Icon name="plus" size={18} />
-            Create Currency
+            {L.create}
           </button>
         )}
       </div>
@@ -123,27 +126,27 @@ export default function CurrenciesTable({ rows, canManage }: { rows: CurrencyRow
           <table className="sp-table">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Code</th>
-                <th>Symbol</th>
-                {canManage && <th className="num">Action</th>}
+                <th>{L.colName}</th>
+                <th>{L.colCode}</th>
+                <th>{L.colSymbol}</th>
+                {canManage && <th className="num">{L.colAction}</th>}
               </tr>
             </thead>
             <tbody>
-              {visible.map((r) => (
+              {p.visible.map((r) => (
                 <tr key={r.id}>
                   <td className="primary-cell">{r.name}</td>
                   <td>
-                    <span className="sp-code">{r.code}</span>
+                    <span className="sp-code"><bdi dir="ltr">{r.code}</bdi></span>
                   </td>
-                  <td>{r.symbol}</td>
+                  <td><bdi dir="ltr">{r.symbol}</bdi></td>
                   {canManage && (
                     <td className="num">
                       <span style={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
                         <button
                           type="button"
                           className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-                          aria-label={`Edit ${r.name}`}
+                          aria-label={fmt(L.editAria, { name: r.name })}
                           style={{ color: "var(--primary-600)" }}
                           onClick={() => open(r)}
                         >
@@ -152,7 +155,7 @@ export default function CurrenciesTable({ rows, canManage }: { rows: CurrencyRow
                         <button
                           type="button"
                           className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-                          aria-label={`Delete ${r.name}`}
+                          aria-label={fmt(L.deleteAria, { name: r.name })}
                           style={{ color: "var(--danger-500)" }}
                           onClick={() => setDel(r)}
                         >
@@ -163,14 +166,10 @@ export default function CurrenciesTable({ rows, canManage }: { rows: CurrencyRow
                   )}
                 </tr>
               ))}
-              {visible.length === 0 && (
+              {p.visible.length === 0 && (
                 <tr>
                   <td colSpan={canManage ? 4 : 3} className="t-caption" style={{ textAlign: "center", color: "var(--text-2)" }}>
-                    {rows.length === 0
-                      ? canManage
-                        ? "No currencies yet. Use Create Currency to add one."
-                        : "No currencies yet."
-                      : "No currencies match your search."}
+                    {rows.length === 0 ? (canManage ? L.emptyManage : L.empty) : L.noMatch}
                   </td>
                 </tr>
               )}
@@ -178,12 +177,12 @@ export default function CurrenciesTable({ rows, canManage }: { rows: CurrencyRow
           </table>
         </div>
         <Pagination
-          page={current}
+          page={p.current}
+          last={p.last}
           pageSize={pageSize}
-          total={filtered.length}
-          from={from}
-          to={to}
-          last={last}
+          from={p.from}
+          to={p.to}
+          total={p.total}
           onPage={setPage}
           onPageSize={(n) => {
             setPageSize(n);
@@ -194,65 +193,29 @@ export default function CurrenciesTable({ rows, canManage }: { rows: CurrencyRow
 
       {modal && canManage && (
         <Modal
-          title={modal.row ? "Edit Currency" : "Create Currency"}
+          size="sm"
+          title={modal.row ? L.edit : L.create}
           onClose={close}
           footer={
             <>
               <button type="button" className="sp-btn sp-btn--secondary" onClick={close} disabled={pending}>
-                Cancel
+                {T.common.cancel}
               </button>
               <button type="button" className="sp-btn sp-btn--primary" onClick={save} disabled={pending}>
-                {pending ? "Saving…" : "Save"}
+                {pending ? T.common.saving : T.common.save}
               </button>
             </>
           }
         >
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-            <TextField id="cur-name" label="Name" placeholder="Enter Name" value={f.name} error={err.name} onChange={set("name")} autoFocus />
-            <TextField id="cur-code" label="Code" placeholder="Enter Code" value={f.code} error={err.code} onChange={set("code")} maxLength={3} uppercase />
-            <TextField id="cur-symbol" label="Symbol" placeholder="Enter Symbol" value={f.symbol} error={err.symbol} onChange={set("symbol")} maxLength={10} />
+            <TextField id="cur-name" label={L.name} placeholder={L.namePh} value={f.name} error={err.name} onChange={set("name")} autoFocus />
+            <TextField id="cur-code" label={L.code} placeholder={L.codePh} value={f.code} error={err.code} onChange={set("code")} maxLength={3} uppercase ltr />
+            <TextField id="cur-symbol" label={L.symbol} placeholder={L.symbolPh} value={f.symbol} error={err.symbol} onChange={set("symbol")} maxLength={10} ltr />
           </div>
         </Modal>
       )}
 
-      {del && canManage && (
-        <Modal
-          title={`Delete ${del.name}?`}
-          onClose={() => setDel(null)}
-          footer={
-            <>
-              <button type="button" className="sp-btn sp-btn--secondary" onClick={() => setDel(null)} disabled={pending}>
-                Cancel
-              </button>
-              <button type="button" className="sp-btn sp-btn--danger" onClick={confirmDelete} disabled={pending}>
-                <Icon name="trash-2" size={18} />
-                Delete
-              </button>
-            </>
-          }
-        >
-          <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
-            <span
-              style={{
-                flex: "none",
-                width: 44,
-                height: 44,
-                borderRadius: "50%",
-                background: "var(--danger-50)",
-                color: "var(--danger-700)",
-                display: "grid",
-                placeItems: "center",
-                boxShadow: "inset 0 0 0 1px var(--danger-100)",
-              }}
-            >
-              <Icon name="triangle-alert" size={22} />
-            </span>
-            <p className="t-body" style={{ margin: 0, color: "var(--text-2)" }}>
-              Are you sure you want to delete this currency? This action cannot be undone.
-            </p>
-          </div>
-        </Modal>
-      )}
+      {del && canManage && <ConfirmDeleteModal itemType={L.deleteType} itemName={del.name} busy={pending} onCancel={() => setDel(null)} onConfirm={confirmDelete} />}
     </>
   );
 }
@@ -262,12 +225,15 @@ function TextField({
   label,
   error,
   uppercase,
+  ltr,
   ...input
 }: {
   id: string;
   label: string;
   error?: string;
   uppercase?: boolean;
+  /** Codes and symbols stay left-to-right inside Arabic pages. */
+  ltr?: boolean;
 } & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <div className={"sp-field" + (error ? " sp-field--error" : "")}>
@@ -279,82 +245,11 @@ function TextField({
         id={id}
         className="sp-input "
         aria-invalid={!!error || undefined}
+        dir={ltr ? "ltr" : undefined}
         style={uppercase ? { textTransform: "uppercase" } : undefined}
         {...input}
       />
       {error && <span className="sp-error">{error}</span>}
-    </div>
-  );
-}
-
-// Design Pagination (.sp-pager): rows per page, range, first/prev/next/last.
-function Pagination({
-  page,
-  pageSize,
-  total,
-  from,
-  to,
-  last,
-  onPage,
-  onPageSize,
-}: {
-  page: number;
-  pageSize: number;
-  total: number;
-  from: number;
-  to: number;
-  last: number;
-  onPage: (p: number) => void;
-  onPageSize: (n: number) => void;
-}) {
-  const B = ({ icon, go, disabled, label }: { icon: "chevrons-left" | "chevron-left" | "chevron-right" | "chevrons-right"; go: number; disabled: boolean; label: string }) => (
-    <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={label} disabled={disabled} onClick={() => onPage(go)}>
-      <Icon name={icon} size={18} />
-    </button>
-  );
-  return (
-    <div className="sp-pager">
-      <div className="sp-pager-l">
-        <span>Rows per page</span>
-        <select className="sp-select" value={pageSize} onChange={(e) => onPageSize(+e.target.value)} aria-label="Rows per page">
-          {[10, 25, 50, 100].map((n) => (
-            <option key={n}>{n}</option>
-          ))}
-        </select>
-        <span>
-          {from}–{to} of {total}
-        </span>
-      </div>
-      <div className="sp-pager-r">
-        {B({ icon: "chevrons-left", go: 1, disabled: page <= 1, label: "First" })}
-        {B({ icon: "chevron-left", go: page - 1, disabled: page <= 1, label: "Previous" })}
-        {B({ icon: "chevron-right", go: page + 1, disabled: page >= last, label: "Next" })}
-        {B({ icon: "chevrons-right", go: last, disabled: page >= last, label: "Last" })}
-      </div>
-    </div>
-  );
-}
-
-// Design Modal (.sp-overlay / .sp-modal--sm): Escape and backdrop close it.
-function Modal({ title, onClose, footer, children }: { title: string; onClose: () => void; footer: ReactNode; children: ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-  return (
-    <div className="sp-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={ref} className="sp-modal sp-modal--sm" role="dialog" aria-modal="true" aria-label={title}>
-        <div className="sp-modal-head">
-          <div className="t-section-title">{title}</div>
-          <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label="Close" onClick={onClose}>
-            <Icon name="x" size={16} />
-          </button>
-        </div>
-        <div className="sp-modal-body">{children}</div>
-        <div className="sp-modal-foot">{footer}</div>
-      </div>
     </div>
   );
 }

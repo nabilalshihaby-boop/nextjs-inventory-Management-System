@@ -4,13 +4,16 @@ import { connection } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
+import { getLocaleInfo } from "@/lib/i18n/server";
 import { formatMoney } from "@/lib/money";
 import { canManageTransfers } from "@/lib/roles";
 import { getDefaultCurrency, getSystemSettings } from "@/lib/settings";
 import { transferTotal, type TransferRow } from "@/lib/transfers";
 import TransfersTable from "@/components/transfers/TransfersTable";
 
-export const metadata: Metadata = { title: "Transfers" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getLocaleInfo()).dict.transfers.title };
+}
 
 export const instant = false;
 
@@ -22,6 +25,7 @@ export default async function TransfersPage() {
   if (!session?.user?.id) redirect("/");
   const canManage = canManageTransfers(session.user.role);
 
+  const { locale } = await getLocaleInfo();
   const [transfers, settings, currency] = await Promise.all([
     db.stockTransfer.findMany({
       orderBy: { number: "desc" },
@@ -48,7 +52,7 @@ export default async function TransfersPage() {
     // Costs are never sent to USER.
     total: canManage ? formatMoney(transferTotal(t.items.map((i) => ({ quantity: i.quantity.toFixed(3), unitCost: i.unitCost.toFixed(2) }))), currency) : null,
     status: t.status,
-    createdOn: formatDateTime(t.createdAt, settings?.dateFormat),
+    createdOn: formatDateTime(t.createdAt, settings?.dateFormat, locale),
   }));
 
   return <TransfersTable rows={rows} canManage={canManage} />;

@@ -5,13 +5,14 @@ import { useMemo, useState, useTransition, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Icon from "@/components/layout/Icon";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
 import { ConfirmDeleteModal } from "@/components/ui/Modal";
 import { createAdjustment, updateAdjustment, type AdjustmentResult } from "@/app/(dashboard)/adjustments/actions";
 import { formatQuantity } from "@/lib/money";
 import { fromUnits, isQuantity, toUnits, type WarehouseOption } from "@/lib/transfers";
 import {
   ADJUSTMENT_TYPES,
-  TYPE_LABEL,
   signedUnits,
   type AdjustmentField,
   type AdjustmentFormValues,
@@ -45,6 +46,9 @@ export default function AdjustmentForm({
   initial?: AdjustmentFormValues;
 }) {
   const router = useRouter();
+  const T = useT();
+  const F = T.adjustments.form;
+  const V = T.adjustments.val;
   const editing = !!adjustmentId;
   const byId = useMemo(() => new Map(products.map((p) => [p.productId, p])), [products]);
   const [warehouseId, setWarehouseId] = useState(initial?.warehouseId ?? (warehouses.length === 1 ? warehouses[0].value : ""));
@@ -84,14 +88,14 @@ export default function AdjustmentForm({
             <Icon name={noWh ? "warehouse" : "package"} size={26} />
           </span>
           <h2 className="t-section-title" style={{ margin: "0 0 8px" }}>
-            {noWh ? "Add a warehouse first" : "Add a product first"}
+            {noWh ? F.needWhTitle : F.needProdTitle}
           </h2>
           <p className="t-body" style={{ margin: "0 0 20px", color: "var(--text-2)" }}>
-            {noWh ? "Stock adjustments are recorded per warehouse, and no warehouses exist yet." : "There are no products to adjust yet."}
+            {noWh ? F.needWhBody : F.needProdBody}
           </p>
           <Link href={noWh ? "/warehouse/create" : "/products/create"} className="sp-btn sp-btn--primary">
             <Icon name="plus" size={18} />
-            {noWh ? "Create Warehouse" : "Create Product"}
+            {noWh ? F.createWarehouse : F.createProduct}
           </Link>
         </div>
       </>
@@ -110,7 +114,7 @@ export default function AdjustmentForm({
   function add(p: ProductPick) {
     setQ("");
     if (lines.some((l) => l.productId === p.productId)) {
-      toast(`${p.name} is already in the order items`, { id: "adjustment", icon: "ℹ️" });
+      toast(fmt(F.already, { name: p.name }), { id: "adjustment", icon: "ℹ️" });
       return;
     }
     setLines([...lines, { ...p, quantity: "1", type: "ADDITION" }]);
@@ -130,11 +134,11 @@ export default function AdjustmentForm({
    * Advisory only; the server enforces it atomically.
    */
   const lineProblem = (l: Line) => {
-    if (!isQuantity(l.quantity)) return "Enter a quantity greater than 0 (up to 3 decimals)";
+    if (!isQuantity(l.quantity)) return V.qtyHint;
     const base = baseOf(l.productId);
     if (base + signedUnits(l.quantity, l.type) < BigInt(0)) {
-      if (base < BigInt(0)) return `Stock already used — this can't be lower than ${formatQuantity(fromUnits(-base, 3))} as an Addition`;
-      return `Only ${formatQuantity(fromUnits(base, 3))} available to subtract`;
+      if (base < BigInt(0)) return fmt(T.adjustments.err.alreadyUsed, { qty: formatQuantity(fromUnits(-base, 3)) });
+      return fmt(T.adjustments.err.onlySubtract, { qty: formatQuantity(fromUnits(base, 3)) });
     }
     return "";
   };
@@ -142,9 +146,9 @@ export default function AdjustmentForm({
   function save() {
     const n: Partial<Record<AdjustmentField, string>> = {};
     const ie: Record<string, string> = {};
-    if (!warehouseId) n.warehouseId = "Warehouse is required";
-    if (!date) n.adjustmentDate = "Date is required";
-    if (!lines.length) n.items = "Add at least one order item";
+    if (!warehouseId) n.warehouseId = V.warehouseRequired;
+    if (!date) n.adjustmentDate = V.dateRequired;
+    if (!lines.length) n.items = V.addItem;
     if (warehouseId) for (const l of lines) { const p = lineProblem(l); if (p) ie[l.productId] = p; }
     if (Object.keys(ie).length) n.items ??= Object.values(ie)[0];
     setE(n);
@@ -160,7 +164,7 @@ export default function AdjustmentForm({
       try {
         r = editing ? await updateAdjustment(adjustmentId, payload) : await createAdjustment(payload);
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "adjustment" });
+        toast.error(T.common.somethingWrong, { id: "adjustment" });
         return;
       }
       if (!r.ok) {
@@ -201,7 +205,7 @@ export default function AdjustmentForm({
         <div className="sp-card sp-form-card">
           <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
             <div className="sp-form-grid" style={{ "--cols": 3 } as CSSProperties}>
-              {field("warehouseId", "Warehouse", (
+              {field("warehouseId", F.warehouse, (
                 <select
                   id="ad-warehouseId"
                   className={"sp-select " + (warehouseId ? "" : "sp-select--placeholder")}
@@ -214,7 +218,7 @@ export default function AdjustmentForm({
                   aria-invalid={!!e.warehouseId || undefined}
                 >
                   <option value="" disabled>
-                    Choose Warehouse
+                    {F.warehousePh}
                   </option>
                   {warehouses.map((w) => (
                     <option key={w.value} value={w.value}>
@@ -223,14 +227,14 @@ export default function AdjustmentForm({
                   ))}
                 </select>
               ))}
-              {field("adjustmentDate", "Date", (
+              {field("adjustmentDate", F.date, (
                 <input id="ad-adjustmentDate" type="date" className="sp-input " value={date} onChange={(ev) => { setDate(ev.target.value); clearErr("adjustmentDate"); }} aria-invalid={!!e.adjustmentDate || undefined} />
               ))}
             </div>
 
             <div className="sp-field">
               <label className="sp-label" htmlFor="ad-product">
-                Product
+                {F.product}
               </label>
               <div style={{ position: "relative" }}>
                 <div className="sp-group">
@@ -238,7 +242,7 @@ export default function AdjustmentForm({
                   <input
                     id="ad-product"
                     className="sp-input "
-                    placeholder="Search Product by Code Name"
+                    placeholder={F.productPh}
                     value={q}
                     autoComplete="off"
                     onChange={(ev) => setQ(ev.target.value)}
@@ -253,22 +257,22 @@ export default function AdjustmentForm({
                   />
                 </div>
                 {focus && needle && (
-                  <div className="sp-sug" role="listbox" aria-label="Products">
+                  <div className="sp-sug" role="listbox" aria-label={F.productsAria}>
                     {suggestions.length ? (
                       suggestions.map((p) => (
                         <button key={p.productId} type="button" role="option" aria-selected={false} className="sp-menu-item" onMouseDown={() => add(p)}>
-                          <span className="sp-code">{p.code}</span>
+                          <span className="sp-code"><bdi dir="ltr">{p.code}</bdi></span>
                           {p.name}
                           {warehouseId && (
-                            <span style={{ marginLeft: "auto", color: "var(--text-3)", fontWeight: 400 }}>
-                              {formatQuantity(stockOf(p.productId))} {p.unit}
+                            <span style={{ marginInlineStart: "auto", color: "var(--text-3)", fontWeight: 400 }}>
+                              <bdi dir="ltr">{formatQuantity(stockOf(p.productId))}</bdi> {p.unit}
                             </span>
                           )}
                         </button>
                       ))
                     ) : (
                       <div className="t-caption" style={{ padding: "8px 10px" }}>
-                        No products match “{q.trim()}”.
+                        {fmt(F.noMatch, { q: q.trim() })}
                       </div>
                     )}
                   </div>
@@ -278,26 +282,26 @@ export default function AdjustmentForm({
 
             <div className={"sp-field" + (e.items ? " sp-field--error" : "")}>
               <span className="sp-label">
-                Order items<i>*</i>
+                {F.items}<i>*</i>
               </span>
               <div className="sp-table-card" style={{ boxShadow: "none" }}>
                 <div className="sp-table-scroll">
                   <table className="sp-table" data-testid="adjustment-items">
                     <thead>
                       <tr>
-                        <th>Product</th>
-                        <th>Code Product</th>
-                        <th>Stock</th>
-                        <th>Qty</th>
-                        <th>Type</th>
-                        <th className="act">Action</th>
+                        <th>{F.colProduct}</th>
+                        <th>{F.colCode}</th>
+                        <th>{F.colStock}</th>
+                        <th>{F.colQty}</th>
+                        <th>{F.colType}</th>
+                        <th className="act">{F.colAction}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {lines.length === 0 && (
                         <tr>
                           <td colSpan={6} style={{ color: "var(--text-3)" }}>
-                            No order items
+                            {F.noItems}
                           </td>
                         </tr>
                       )}
@@ -312,35 +316,35 @@ export default function AdjustmentForm({
                             )}
                           </td>
                           <td>
-                            <span className="sp-code">{l.code}</span>
+                            <span className="sp-code"><bdi dir="ltr">{l.code}</bdi></span>
                           </td>
                           <td>
                             <span className="sp-badge sp-badge--warning" data-testid="stock">
-                              {warehouseId ? `${formatQuantity(stockOf(l.productId))} ${l.unit}` : "—"}
+                              {warehouseId ? <><bdi dir="ltr">{formatQuantity(stockOf(l.productId))}</bdi> {l.unit}</> : "—"}
                             </span>
                           </td>
                           <td>
                             <span className="sp-qty">
-                              <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={`Decrease ${l.name}`} onClick={() => step(l, -1)}>
+                              <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={fmt(F.decreaseAria, { name: l.name })} onClick={() => step(l, -1)}>
                                 <Icon name="minus" size={18} />
                               </button>
-                              <input className="sp-input" aria-label={`Quantity of ${l.name}`} inputMode="decimal" value={l.quantity} aria-invalid={!!itemErr[l.productId] || undefined} onChange={(ev) => patch(l.productId, { quantity: ev.target.value })} />
-                              <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={`Increase ${l.name}`} onClick={() => step(l, 1)}>
+                              <input className="sp-input" aria-label={fmt(F.qtyAria, { name: l.name })} inputMode="decimal" dir="ltr" value={l.quantity} aria-invalid={!!itemErr[l.productId] || undefined} onChange={(ev) => patch(l.productId, { quantity: ev.target.value })} />
+                              <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={fmt(F.increaseAria, { name: l.name })} onClick={() => step(l, 1)}>
                                 <Icon name="plus" size={18} />
                               </button>
                             </span>
                           </td>
                           <td style={{ width: 260 }}>
-                            <select className="sp-select " aria-label={`Type of ${l.name}`} value={l.type} onChange={(ev) => patch(l.productId, { type: ev.target.value as AdjustmentTypeValue })}>
+                            <select className="sp-select " aria-label={fmt(F.typeAria, { name: l.name })} value={l.type} onChange={(ev) => patch(l.productId, { type: ev.target.value as AdjustmentTypeValue })}>
                               {ADJUSTMENT_TYPES.map((t) => (
                                 <option key={t} value={t}>
-                                  {TYPE_LABEL[t]}
+                                  {T.adjustments.type[t]}
                                 </option>
                               ))}
                             </select>
                           </td>
                           <td className="act">
-                            <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={`Remove ${l.name}`} style={{ color: "var(--danger-500)" }} onClick={() => setRemove(l)}>
+                            <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={fmt(F.removeAria, { name: l.name })} style={{ color: "var(--danger-500)" }} onClick={() => setRemove(l)}>
                               <Icon name="trash-2" size={16} />
                             </button>
                           </td>
@@ -355,10 +359,10 @@ export default function AdjustmentForm({
           </div>
           <div className="sp-form-actions">
             <button type="button" className="sp-btn sp-btn--secondary" onClick={() => router.push("/adjustments")} disabled={pending}>
-              Cancel
+              {F.cancel}
             </button>
             <button type="submit" className="sp-btn sp-btn--primary" disabled={pending}>
-              {pending ? "Saving…" : "Save"}
+              {pending ? T.common.saving : T.common.save}
             </button>
           </div>
         </div>
@@ -366,7 +370,7 @@ export default function AdjustmentForm({
 
       {remove && (
         <ConfirmDeleteModal
-          itemType="product"
+          itemType={F.productType}
           itemName={remove.name}
           onCancel={() => setRemove(null)}
           onConfirm={() => {
@@ -380,15 +384,16 @@ export default function AdjustmentForm({
 }
 
 function Header({ editing, reference }: { editing: boolean; reference?: string }) {
+  const T = useT();
   return (
     <div className="sp-page-head">
       <h1 className="t-page-title" style={{ margin: 0 }}>
-        {editing ? `Edit Adjustment${reference ? ` ${reference}` : ""}` : "Create Adjustment"}
+        {editing ? `${T.adjustments.editTitle}${reference ? ` ${reference}` : ""}` : T.adjustments.createTitle}
       </h1>
       <div style={{ display: "flex", gap: 12 }}>
         <Link href="/adjustments" className="sp-btn sp-btn--secondary">
           <Icon name="arrow-left" size={18} />
-          Back
+          {T.adjustments.form.back}
         </Link>
       </div>
     </div>

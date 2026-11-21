@@ -7,14 +7,14 @@ import { ar } from "@/lib/i18n/dictionaries/ar";
 export const SECTIONS = [
   { id: "nav", label: "Dashboard & Navigation", groups: ["nav", "roles", "shell", "dash"] },
   { id: "auth", label: "Authentication & Account", groups: ["auth", "profile", "password", "pin"] },
-  { id: "settings", label: "Settings & Preferences", groups: ["prefs", "theme", "settings", "denom"] },
+  { id: "settings", label: "Settings & Preferences", groups: ["prefs", "theme", "settings", "denom", "currencies"] },
   { id: "pos", label: "POS & Register", groups: ["pos", "register", "posTx"] },
   { id: "shared", label: "Shared UI & Reports", groups: ["common", "report"] },
   // Prepared for later phases (no keys yet -> "No translations in this section yet").
   { id: "sales", label: "Sales", groups: ["sales", "salesReturns", "quotations"] },
   { id: "purchases", label: "Purchases", groups: ["purchases", "purchaseReturns"] },
   { id: "finance", label: "Finance", groups: ["finance", "expenses"] },
-  { id: "products", label: "Products & Inventory", groups: [] },
+  { id: "products", label: "Products & Inventory", groups: ["products", "catalog", "warehouses", "transfers", "adjustments"] },
   { id: "people", label: "Customers & Suppliers", groups: ["custPay", "customers", "stmt", "suppliers", "supplierPay", "supplierStmt"] },
   { id: "reports", label: "Reports", groups: ["stmtReport", "supplierStmtReport", "registerReport"] },
 ] as const;

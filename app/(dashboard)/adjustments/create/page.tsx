@@ -5,9 +5,12 @@ import { auth } from "@/auth";
 import { canManageAdjustments } from "@/lib/roles";
 import { getAdjustmentFormData } from "@/lib/adjustment-options";
 import { todayIso } from "@/lib/transfer-options";
+import { getDict } from "@/lib/i18n/server";
 import AdjustmentForm from "@/components/adjustments/AdjustmentForm";
 
-export const metadata: Metadata = { title: "Create Adjustment" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).adjustments.createTitle };
+}
 
 export const instant = false;
 

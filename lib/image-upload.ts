@@ -26,13 +26,13 @@ function sniffImage(bytes: Uint8Array): ImageKind | null {
 export type ValidImage = { bytes: Uint8Array; ext: ImageKind };
 
 /** Validate an uploaded File: extension, declared type, size and actual content. */
-export async function validateImage(file: File): Promise<ValidImage | { error: string }> {
+export async function validateImage(file: File): Promise<ValidImage | { error: string; key: "type" | "size" | "invalid" }> {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-  if (!ALLOWED_EXTENSIONS.has(ext) || !ALLOWED_MIME.has(file.type)) return { error: "Use a JPG, PNG or WebP image" };
-  if (file.size > MAX_IMAGE_BYTES) return { error: "Image must be 2 MB or smaller" };
+  if (!ALLOWED_EXTENSIONS.has(ext) || !ALLOWED_MIME.has(file.type)) return { error: "Use a JPG, PNG or WebP image", key: "type" };
+  if (file.size > MAX_IMAGE_BYTES) return { error: "Image must be 2 MB or smaller", key: "size" };
   const bytes = new Uint8Array(await file.arrayBuffer());
   const kind = sniffImage(bytes);
-  if (!kind) return { error: "This file is not a valid JPG, PNG or WebP image" };
+  if (!kind) return { error: "This file is not a valid JPG, PNG or WebP image", key: "invalid" };
   return { bytes, ext: kind };
 }
 

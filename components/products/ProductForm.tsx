@@ -5,12 +5,12 @@ import { Fragment, useEffect, useRef, useState, useTransition, type CSSPropertie
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Icon from "@/components/layout/Icon";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
 import { createProduct, updateProduct, type ProductResult } from "@/app/(dashboard)/products/actions";
 import {
   BARCODE_OPTIONS,
   MAX_PRODUCT_IMAGES,
-  STOCK_STATUS_OPTIONS,
-  TAX_TYPE_OPTIONS,
   type Option,
   type ProductField,
   type ProductFormValues,
@@ -50,6 +50,14 @@ export default function ProductForm({
   openingStock?: { warehouse: string; supplier: string; quantity: string; status: string } | null;
 }) {
   const router = useRouter();
+  const T = useT();
+  const F = T.products.form;
+  const LB = T.products.labels;
+  const V = T.products.val;
+  const req = (label: string) => fmt(V.required, { label });
+  const taxOptions: Option[] = (["EXCLUSIVE", "INCLUSIVE"] as const).map((v) => ({ value: v, label: T.products.options[`tax${v}`] }));
+  const statusOptions: Option[] = (["RECEIVED", "PENDING", "ORDERED"] as const).map((v) => ({ value: v, label: T.products.options[`stock${v}`] }));
+  const missLabel: Record<string, string> = { categories: F.missingCategories, brands: F.missingBrands, units: F.missingUnits, warehouses: F.missingWarehouses, suppliers: F.missingSuppliers };
   const editing = !!productId;
   const [f, setF] = useState<ProductFormValues>(initial ?? EMPTY);
   const [e, setE] = useState<Partial<Record<ProductField, string>>>({});
@@ -73,15 +81,15 @@ export default function ProductForm({
     const next = [...added];
     for (const file of files) {
       const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-      const problem = !["jpg", "jpeg", "png", "webp"].includes(ext) ? "Use JPG, PNG or WebP images" : file.size > MAX_BYTES ? "Each image must be 2 MB or smaller" : null;
+      const problem = !["jpg", "jpeg", "png", "webp"].includes(ext) ? T.catalog.img.types : file.size > MAX_BYTES ? T.catalog.img.sizeEach : null;
       if (problem) {
         setE({ ...e, images: `${file.name}: ${problem}` });
         toast.error(`${file.name}: ${problem}`, { id: "product" });
         continue;
       }
       if (kept.length + next.length >= MAX_PRODUCT_IMAGES) {
-        setE({ ...e, images: `Up to ${MAX_PRODUCT_IMAGES} images per product` });
-        toast.error(`Up to ${MAX_PRODUCT_IMAGES} images per product`, { id: "product" });
+        setE({ ...e, images: fmt(T.products.err.maxImages, { max: MAX_PRODUCT_IMAGES }) });
+        toast.error(fmt(T.products.err.maxImages, { max: MAX_PRODUCT_IMAGES }), { id: "product" });
         break;
       }
       next.push({ file, url: URL.createObjectURL(file) });
@@ -92,10 +100,10 @@ export default function ProductForm({
   function save() {
     if (blocked) return;
     const required: [keyof ProductFormValues, string][] = [
-      ["name", "Name is required"], ["code", "Code is required"], ["categoryId", "Product Category is required"], ["brandId", "Brand is required"],
-      ["barcodeSymbology", "Choose a barcode symbology"], ["cost", "Product Cost is required"], ["price", "Product Price is required"],
-      ["productUnitId", "Product Unit is required"], ["saleUnitId", "Sale Unit is required"], ["purchaseUnitId", "Purchase Unit is required"],
-      ...(!editing ? ([["warehouseId", "Warehouse is required"], ["supplierId", "Supplier is required"], ["quantity", "Product Quantity is required"], ["status", "Choose a status"]] as [keyof ProductFormValues, string][]) : []),
+      ["name", V.nameRequired], ["code", V.codeRequired], ["categoryId", req(LB.category)], ["brandId", req(LB.brand)],
+      ["barcodeSymbology", V.chooseBarcode], ["cost", req(LB.cost)], ["price", req(LB.price)],
+      ["productUnitId", req(LB.productUnit)], ["saleUnitId", req(LB.saleUnit)], ["purchaseUnitId", req(LB.purchaseUnit)],
+      ...(!editing ? ([["warehouseId", req(LB.warehouse)], ["supplierId", req(LB.supplier)], ["quantity", req(LB.quantity)], ["status", V.chooseStatus]] as [keyof ProductFormValues, string][]) : []),
     ];
     const n: Partial<Record<ProductField, string>> = {};
     for (const [k, msg] of required) if (!f[k].trim()) n[k] = msg;
@@ -113,7 +121,7 @@ export default function ProductForm({
       try {
         r = editing ? await updateProduct(productId, fd) : await createProduct(fd);
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "product" });
+        toast.error(T.common.somethingWrong, { id: "product" });
         return;
       }
       if (!r.ok) {
@@ -143,11 +151,11 @@ export default function ProductForm({
         {label(k, text, required)}
         {addon ? (
           <div className="sp-group">
-            <input id={`pd-${k}`} name={k} className="sp-input " placeholder={placeholder} value={f[k]} onChange={set(k)} inputMode={inputMode} aria-invalid={!!e[k] || undefined} />
+            <input id={`pd-${k}`} name={k} className="sp-input " placeholder={placeholder} value={f[k]} onChange={set(k)} inputMode={inputMode} dir={inputMode || k === "code" ? "ltr" : undefined} aria-invalid={!!e[k] || undefined} />
             <span className="sp-addon sp-addon--r">{addon}</span>
           </div>
         ) : (
-          <input id={`pd-${k}`} name={k} className="sp-input " placeholder={placeholder} value={f[k]} onChange={set(k)} inputMode={inputMode} aria-invalid={!!e[k] || undefined} />
+          <input id={`pd-${k}`} name={k} className="sp-input " placeholder={placeholder} value={f[k]} onChange={set(k)} inputMode={inputMode} dir={inputMode || k === "code" ? "ltr" : undefined} aria-invalid={!!e[k] || undefined} />
         )}
         {err(k)}
       </>
@@ -166,7 +174,7 @@ export default function ProductForm({
           aria-invalid={!!e[k] || undefined}
         >
           <option value="" disabled>
-            {opts.length ? placeholder : "None available yet"}
+            {opts.length ? placeholder : F.noneYet}
           </option>
           {opts.map((o) => (
             <option key={o.value} value={o.value}>
@@ -179,7 +187,8 @@ export default function ProductForm({
     ));
   const createLink = (href: string, what: string) => (
     <>
-      No {what} yet — <Link href={href}>create one</Link>.
+      {fmt(F.noWhat, { what })}
+      <Link href={href}>{F.createOne}</Link>.
     </>
   );
   const money = currency?.symbol ?? "—";
@@ -188,12 +197,12 @@ export default function ProductForm({
     <>
       <div className="sp-page-head">
         <h1 className="t-page-title" style={{ margin: 0 }}>
-          {editing ? "Edit Product" : "Create Product"}
+          {editing ? T.products.editTitle : T.products.createTitle}
         </h1>
         <div style={{ display: "flex", gap: 12 }}>
           <Link href="/products" className="sp-btn sp-btn--secondary">
             <Icon name="arrow-left" size={18} />
-            Back
+            {F.back}
           </Link>
         </div>
       </div>
@@ -202,8 +211,8 @@ export default function ProductForm({
         <div className="sp-badge sp-badge--danger" role="alert" style={{ height: "auto", padding: "10px 14px", whiteSpace: "normal", marginBottom: 16 }}>
           <Icon name="circle-alert" size={16} />
           <span>
-            No default currency is configured, so products can&apos;t be saved yet. The Owner must choose a default currency in{" "}
-            <Link href="/settings">System Settings</Link>.
+            {F.noCurrencyA}
+            <Link href="/settings">{F.systemSettings}</Link>.
           </span>
         </div>
       )}
@@ -211,11 +220,11 @@ export default function ProductForm({
         <div className="sp-badge sp-badge--warning" role="status" data-testid="missing-prerequisites" style={{ height: "auto", padding: "10px 14px", whiteSpace: "normal", marginBottom: 16 }}>
           <Icon name="info" size={16} />
           <span>
-            Before creating a product, add{" "}
+            {F.before}
             {missing.map((m, i) => (
               <Fragment key={m.key}>
-                {i > 0 && (i === missing.length - 1 ? " and " : ", ")}
-                <Link href={m.href}>{m.label}</Link>
+                {i > 0 && (i === missing.length - 1 ? F.and : F.sep)}
+                <Link href={m.href}>{missLabel[m.key] ?? m.label}</Link>
               </Fragment>
             ))}
             .
@@ -237,16 +246,16 @@ export default function ProductForm({
           <div className="sp-form-grid" style={{ "--cols": 1 } as CSSProperties}>
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0,2fr) minmax(0,1fr)", gap: 48 }} className="bp-product-layout">
               <div className="sp-form-grid">
-                {input("name", "Name", "Enter Name")}
-                {input("code", "Code", "Enter Code")}
-                {select("categoryId", "Product Category", "Choose Product Category", options.categories, createLink("/products/categories", "product categories"))}
-                {select("brandId", "Brand", "Choose Brand", options.brands, createLink("/products/brands", "brands"))}
-                {select("barcodeSymbology", "Barcode Symbology", "Choose Barcode Symbology", BARCODE_OPTIONS)}
-                {input("cost", "Product Cost", "Enter Product Cost", true, money, "decimal")}
-                {input("price", "Product Price", "Enter Product Price", true, money, "decimal")}
+                {input("name", F.name, F.namePh)}
+                {input("code", F.code, F.codePh)}
+                {select("categoryId", LB.category, F.categoryPh, options.categories, createLink("/products/categories", F.missingCategories))}
+                {select("brandId", LB.brand, F.brandPh, options.brands, createLink("/products/brands", F.missingBrands))}
+                {select("barcodeSymbology", F.barcode, F.barcodePh, BARCODE_OPTIONS)}
+                {input("cost", LB.cost, F.costPh, true, money, "decimal")}
+                {input("price", LB.price, F.pricePh, true, money, "decimal")}
                 {wrap("productUnitId", (
                   <>
-                    {label("productUnitId", "Product Unit", true)}
+                    {label("productUnitId", LB.productUnit, true)}
                     <div style={{ display: "flex", gap: 8 }}>
                       <div style={{ flex: 1 }}>
                         <select
@@ -259,7 +268,7 @@ export default function ProductForm({
                           aria-invalid={!!e.productUnitId || undefined}
                         >
                           <option value="" disabled>
-                            {options.units.length ? "Choose Product Unit" : "None available yet"}
+                            {options.units.length ? F.unitPh : F.noneYet}
                           </option>
                           {options.units.map((o) => (
                             <option key={o.value} value={o.value}>
@@ -268,23 +277,23 @@ export default function ProductForm({
                           ))}
                         </select>
                       </div>
-                      <Link href="/products/units" className="sp-btn sp-btn--primary sp-btn--icon" aria-label="Add unit" title="Manage units">
+                      <Link href="/products/units" className="sp-btn sp-btn--primary sp-btn--icon" aria-label={F.addUnitAria} title={F.manageUnits}>
                         <Icon name="plus" size={18} />
                       </Link>
                     </div>
-                    {options.units.length === 0 ? <span className="sp-hint">{createLink("/products/units", "units")}</span> : err("productUnitId")}
+                    {options.units.length === 0 ? <span className="sp-hint">{createLink("/products/units", F.missingUnits)}</span> : err("productUnitId")}
                   </>
                 ))}
-                {select("saleUnitId", "Sale Unit", "Choose Sale Unit", options.units)}
-                {select("purchaseUnitId", "Purchase Unit", "Choose Purchase Unit", options.units)}
-                {input("stockAlert", "Stock Alert", "0", false, undefined, "decimal")}
-                {input("orderTax", "Order Tax", "0", false, "%", "decimal")}
-                {select("taxType", "Tax Type", "Choose Tax Type", TAX_TYPE_OPTIONS)}
-                {input("quantityLimitation", "Quantity Limitation", "Enter Quantity Limitation", false, undefined, "decimal")}
+                {select("saleUnitId", LB.saleUnit, F.saleUnitPh, options.units)}
+                {select("purchaseUnitId", LB.purchaseUnit, F.purchaseUnitPh, options.units)}
+                {input("stockAlert", LB.stockAlert, "0", false, undefined, "decimal")}
+                {input("orderTax", LB.orderTax, "0", false, "%", "decimal")}
+                {select("taxType", F.taxType, F.taxTypePh, taxOptions)}
+                {input("quantityLimitation", LB.quantityLimit, F.limitPh, false, undefined, "decimal")}
                 {wrap("notes", (
                   <>
-                    {label("notes", "Notes", false)}
-                    <textarea id="pd-notes" name="notes" className="sp-textarea " rows={4} placeholder="Enter Notes" value={f.notes} onChange={set("notes")} />
+                    {label("notes", F.notes, false)}
+                    <textarea id="pd-notes" name="notes" className="sp-textarea " rows={4} placeholder={F.notesPh} value={f.notes} onChange={set("notes")} />
                     {err("notes")}
                   </>
                 ), "sp-span-all")}
@@ -293,16 +302,16 @@ export default function ProductForm({
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
                 {wrap("images", (
                   <>
-                    {label("images", "Multiple Images", false)}
+                    {label("images", F.images, false)}
                     <input ref={fileRef} id="pd-images" type="file" multiple accept={ACCEPT} className="sp-input " onChange={addFiles} />
-                    <span className="sp-hint">JPG, PNG or WebP, up to 2 MB each, at most {MAX_PRODUCT_IMAGES} images.</span>
+                    <span className="sp-hint">{fmt(F.imagesHint, { max: MAX_PRODUCT_IMAGES })}</span>
                     {(kept.length > 0 || added.length > 0) && (
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }} data-testid="product-images">
                         {kept.map((k) => (
-                          <ImageThumb key={k.id} src={k.path} label="Remove image" onRemove={() => setKept(kept.filter((x) => x.id !== k.id))} />
+                          <ImageThumb key={k.id} src={k.path} label={F.removeImage} onRemove={() => setKept(kept.filter((x) => x.id !== k.id))} />
                         ))}
                         {added.map((a, i) => (
-                          <ImageThumb key={a.url} src={a.url} label={`Remove ${a.file.name}`} onRemove={() => setAdded(added.filter((_, j) => j !== i))} />
+                          <ImageThumb key={a.url} src={a.url} label={fmt(F.removeFile, { file: a.file.name })} onRemove={() => setAdded(added.filter((_, j) => j !== i))} />
                         ))}
                       </div>
                     )}
@@ -311,14 +320,14 @@ export default function ProductForm({
                 ))}
 
                 <h2 className="t-section-title" style={{ margin: "8px 0 0" }}>
-                  Add Stock
+                  {F.addStock}
                 </h2>
                 {editing ? (
                   // Stock can't be changed by editing a product (future Stock Adjustments module).
                   <div className="sp-card" style={{ padding: 16 }} data-testid="opening-stock">
                     {openingStock ? (
                       <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "8px 16px", font: "400 14px/20px var(--font-body)" }}>
-                        {[["Warehouse", openingStock.warehouse], ["Supplier", openingStock.supplier], ["Opening Quantity", openingStock.quantity], ["Status", openingStock.status.charAt(0) + openingStock.status.slice(1).toLowerCase()]].map(([k, v]) => (
+                        {[[LB.warehouse, openingStock.warehouse], [LB.supplier, openingStock.supplier], [F.openingQty, openingStock.quantity], [F.status, T.products.options[`stock${openingStock.status}` as "stockRECEIVED"] ?? openingStock.status]].map(([k, v]) => (
                           <Fragment key={k}>
                             <span style={{ color: "var(--text-3)" }}>{k}</span>
                             <span style={{ fontWeight: 600 }}>{v}</span>
@@ -326,20 +335,20 @@ export default function ProductForm({
                         ))}
                       </div>
                     ) : (
-                      <span className="t-caption">No opening stock recorded.</span>
+                      <span className="t-caption">{F.noOpening}</span>
                     )}
                     <p className="t-caption" style={{ margin: "12px 0 0" }}>
-                      Opening stock is recorded once, when the product is created. Later stock changes will be made through Stock Adjustments.
+                      {F.openingNote}
                     </p>
                   </div>
                 ) : (
                   <>
-                    {select("warehouseId", "Warehouse", "Choose Warehouse", options.warehouses, createLink("/warehouse", "warehouses"))}
-                    {select("supplierId", "Supplier", "Choose Supplier", options.suppliers, createLink("/suppliers", "suppliers"))}
-                    {input("quantity", "Add Product Quantity", "Add Product Quantity", true, undefined, "decimal")}
-                    {select("status", "Status", "Choose Status", STOCK_STATUS_OPTIONS)}
+                    {select("warehouseId", LB.warehouse, F.warehousePh, options.warehouses, createLink("/warehouse", F.missingWarehouses))}
+                    {select("supplierId", LB.supplier, F.supplierPh, options.suppliers, createLink("/suppliers", F.missingSuppliers))}
+                    {input("quantity", F.addQty, F.addQty, true, undefined, "decimal")}
+                    {select("status", F.status, F.statusPh, statusOptions)}
                     <span className="t-caption" style={{ marginTop: -12 }}>
-                      Only Received stock is added to In Stock. Pending and Ordered quantities are recorded but not counted yet.
+                      {F.onlyReceived}
                     </span>
                   </>
                 )}
@@ -348,10 +357,10 @@ export default function ProductForm({
           </div>
           <div className="sp-form-actions">
             <button type="button" className="sp-btn sp-btn--secondary" onClick={() => router.push("/products")} disabled={pending}>
-              Cancel
+              {T.common.cancel}
             </button>
-            <button type="submit" className="sp-btn sp-btn--primary" disabled={pending || blocked} title={blocked ? "Resolve the notices above before saving" : undefined}>
-              {pending ? "Saving…" : "Save"}
+            <button type="submit" className="sp-btn sp-btn--primary" disabled={pending || blocked} title={blocked ? F.resolve : undefined}>
+              {pending ? T.common.saving : T.common.save}
             </button>
           </div>
         </div>

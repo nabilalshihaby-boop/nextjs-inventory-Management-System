@@ -1,19 +1,20 @@
 import { z } from "zod";
+import { en } from "@/lib/i18n/dictionaries/en";
+import type { Dictionary } from "@/lib/i18n";
 
 // Shared Currency rules (used by the Server Actions; safe to import on the client too).
 
 export type CurrencyRow = { id: string; name: string; code: string; symbol: string };
 
-export const currencyInputSchema = z.object({
-  name: z.string().trim().min(1, "Name is required").max(100, "Name is too long"),
-  code: z
-    .string()
-    .trim()
-    .toUpperCase()
-    .min(1, "Code is required")
-    .regex(/^[A-Z]{3}$/, "Code must be exactly 3 letters, e.g. EGP"),
-  symbol: z.string().trim().min(1, "Symbol is required").max(10, "Symbol is too long"),
-});
+/** Validation schema; messages are dictionary text (English by default). */
+export function makeCurrencySchema(m: Dictionary["currencies"]["val"] = en.currencies.val) {
+  return z.object({
+    name: z.string().trim().min(1, m.nameRequired).max(100, m.nameLong),
+    code: z.string().trim().toUpperCase().min(1, m.codeRequired).regex(/^[A-Z]{3}$/, m.codeFormat),
+    symbol: z.string().trim().min(1, m.symbolRequired).max(10, m.symbolLong),
+  });
+}
+export const currencyInputSchema = makeCurrencySchema();
 
 export type CurrencyInput = z.infer<typeof currencyInputSchema>;
 export type CurrencyField = keyof CurrencyInput;

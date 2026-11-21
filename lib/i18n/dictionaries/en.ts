@@ -15,6 +15,11 @@ import { enFinance } from "@/lib/i18n/dictionaries/en-fin";
 import { enExpenses } from "@/lib/i18n/dictionaries/en-exp";
 import { enRegister, enRegisterReport, enDenom } from "@/lib/i18n/dictionaries/en-reg";
 import { enPosTx } from "@/lib/i18n/dictionaries/en-postx";
+import { enCurrencies } from "@/lib/i18n/dictionaries/en-cur";
+import { enWarehouses } from "@/lib/i18n/dictionaries/en-wh";
+import { enCatalog, enProducts } from "@/lib/i18n/dictionaries/en-prod";
+import { enTransfers } from "@/lib/i18n/dictionaries/en-xfer";
+import { enAdjustments } from "@/lib/i18n/dictionaries/en-adj";
 export const en = {
   common: {
     save: "Save",
@@ -57,6 +62,7 @@ export const en = {
     checkForm: "Please check the form",
     toastSaved: "Saved",
     toastDeleted: "Deleted",
+    rowActions: "Row actions for {name}",
   },
   nav: {
     dash: "Dashboard",
@@ -607,6 +613,12 @@ export const en = {
   registerReport: enRegisterReport,
   denom: enDenom,
   posTx: enPosTx,
+  currencies: enCurrencies,
+  warehouses: enWarehouses,
+  catalog: enCatalog,
+  products: enProducts,
+  transfers: enTransfers,
+  adjustments: enAdjustments,
   langAdmin: {
     title: "Languages",
     sections: { nav: "Dashboard & Navigation", auth: "Authentication & Account", settings: "Settings & Preferences", pos: "POS & Register", shared: "Shared UI & Reports", sales: "Sales", purchases: "Purchases", finance: "Finance", products: "Products & Inventory", people: "Customers & Suppliers", reports: "Reports" },

@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import Icon, { type IconName } from "@/components/layout/Icon";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
 
 export type RowMenuItem =
   | { label: string; icon: IconName; href: string; danger?: boolean }
@@ -13,6 +15,7 @@ export type RowMenuItem =
 
 // Design RowMenu (.sp-rowmenu + .sp-menu): ellipsis button opening a small action menu.
 export default function RowMenu({ label, items }: { label: string; items: RowMenuItem[] }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -31,7 +34,7 @@ export default function RowMenu({ label, items }: { label: string; items: RowMen
       <button
         type="button"
         className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-        aria-label={`Row actions for ${label}`}
+        aria-label={fmt(t.common.rowActions, { name: label })}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen(!open)}

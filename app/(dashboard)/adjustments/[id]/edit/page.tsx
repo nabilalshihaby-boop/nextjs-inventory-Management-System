@@ -7,9 +7,12 @@ import { formatQuantity } from "@/lib/money";
 import { canManageAdjustments } from "@/lib/roles";
 import { getAdjustmentFormData } from "@/lib/adjustment-options";
 import { todayIso } from "@/lib/transfer-options";
+import { getDict } from "@/lib/i18n/server";
 import AdjustmentForm from "@/components/adjustments/AdjustmentForm";
 
-export const metadata: Metadata = { title: "Edit Adjustment" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).adjustments.editTitle };
+}
 
 export const instant = false;
 

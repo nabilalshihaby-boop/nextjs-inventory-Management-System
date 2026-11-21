@@ -4,10 +4,13 @@ import { connection } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { canManageCatalog } from "@/lib/roles";
+import { getDict } from "@/lib/i18n/server";
 import CatalogTable from "@/components/products/CatalogTable";
 import { createBrand, deleteBrand, updateBrand } from "./actions";
 
-export const metadata: Metadata = { title: "Brands" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).catalog.brand.title };
+}
 
 export const instant = false;
 
@@ -25,15 +28,7 @@ export default async function BrandsPage() {
       rows={rows}
       canManage={canManageCatalog(session.user.role)}
       idPrefix="br"
-      labels={{
-        column: "Brand",
-        create: "Create Brand",
-        edit: "Edit Brand",
-        itemType: "brand",
-        plural: "brands",
-        empty: "No brands yet",
-        imageLabel: "Brand Image",
-      }}
+      entity="brand"
       actions={{ create: createBrand, update: updateBrand, remove: deleteBrand }}
     />
   );

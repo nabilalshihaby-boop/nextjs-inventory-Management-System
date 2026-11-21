@@ -6,9 +6,12 @@ import { db } from "@/lib/db";
 import { formatQuantity } from "@/lib/money";
 import { canManageProducts } from "@/lib/roles";
 import { getProductFormData } from "@/lib/product-options";
+import { getDict } from "@/lib/i18n/server";
 import ProductForm from "@/components/products/ProductForm";
 
-export const metadata: Metadata = { title: "Edit Product" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).products.editTitle };
+}
 
 export const instant = false;
 

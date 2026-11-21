@@ -3,10 +3,13 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
+import { getDict } from "@/lib/i18n/server";
 import { canManageCurrencies } from "@/lib/roles";
 import CurrenciesTable from "@/components/currencies/CurrenciesTable";
 
-export const metadata: Metadata = { title: "Currencies" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).currencies.title };
+}
 
 export const instant = false;
 

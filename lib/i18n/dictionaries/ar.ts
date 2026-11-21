@@ -16,6 +16,11 @@ import { arFinance } from "@/lib/i18n/dictionaries/ar-fin";
 import { arExpenses } from "@/lib/i18n/dictionaries/ar-exp";
 import { arRegister, arRegisterReport, arDenom } from "@/lib/i18n/dictionaries/ar-reg";
 import { arPosTx } from "@/lib/i18n/dictionaries/ar-postx";
+import { arCurrencies } from "@/lib/i18n/dictionaries/ar-cur";
+import { arWarehouses } from "@/lib/i18n/dictionaries/ar-wh";
+import { arCatalog, arProducts } from "@/lib/i18n/dictionaries/ar-prod";
+import { arTransfers } from "@/lib/i18n/dictionaries/ar-xfer";
+import { arAdjustments } from "@/lib/i18n/dictionaries/ar-adj";
 export const ar: Dictionary = {
   common: {
     save: "حفظ",
@@ -58,6 +63,7 @@ export const ar: Dictionary = {
     checkForm: "يرجى مراجعة النموذج",
     toastSaved: "تم الحفظ",
     toastDeleted: "تم الحذف",
+    rowActions: "إجراءات الصف لـ {name}",
   },
   nav: {
     dash: "لوحة التحكم",
@@ -607,6 +613,12 @@ export const ar: Dictionary = {
   registerReport: arRegisterReport,
   denom: arDenom,
   posTx: arPosTx,
+  currencies: arCurrencies,
+  warehouses: arWarehouses,
+  catalog: arCatalog,
+  products: arProducts,
+  transfers: arTransfers,
+  adjustments: arAdjustments,
   langAdmin: {
     title: "اللغات",
     sections: { nav: "لوحة التحكم والتنقل", auth: "تسجيل الدخول والحساب", settings: "الإعدادات والتفضيلات", pos: "نقطة البيع والصندوق", shared: "الواجهة المشتركة والتقارير", sales: "المبيعات", purchases: "المشتريات", finance: "المالية", products: "المنتجات والمخزون", people: "العملاء والموردون", reports: "التقارير" },

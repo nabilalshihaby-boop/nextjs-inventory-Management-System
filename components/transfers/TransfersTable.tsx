@@ -5,20 +5,24 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Icon from "@/components/layout/Icon";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
 import { ConfirmDeleteModal } from "@/components/ui/Modal";
 import Pagination, { paginate } from "@/components/ui/Pagination";
 import { deleteTransfer } from "@/app/(dashboard)/transfers/actions";
-import { STATUS_LABEL, STATUS_TONE, type TransferRow } from "@/lib/transfers";
+import { STATUS_TONE, type TransferRow } from "@/lib/transfers";
 
 // Port of design/Transfers.html: TableToolbar (search, Filter, Create Transfer), DataTable
 // (Reference / From Warehouse / To Warehouse / Items / Grand Total / Status / Created On / Action),
 // Pagination and ConfirmDeleteModal. Search/paging run over the server-loaded list. View is for
 // every role; Edit/Delete only for OWNER/ADMIN on PENDING transfers. Grand Total (cost) is hidden
 // from USER. The design's row checkboxes are omitted (there are no bulk actions).
-const SOON = "Transfer filters are coming soon.";
 
 export default function TransfersTable({ rows, canManage }: { rows: TransferRow[]; canManage: boolean }) {
   const router = useRouter();
+  const T = useT();
+  const L = T.transfers.list;
+  const SOON = L.soonFilter;
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -26,7 +30,7 @@ export default function TransfersTable({ rows, canManage }: { rows: TransferRow[
   const [pending, startTransition] = useTransition();
 
   const needle = q.trim().toLowerCase();
-  const filtered = needle ? rows.filter((r) => [r.reference, r.from, r.to, STATUS_LABEL[r.status]].join(" ").toLowerCase().includes(needle)) : rows;
+  const filtered = needle ? rows.filter((r) => [r.reference, r.from, r.to, T.transfers.status[r.status]].join(" ").toLowerCase().includes(needle)) : rows;
   const p = paginate(filtered, page, pageSize);
   const cols = canManage ? 8 : 7;
 
@@ -45,7 +49,7 @@ export default function TransfersTable({ rows, canManage }: { rows: TransferRow[
         toast.success(r.message, { id: "transfer" });
         router.refresh();
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "transfer" });
+        toast.error(T.common.somethingWrong, { id: "transfer" });
       }
     });
   }
@@ -57,8 +61,8 @@ export default function TransfersTable({ rows, canManage }: { rows: TransferRow[
           <Icon name="search" size={18} className="sp-input-icon" />
           <input
             className="sp-input "
-            placeholder="Search"
-            aria-label="Search transfers"
+            placeholder={L.search}
+            aria-label={L.searchAria}
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
@@ -72,7 +76,7 @@ export default function TransfersTable({ rows, canManage }: { rows: TransferRow[
             <button
               type="button"
               className="sp-btn sp-btn--secondary sp-btn--icon"
-              aria-label="Filter (coming soon)"
+              aria-label={L.filterAria}
               aria-disabled="true"
               title={SOON}
               style={{ opacity: 0.5, cursor: "not-allowed" }}
@@ -82,7 +86,7 @@ export default function TransfersTable({ rows, canManage }: { rows: TransferRow[
             </button>
             <Link href="/transfers/create" className="sp-btn sp-btn--primary">
               <Icon name="plus" size={18} />
-              Create Transfer
+              {L.create}
             </Link>
           </>
         )}
@@ -93,30 +97,30 @@ export default function TransfersTable({ rows, canManage }: { rows: TransferRow[
           <table className="sp-table">
             <thead>
               <tr>
-                <th>Reference</th>
-                <th>From Warehouse</th>
-                <th>To Warehouse</th>
-                <th>Items</th>
-                {canManage && <th className="num">Grand Total</th>}
-                <th>Status</th>
-                <th>Created On</th>
-                <th className="act">Action</th>
+                <th>{L.colReference}</th>
+                <th>{L.colFrom}</th>
+                <th>{L.colTo}</th>
+                <th>{L.colItems}</th>
+                {canManage && <th className="num">{L.colTotal}</th>}
+                <th>{L.colStatus}</th>
+                <th>{L.colCreated}</th>
+                <th className="act">{L.colAction}</th>
               </tr>
             </thead>
             <tbody>
               {p.visible.map((r) => (
                 <tr key={r.id} data-ref={r.reference}>
                   <td>
-                    <span className="sp-code">{r.reference}</span>
+                    <span className="sp-code"><bdi dir="ltr">{r.reference}</bdi></span>
                   </td>
                   <td>{r.from}</td>
                   <td>{r.to}</td>
                   <td>{r.items}</td>
-                  {canManage && <td className="num">{r.total}</td>}
+                  {canManage && <td className="num"><bdi dir="ltr">{r.total}</bdi></td>}
                   <td>
                     <span className={`sp-badge sp-badge--${STATUS_TONE[r.status]}`} data-status={r.status}>
                       <i />
-                      {STATUS_LABEL[r.status]}
+                      {T.transfers.status[r.status]}
                     </span>
                   </td>
                   <td>
@@ -124,18 +128,18 @@ export default function TransfersTable({ rows, canManage }: { rows: TransferRow[
                   </td>
                   <td className="act">
                     <span style={{ display: "flex", gap: 2 }}>
-                      <Link href={`/transfers/${encodeURIComponent(r.id)}`} className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={`View ${r.reference}`}>
+                      <Link href={`/transfers/${encodeURIComponent(r.id)}`} className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={fmt(L.viewAria, { ref: r.reference })}>
                         <Icon name="eye" size={16} />
                       </Link>
                       {canManage && r.status === "PENDING" && (
                         <>
-                          <Link href={`/transfers/${encodeURIComponent(r.id)}/edit`} className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={`Edit ${r.reference}`}>
+                          <Link href={`/transfers/${encodeURIComponent(r.id)}/edit`} className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={fmt(L.editAria, { ref: r.reference })}>
                             <Icon name="pencil" size={16} />
                           </Link>
                           <button
                             type="button"
                             className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-                            aria-label={`Delete ${r.reference}`}
+                            aria-label={fmt(L.deleteAria, { ref: r.reference })}
                             style={{ color: "var(--danger-500)" }}
                             onClick={() => setDel(r)}
                           >
@@ -152,11 +156,11 @@ export default function TransfersTable({ rows, canManage }: { rows: TransferRow[
                   <td colSpan={cols} style={{ textAlign: "center", color: "var(--text-2)" }}>
                     {rows.length === 0 ? (
                       <span>
-                        <b style={{ color: "var(--text-1)" }}>No transfers yet</b>
-                        {canManage ? " — use Create Transfer to move stock between warehouses." : "."}
+                        <b style={{ color: "var(--text-1)" }}>{L.emptyTitle}</b>
+                        {canManage ? L.emptyHint : "."}
                       </span>
                     ) : (
-                      "No transfers match your search."
+                      L.noMatch
                     )}
                   </td>
                 </tr>
@@ -180,7 +184,7 @@ export default function TransfersTable({ rows, canManage }: { rows: TransferRow[
       </div>
 
       {del && canManage && (
-        <ConfirmDeleteModal itemType="transfer" itemName={del.reference} busy={pending} onCancel={() => setDel(null)} onConfirm={confirmDelete} />
+        <ConfirmDeleteModal itemType={L.deleteType} itemName={del.reference} busy={pending} onCancel={() => setDel(null)} onConfirm={confirmDelete} />
       )}
     </>
   );

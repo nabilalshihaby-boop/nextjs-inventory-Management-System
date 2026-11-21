@@ -8,7 +8,10 @@ import { db } from "@/lib/db";
 import { canManageProducts } from "@/lib/roles";
 import { getDefaultCurrency } from "@/lib/settings";
 import { deleteImage, saveImage, validateImage, type ValidImage } from "@/lib/image-upload";
-import { MAX_PRODUCT_IMAGES, openingStockSchema, productFieldsSchema, type ProductField, type ProductFields } from "@/lib/products";
+import { MAX_PRODUCT_IMAGES, makeProductSchemas, type ProductField, type ProductFields } from "@/lib/products";
+import { getDict } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n/config";
+import type { Dictionary } from "@/lib/i18n";
 
 // Product images: content-validated JPG/PNG/WebP, 2 MB each, at most 5 per product, random names
 // under public/uploads/products, only relative paths stored.
@@ -22,27 +25,24 @@ export type ProductResult =
 
 type Errors = Partial<Record<ProductField, string>>;
 const idSchema = z.string().trim().min(1).max(64);
-const DUPLICATE = "A product with this code already exists";
-const NO_CURRENCY =
-  "No default currency is configured. The Owner must choose one in System Settings (/settings) before products can be saved.";
 
 const str = (fd: FormData, k: string) => {
   const v = fd.get(k);
   return typeof v === "string" ? v : "";
 };
-const fail = (fieldErrors: Errors): ProductResult => ({ ok: false, message: Object.values(fieldErrors)[0] ?? "Please check the form", fieldErrors });
+const fail = (fieldErrors: Errors, t: Dictionary): ProductResult => ({ ok: false, message: Object.values(fieldErrors)[0] ?? t.common.checkForm, fieldErrors });
 const isUniqueViolation = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
 
 /** OWNER/ADMIN only — re-checked in every mutation; the role never comes from the client. */
-async function authorize() {
+async function authorize(t: Dictionary) {
   const session = await auth();
-  if (!session?.user?.id) return { error: { ok: false, message: "Your session has expired. Please sign in again." } as ProductResult };
-  if (!canManageProducts(session.user.role)) return { error: { ok: false, message: "You don't have permission to change products." } as ProductResult };
+  if (!session?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } as ProductResult };
+  if (!canManageProducts(session.user.role)) return { error: { ok: false, message: t.products.err.noPermission } as ProductResult };
   return { userId: session.user.id };
 }
 
-function parseFields(fd: FormData, errors: Errors): ProductFields | null {
-  const parsed = productFieldsSchema.safeParse({
+function parseFields(fd: FormData, errors: Errors, schema: ReturnType<typeof makeProductSchemas>["productFieldsSchema"]): ProductFields | null {
+  const parsed = schema.safeParse({
     name: str(fd, "name"),
     code: str(fd, "code"),
     categoryId: str(fd, "categoryId"),
@@ -65,7 +65,7 @@ function parseFields(fd: FormData, errors: Errors): ProductFields | null {
 }
 
 /** Every related record must exist in MySQL (ids from the client only select, never trusted). */
-async function checkRelations(f: ProductFields, errors: Errors) {
+async function checkRelations(f: ProductFields, errors: Errors, E: Dictionary["products"]["err"]) {
   const unitIds = [...new Set([f.productUnitId, f.saleUnitId, f.purchaseUnitId])];
   const [category, brand, units] = await Promise.all([
     db.productCategory.findUnique({ where: { id: f.categoryId }, select: { id: true } }),
@@ -73,21 +73,21 @@ async function checkRelations(f: ProductFields, errors: Errors) {
     db.productUnit.findMany({ where: { id: { in: unitIds } }, select: { id: true } }),
   ]);
   const found = new Set(units.map((u) => u.id));
-  if (!category) errors.categoryId ??= "Choose a valid product category";
-  if (!brand) errors.brandId ??= "Choose a valid brand";
-  if (!found.has(f.productUnitId)) errors.productUnitId ??= "Choose a valid product unit";
-  if (!found.has(f.saleUnitId)) errors.saleUnitId ??= "Choose a valid sale unit";
-  if (!found.has(f.purchaseUnitId)) errors.purchaseUnitId ??= "Choose a valid purchase unit";
+  if (!category) errors.categoryId ??= E.validCategory;
+  if (!brand) errors.brandId ??= E.validBrand;
+  if (!found.has(f.productUnitId)) errors.productUnitId ??= E.validProductUnit;
+  if (!found.has(f.saleUnitId)) errors.saleUnitId ??= E.validSaleUnit;
+  if (!found.has(f.purchaseUnitId)) errors.purchaseUnitId ??= E.validPurchaseUnit;
 }
 
 /** New image files from FormData, validated by content. */
-async function readImages(fd: FormData, errors: Errors): Promise<ValidImage[]> {
+async function readImages(fd: FormData, errors: Errors, t: Dictionary): Promise<ValidImage[]> {
   const files = fd.getAll("images").filter((v): v is File => v instanceof File && v.size > 0);
   const out: ValidImage[] = [];
   for (const file of files) {
     const r = await validateImage(file);
     if ("error" in r) {
-      errors.images ??= `${file.name}: ${r.error}`;
+      errors.images ??= fmt(t.products.err.imageFile, { file: file.name, error: t.catalog.img[r.key] });
       continue;
     }
     out.push(r);
@@ -114,14 +114,17 @@ const fieldData = (f: ProductFields) => ({
 });
 
 export async function createProduct(formData: FormData): Promise<ProductResult> {
-  const a = await authorize();
+  const t = await getDict();
+  const E = t.products.err;
+  const S = makeProductSchemas(t.products.val, t.products.labels);
+  const a = await authorize(t);
   if ("error" in a) return a.error!;
-  if (!(formData instanceof FormData)) return { ok: false, message: "Invalid request" };
-  if (!(await getDefaultCurrency())) return { ok: false, message: NO_CURRENCY, fieldErrors: { currency: NO_CURRENCY } };
+  if (!(formData instanceof FormData)) return { ok: false, message: E.invalidRequest };
+  if (!(await getDefaultCurrency())) return { ok: false, message: E.noCurrency, fieldErrors: { currency: E.noCurrency } };
 
   const errors: Errors = {};
-  const f = parseFields(formData, errors);
-  const stock = openingStockSchema.safeParse({
+  const f = parseFields(formData, errors, S.productFieldsSchema);
+  const stock = S.openingStockSchema.safeParse({
     warehouseId: str(formData, "warehouseId"),
     supplierId: str(formData, "supplierId"),
     quantity: str(formData, "quantity"),
@@ -129,20 +132,20 @@ export async function createProduct(formData: FormData): Promise<ProductResult> 
   });
   if (!stock.success) for (const i of stock.error.issues) errors[i.path[0] as ProductField] ??= i.message;
 
-  if (f) await checkRelations(f, errors);
+  if (f) await checkRelations(f, errors, E);
   if (stock.success) {
     const [warehouse, supplier] = await Promise.all([
       db.warehouse.findUnique({ where: { id: stock.data.warehouseId }, select: { id: true } }),
       db.supplier.findUnique({ where: { id: stock.data.supplierId }, select: { id: true } }),
     ]);
-    if (!warehouse) errors.warehouseId ??= "Choose a valid warehouse";
-    if (!supplier) errors.supplierId ??= "Choose a valid supplier";
+    if (!warehouse) errors.warehouseId ??= E.validWarehouse;
+    if (!supplier) errors.supplierId ??= E.validSupplier;
   }
-  if (f && (await db.product.findUnique({ where: { code: f.code }, select: { id: true } }))) errors.code ??= DUPLICATE;
+  if (f && (await db.product.findUnique({ where: { code: f.code }, select: { id: true } }))) errors.code ??= E.duplicate;
 
-  const images = await readImages(formData, errors);
-  if (images.length > MAX_PRODUCT_IMAGES) errors.images ??= `Up to ${MAX_PRODUCT_IMAGES} images per product`;
-  if (!f || !stock.success || Object.keys(errors).length) return fail(errors);
+  const images = await readImages(formData, errors, t);
+  if (images.length > MAX_PRODUCT_IMAGES) errors.images ??= fmt(E.maxImages, { max: MAX_PRODUCT_IMAGES });
+  if (!f || !stock.success || Object.keys(errors).length) return fail(errors, t);
 
   const paths: string[] = [];
   try {
@@ -167,10 +170,10 @@ export async function createProduct(formData: FormData): Promise<ProductResult> 
       return p;
     });
     revalidatePath("/products");
-    return { ok: true, message: "Product created", id: product.id };
+    return { ok: true, message: t.products.ok.created, id: product.id };
   } catch (e) {
     for (const p of paths) await deleteImage(FOLDER, p);
-    if (isUniqueViolation(e)) return fail({ code: DUPLICATE });
+    if (isUniqueViolation(e)) return fail({ code: E.duplicate }, t);
     throw e;
   }
 }
@@ -181,29 +184,32 @@ export async function createProduct(formData: FormData): Promise<ProductResult> 
  * fields a client sends are ignored.
  */
 export async function updateProduct(id: unknown, formData: FormData): Promise<ProductResult> {
-  const a = await authorize();
+  const t = await getDict();
+  const E = t.products.err;
+  const S = makeProductSchemas(t.products.val, t.products.labels);
+  const a = await authorize(t);
   if ("error" in a) return a.error!;
-  if (!(formData instanceof FormData)) return { ok: false, message: "Invalid request" };
+  if (!(formData instanceof FormData)) return { ok: false, message: E.invalidRequest };
   const pid = idSchema.safeParse(id);
-  if (!pid.success) return { ok: false, message: "Product not found" };
-  if (!(await getDefaultCurrency())) return { ok: false, message: NO_CURRENCY, fieldErrors: { currency: NO_CURRENCY } };
+  if (!pid.success) return { ok: false, message: E.notFound };
+  if (!(await getDefaultCurrency())) return { ok: false, message: E.noCurrency, fieldErrors: { currency: E.noCurrency } };
 
   const existing = await db.product.findUnique({ where: { id: pid.data }, select: { id: true, images: { select: { id: true, path: true } } } });
-  if (!existing) return { ok: false, message: "Product not found" };
+  if (!existing) return { ok: false, message: E.notFound };
 
   const errors: Errors = {};
-  const f = parseFields(formData, errors);
+  const f = parseFields(formData, errors, S.productFieldsSchema);
   if (f) {
-    await checkRelations(f, errors);
-    if (await db.product.findFirst({ where: { code: f.code, NOT: { id: existing.id } }, select: { id: true } })) errors.code ??= DUPLICATE;
+    await checkRelations(f, errors, E);
+    if (await db.product.findFirst({ where: { code: f.code, NOT: { id: existing.id } }, select: { id: true } })) errors.code ??= E.duplicate;
   }
   // Images to keep: only ids that really belong to this product.
   const keepRequested = new Set(formData.getAll("keepImageIds").filter((v): v is string => typeof v === "string"));
   const keep = existing.images.filter((i) => keepRequested.has(i.id));
   const removed = existing.images.filter((i) => !keepRequested.has(i.id));
-  const images = await readImages(formData, errors);
-  if (keep.length + images.length > MAX_PRODUCT_IMAGES) errors.images ??= `Up to ${MAX_PRODUCT_IMAGES} images per product`;
-  if (!f || Object.keys(errors).length) return fail(errors);
+  const images = await readImages(formData, errors, t);
+  if (keep.length + images.length > MAX_PRODUCT_IMAGES) errors.images ??= fmt(E.maxImages, { max: MAX_PRODUCT_IMAGES });
+  if (!f || Object.keys(errors).length) return fail(errors, t);
 
   const paths: string[] = [];
   try {
@@ -218,11 +224,11 @@ export async function updateProduct(id: unknown, formData: FormData): Promise<Pr
     });
   } catch (e) {
     for (const p of paths) await deleteImage(FOLDER, p);
-    if (isUniqueViolation(e)) return fail({ code: DUPLICATE });
+    if (isUniqueViolation(e)) return fail({ code: E.duplicate }, t);
     throw e;
   }
   // Removed images are no longer referenced → delete their files.
   for (const r of removed) await deleteImage(FOLDER, r.path);
   revalidatePath("/products");
-  return { ok: true, message: "Product updated", id: existing.id };
+  return { ok: true, message: t.products.ok.updated, id: existing.id };
 }

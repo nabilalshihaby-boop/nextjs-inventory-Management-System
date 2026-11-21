@@ -6,8 +6,7 @@ import { catalogActions, type CatalogResult } from "@/lib/catalog";
 // Brands (OWNER/ADMIN mutations). Shared logic, validation and the local-development upload note
 // live in lib/catalog.ts. Images: public/uploads/brands.
 const actions = catalogActions({
-  label: "Brand",
-  plural: "brands",
+  entity: "brand",
   folder: "brands",
   path: "/products/brands",
   findByName: (name) => db.brand.findUnique({ where: { name }, select: { id: true } }),
@@ -19,7 +18,7 @@ const actions = catalogActions({
   // Products using this brand block deletion (the FK is RESTRICT as well).
   references: async (id) => {
     const n = await db.product.count({ where: { brandId: id } });
-    return n ? [`${n} product${n === 1 ? "" : "s"}`] : [];
+    return n;
   },
 });
 

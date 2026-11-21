@@ -4,9 +4,12 @@ import { connection } from "next/server";
 import { auth } from "@/auth";
 import { canManageProducts } from "@/lib/roles";
 import { getProductFormData } from "@/lib/product-options";
+import { getDict } from "@/lib/i18n/server";
 import ProductForm from "@/components/products/ProductForm";
 
-export const metadata: Metadata = { title: "Create Product" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).products.createTitle };
+}
 
 export const instant = false;
 

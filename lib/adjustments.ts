@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { fmt } from "@/lib/i18n/config";
+import { en } from "@/lib/i18n/dictionaries/en";
+import type { Dictionary } from "@/lib/i18n";
 import { toUnits } from "@/lib/transfers";
 
 // Shared Stock Adjustment rules (client + server). Quantities are 3-dp decimal strings; arithmetic
@@ -24,37 +27,40 @@ function isValidDate(v: string) {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v && d.getUTCFullYear() >= 2000 && d.getUTCFullYear() <= 2199;
 }
 
-/** Create/update payload. Only ids, quantities, types and date are accepted; anything else is stripped. */
-export const adjustmentInputSchema = z
-  .object({
-    warehouseId: id("Warehouse is required"),
-    adjustmentDate: z.string({ error: "Date is required" }).trim().min(1, "Date is required").refine(isValidDate, "Enter a valid date"),
-    items: z
-      .array(
-        z.object({
-          productId: id("Choose a valid product"),
-          quantity: z
-            .string({ error: "Quantity is required" })
-            .trim()
-            .refine((v) => QTY_RE.test(v), "Quantity must be a number with up to 3 decimal places")
-            .refine((v) => !QTY_RE.test(v) || toUnits(v, 3) > BigInt(0), "Quantity must be greater than 0"),
-          type: z.enum(ADJUSTMENT_TYPES, { error: "Choose Addition or Subtraction" }),
-        }),
-        { error: "Add at least one product" },
-      )
-      .min(1, "Add at least one product")
-      .max(MAX_ADJUSTMENT_ITEMS, `Up to ${MAX_ADJUSTMENT_ITEMS} products per adjustment`),
-  })
-  .superRefine((v, ctx) => {
-    const seen = new Set<string>();
-    for (const i of v.items) {
-      if (seen.has(i.productId)) {
-        ctx.addIssue({ code: "custom", path: ["items"], message: "Each product can appear only once" });
-        break;
+/** Create/update payload. Only ids, quantities, types and date are accepted; anything else is stripped. Messages are dictionary text. */
+export function makeAdjustmentSchema(m: Dictionary["adjustments"]["val"] = en.adjustments.val) {
+  return z
+    .object({
+      warehouseId: id(m.warehouseRequired),
+      adjustmentDate: z.string({ error: m.dateRequired }).trim().min(1, m.dateRequired).refine(isValidDate, m.dateInvalid),
+      items: z
+        .array(
+          z.object({
+            productId: id(m.chooseProduct),
+            quantity: z
+              .string({ error: m.qtyRequired })
+              .trim()
+              .refine((v) => QTY_RE.test(v), m.qtyDecimals)
+              .refine((v) => !QTY_RE.test(v) || toUnits(v, 3) > BigInt(0), m.qtyPositive),
+            type: z.enum(ADJUSTMENT_TYPES, { error: m.chooseType }),
+          }),
+          { error: m.addProduct },
+        )
+        .min(1, m.addProduct)
+        .max(MAX_ADJUSTMENT_ITEMS, fmt(m.maxItems, { max: MAX_ADJUSTMENT_ITEMS })),
+    })
+    .superRefine((v, ctx) => {
+      const seen = new Set<string>();
+      for (const i of v.items) {
+        if (seen.has(i.productId)) {
+          ctx.addIssue({ code: "custom", path: ["items"], message: m.dupProduct });
+          break;
+        }
+        seen.add(i.productId);
       }
-      seen.add(i.productId);
-    }
-  });
+    });
+}
+export const adjustmentInputSchema = makeAdjustmentSchema();
 
 export type AdjustmentInput = z.infer<typeof adjustmentInputSchema>;
 export type AdjustmentField = "warehouseId" | "adjustmentDate" | "items";

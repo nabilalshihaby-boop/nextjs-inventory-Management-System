@@ -4,13 +4,16 @@ import { connection } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { formatDateOnly } from "@/lib/format";
+import { getDict } from "@/lib/i18n/server";
 import { formatQuantity } from "@/lib/money";
 import { canManageAdjustments } from "@/lib/roles";
 import { getSystemSettings } from "@/lib/settings";
 import type { AdjustmentRow } from "@/lib/adjustments";
 import AdjustmentsTable from "@/components/adjustments/AdjustmentsTable";
 
-export const metadata: Metadata = { title: "Adjustments" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).adjustments.title };
+}
 
 export const instant = false;
 

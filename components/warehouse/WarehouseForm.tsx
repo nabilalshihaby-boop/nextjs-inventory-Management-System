@@ -5,6 +5,7 @@ import { useState, useTransition, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Icon from "@/components/layout/Icon";
+import { useT } from "@/components/i18n/I18nProvider";
 import { createWarehouse, updateWarehouse, type WarehouseResult } from "@/app/(dashboard)/warehouse/actions";
 import type { WarehouseField, WarehouseFormValues } from "@/lib/warehouses";
 import type { CountryOption } from "@/lib/countries";
@@ -24,6 +25,10 @@ export default function WarehouseForm({
   countries: CountryOption[];
 }) {
   const router = useRouter();
+  const T = useT();
+  const W = T.warehouses;
+  const V = W.val;
+  const FM = W.form;
   const editing = !!warehouseId;
   const [f, setF] = useState<WarehouseFormValues>(initial ?? EMPTY);
   const [e, setE] = useState<Partial<Record<WarehouseField, string>>>({});
@@ -38,11 +43,11 @@ export default function WarehouseForm({
   function save() {
     // Same checks as the design; the server action validates everything again with zod.
     const n: Partial<Record<WarehouseField, string>> = {};
-    if (!f.name.trim()) n.name = "Name is required";
-    if (!/^\S+@\S+\.\S+$/.test(f.email.trim())) n.email = "Enter a valid email";
-    if (!f.phoneNumber.trim()) n.phoneNumber = "Phone number is required";
-    if (!f.countryCode) n.countryCode = "Country is required";
-    if (!f.city.trim()) n.city = "City is required";
+    if (!f.name.trim()) n.name = V.nameRequired;
+    if (!/^\S+@\S+\.\S+$/.test(f.email.trim())) n.email = V.emailInvalid;
+    if (!f.phoneNumber.trim()) n.phoneNumber = V.phoneRequired;
+    if (!f.countryCode) n.countryCode = V.countryRequired;
+    if (!f.city.trim()) n.city = V.cityRequired;
     setE(n);
     if (Object.keys(n).length) {
       toast.error(Object.values(n)[0]!, { id: "warehouse" });
@@ -53,7 +58,7 @@ export default function WarehouseForm({
       try {
         r = editing ? await updateWarehouse(warehouseId, f) : await createWarehouse(f);
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "warehouse" });
+        toast.error(T.common.somethingWrong, { id: "warehouse" });
         return;
       }
       if (!r.ok) {
@@ -67,7 +72,7 @@ export default function WarehouseForm({
     });
   }
 
-  const field = (k: WarehouseField, label: string, placeholder: string, required = true, type = "text") => (
+  const field = (k: WarehouseField, label: string, placeholder: string, required = true, type = "text", ltr = false) => (
     <div className={"sp-field" + (e[k] ? " sp-field--error" : "")}>
       <label className="sp-label" htmlFor={`wh-${k}`}>
         {label}
@@ -79,6 +84,7 @@ export default function WarehouseForm({
         type={type}
         className="sp-input "
         placeholder={placeholder}
+        dir={ltr ? "ltr" : undefined}
         value={f[k]}
         onChange={set(k)}
         aria-invalid={!!e[k] || undefined}
@@ -91,12 +97,12 @@ export default function WarehouseForm({
     <>
       <div className="sp-page-head">
         <h1 className="t-page-title" style={{ margin: 0 }}>
-          {editing ? "Edit Warehouse" : "Create Warehouse"}
+          {editing ? W.editTitle : W.createTitle}
         </h1>
         <div style={{ display: "flex", gap: 12 }}>
           <Link href="/warehouse" className="sp-btn sp-btn--secondary">
             <Icon name="arrow-left" size={18} />
-            Back
+            {FM.back}
           </Link>
         </div>
       </div>
@@ -111,12 +117,12 @@ export default function WarehouseForm({
       >
         <div className="sp-card sp-form-card">
           <div className="sp-form-grid" style={{ "--cols": 2 } as CSSProperties}>
-            {field("name", "Name", "Enter Name")}
-            {field("email", "Email", "Enter Email", true, "email")}
-            {field("phoneNumber", "Phone Number", "Enter Phone Number", true, "tel")}
+            {field("name", FM.name, FM.namePh)}
+            {field("email", FM.email, FM.emailPh, true, "email", true)}
+            {field("phoneNumber", FM.phone, FM.phonePh, true, "tel", true)}
             <div className={"sp-field" + (e.countryCode ? " sp-field--error" : "")}>
               <label className="sp-label" htmlFor="wh-countryCode">
-                Country<i>*</i>
+                {FM.country}<i>*</i>
               </label>
               <select
                 id="wh-countryCode"
@@ -127,7 +133,7 @@ export default function WarehouseForm({
                 aria-invalid={!!e.countryCode || undefined}
               >
                 <option value="" disabled>
-                  Select Country
+                  {FM.countryPh}
                 </option>
                 {countries.map((c) => (
                   <option key={c.code} value={c.code}>
@@ -137,15 +143,15 @@ export default function WarehouseForm({
               </select>
               {e.countryCode && <span className="sp-error">{e.countryCode}</span>}
             </div>
-            {field("city", "City", "Enter City")}
-            {field("zipCode", "Zip Code", "Enter Zip Code", false)}
+            {field("city", FM.city, FM.cityPh)}
+            {field("zipCode", FM.zip, FM.zipPh, false, "text", true)}
           </div>
           <div className="sp-form-actions">
             <button type="button" className="sp-btn sp-btn--secondary" onClick={() => router.push("/warehouse")} disabled={pending}>
-              Cancel
+              {T.common.cancel}
             </button>
             <button type="submit" className="sp-btn sp-btn--primary" disabled={!ok || pending}>
-              {pending ? "Saving…" : "Save"}
+              {pending ? T.common.saving : T.common.save}
             </button>
           </div>
         </div>

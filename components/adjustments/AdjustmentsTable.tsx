@@ -5,10 +5,12 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Icon from "@/components/layout/Icon";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
 import { ConfirmDeleteModal } from "@/components/ui/Modal";
 import Pagination, { paginate } from "@/components/ui/Pagination";
 import { deleteAdjustment } from "@/app/(dashboard)/adjustments/actions";
-import { TYPE_LABEL, TYPE_TONE, type AdjustmentRow } from "@/lib/adjustments";
+import { TYPE_TONE, type AdjustmentRow } from "@/lib/adjustments";
 
 // Port of design/Adjustments.html: TableToolbar (search + Create Adjustment), DataTable
 // (Reference / Warehouse / Product / Type / Quantity / Date / Action), Pagination and
@@ -17,6 +19,8 @@ import { TYPE_LABEL, TYPE_TONE, type AdjustmentRow } from "@/lib/adjustments";
 
 export default function AdjustmentsTable({ rows, canManage }: { rows: AdjustmentRow[]; canManage: boolean }) {
   const router = useRouter();
+  const T = useT();
+  const L = T.adjustments.list;
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -25,7 +29,7 @@ export default function AdjustmentsTable({ rows, canManage }: { rows: Adjustment
 
   const needle = q.trim().toLowerCase();
   const filtered = needle
-    ? rows.filter((r) => [r.reference, r.warehouse, ...r.lines.flatMap((l) => [l.product, l.code, TYPE_LABEL[l.type]])].join(" ").toLowerCase().includes(needle))
+    ? rows.filter((r) => [r.reference, r.warehouse, ...r.lines.flatMap((l) => [l.product, l.code, T.adjustments.type[l.type]])].join(" ").toLowerCase().includes(needle))
     : rows;
   const p = paginate(filtered, page, pageSize);
   const cols = canManage ? 7 : 6;
@@ -41,7 +45,7 @@ export default function AdjustmentsTable({ rows, canManage }: { rows: Adjustment
         else toast.success(r.message, { id: "adjustment" });
         router.refresh();
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "adjustment" });
+        toast.error(T.common.somethingWrong, { id: "adjustment" });
       }
     });
   }
@@ -55,8 +59,8 @@ export default function AdjustmentsTable({ rows, canManage }: { rows: Adjustment
           <Icon name="search" size={18} className="sp-input-icon" />
           <input
             className="sp-input "
-            placeholder="Search"
-            aria-label="Search adjustments"
+            placeholder={L.search}
+            aria-label={L.searchAria}
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
@@ -68,7 +72,7 @@ export default function AdjustmentsTable({ rows, canManage }: { rows: Adjustment
         {canManage && (
           <Link href="/adjustments/create" className="sp-btn sp-btn--primary">
             <Icon name="plus" size={18} />
-            Create Adjustment
+            {L.create}
           </Link>
         )}
       </div>
@@ -78,20 +82,20 @@ export default function AdjustmentsTable({ rows, canManage }: { rows: Adjustment
           <table className="sp-table">
             <thead>
               <tr>
-                <th>Reference</th>
-                <th>Warehouse</th>
-                <th>Product</th>
-                <th>Type</th>
-                <th>Quantity</th>
-                <th>Date</th>
-                {canManage && <th className="num">Action</th>}
+                <th>{L.colReference}</th>
+                <th>{L.colWarehouse}</th>
+                <th>{L.colProduct}</th>
+                <th>{L.colType}</th>
+                <th>{L.colQty}</th>
+                <th>{L.colDate}</th>
+                {canManage && <th className="num">{L.colAction}</th>}
               </tr>
             </thead>
             <tbody>
               {p.visible.map((r) => (
                 <tr key={r.id} data-ref={r.reference}>
                   <td>
-                    <span className="sp-code">{r.reference}</span>
+                    <span className="sp-code"><bdi dir="ltr">{r.reference}</bdi></span>
                   </td>
                   <td>{r.warehouse}</td>
                   <td className="primary-cell">
@@ -105,7 +109,7 @@ export default function AdjustmentsTable({ rows, canManage }: { rows: Adjustment
                     <div style={stack}>
                       {r.lines.map((l) => (
                         <span key={l.code} className={`sp-badge sp-badge--${TYPE_TONE[l.type]}`} data-type={l.type}>
-                          {TYPE_LABEL[l.type]}
+                          {T.adjustments.type[l.type]}
                         </span>
                       ))}
                     </div>
@@ -114,7 +118,7 @@ export default function AdjustmentsTable({ rows, canManage }: { rows: Adjustment
                     <div style={stack}>
                       {r.lines.map((l) => (
                         <span key={l.code}>
-                          {l.quantity} {l.unit}
+                          <bdi dir="ltr">{l.quantity}</bdi> {l.unit}
                         </span>
                       ))}
                     </div>
@@ -125,10 +129,10 @@ export default function AdjustmentsTable({ rows, canManage }: { rows: Adjustment
                   {canManage && (
                     <td className="num">
                       <span style={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
-                        <Link href={`/adjustments/${encodeURIComponent(r.id)}/edit`} className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={`Edit ${r.reference}`} style={{ color: "var(--primary-600)" }}>
+                        <Link href={`/adjustments/${encodeURIComponent(r.id)}/edit`} className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={fmt(L.editAria, { ref: r.reference })} style={{ color: "var(--primary-600)" }}>
                           <Icon name="pencil" size={16} />
                         </Link>
-                        <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={`Delete ${r.reference}`} style={{ color: "var(--danger-500)" }} onClick={() => setDel(r)}>
+                        <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={fmt(L.deleteAria, { ref: r.reference })} style={{ color: "var(--danger-500)" }} onClick={() => setDel(r)}>
                           <Icon name="trash-2" size={16} />
                         </button>
                       </span>
@@ -141,11 +145,11 @@ export default function AdjustmentsTable({ rows, canManage }: { rows: Adjustment
                   <td colSpan={cols} style={{ textAlign: "center", color: "var(--text-2)" }}>
                     {rows.length === 0 ? (
                       <span>
-                        <b style={{ color: "var(--text-1)" }}>No adjustments yet</b>
-                        {canManage ? " — use Create Adjustment to correct stock." : "."}
+                        <b style={{ color: "var(--text-1)" }}>{L.emptyTitle}</b>
+                        {canManage ? L.emptyHint : "."}
                       </span>
                     ) : (
-                      "No adjustments match your search."
+                      L.noMatch
                     )}
                   </td>
                 </tr>
@@ -169,7 +173,7 @@ export default function AdjustmentsTable({ rows, canManage }: { rows: Adjustment
       </div>
 
       {del && canManage && (
-        <ConfirmDeleteModal itemType="adjustment" itemName={del.reference} busy={pending} onCancel={() => setDel(null)} onConfirm={confirmDelete} />
+        <ConfirmDeleteModal itemType={L.deleteType} itemName={del.reference} busy={pending} onCancel={() => setDel(null)} onConfirm={confirmDelete} />
       )}
     </>
   );

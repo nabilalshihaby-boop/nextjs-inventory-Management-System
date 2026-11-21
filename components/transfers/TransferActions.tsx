@@ -5,6 +5,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Icon from "@/components/layout/Icon";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
 import Modal, { ConfirmDeleteModal } from "@/components/ui/Modal";
 import { completeTransfer, deleteTransfer, sendTransfer, type TransferResult } from "@/app/(dashboard)/transfers/actions";
 import type { TransferStatusValue } from "@/lib/transfers";
@@ -13,10 +15,10 @@ import type { TransferStatusValue } from "@/lib/transfers";
 // PENDING: Edit, Send, Complete, Delete · SENT: Complete · COMPLETED: none (immutable).
 type Kind = "send" | "complete" | "delete";
 
-const SEND_BODY = "The quantities will be deducted from the source warehouse now. A sent transfer can no longer be edited or deleted.";
-
 export default function TransferActions({ id, reference, status }: { id: string; reference: string; status: TransferStatusValue }) {
   const router = useRouter();
+  const T = useT();
+  const A = T.transfers.actions;
   const [open, setOpen] = useState<Kind | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -28,7 +30,7 @@ export default function TransferActions({ id, reference, status }: { id: string;
       try {
         r = kind === "send" ? await sendTransfer(id) : kind === "complete" ? await completeTransfer(id) : await deleteTransfer(id);
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "transfer" });
+        toast.error(T.common.somethingWrong, { id: "transfer" });
         return;
       }
       setOpen(null);
@@ -43,10 +45,7 @@ export default function TransferActions({ id, reference, status }: { id: string;
     });
   }
 
-  const completeBody =
-    status === "SENT"
-      ? "The quantities will be added to the destination warehouse (they were already deducted from the source when sent). Completed transfers can't be changed."
-      : "The quantities will be deducted from the source warehouse and added to the destination now. Completed transfers can't be changed.";
+  const completeBody = status === "SENT" ? A.completeBodySent : A.completeBodyPending;
 
   return (
     <>
@@ -54,44 +53,44 @@ export default function TransferActions({ id, reference, status }: { id: string;
         <>
           <Link href={`/transfers/${encodeURIComponent(id)}/edit`} className="sp-btn sp-btn--secondary">
             <Icon name="pencil" size={18} />
-            Edit
+            {A.edit}
           </Link>
           <button type="button" className="sp-btn sp-btn--secondary" style={{ color: "var(--danger-700)" }} onClick={() => setOpen("delete")}>
             <Icon name="trash-2" size={18} />
-            Delete
+            {A.delete}
           </button>
           <button type="button" className="sp-btn sp-btn--secondary" onClick={() => setOpen("send")}>
             <Icon name="arrow-right" size={18} />
-            Mark as Sent
+            {A.markSent}
           </button>
         </>
       )}
       <button type="button" className="sp-btn sp-btn--primary" onClick={() => setOpen("complete")}>
         <Icon name="shield-check" size={18} />
-        Mark as Completed
+        {A.markCompleted}
       </button>
 
       {(open === "send" || open === "complete") && (
         <Modal
-          title={open === "send" ? `Send ${reference}?` : `Complete ${reference}?`}
+          title={fmt(open === "send" ? A.sendTitle : A.completeTitle, { ref: reference })}
           onClose={() => !pending && setOpen(null)}
           footer={
             <>
               <button type="button" className="sp-btn sp-btn--secondary" onClick={() => setOpen(null)} disabled={pending}>
-                Cancel
+                {A.cancel}
               </button>
               <button type="button" className="sp-btn sp-btn--primary" onClick={() => run(open)} disabled={pending}>
-                {pending ? "Saving…" : open === "send" ? "Send" : "Complete"}
+                {pending ? T.common.saving : open === "send" ? A.send : A.complete}
               </button>
             </>
           }
         >
           <p className="t-body" style={{ margin: 0, color: "var(--text-2)" }}>
-            {open === "send" ? SEND_BODY : completeBody}
+            {open === "send" ? A.sendBody : completeBody}
           </p>
         </Modal>
       )}
-      {open === "delete" && <ConfirmDeleteModal itemType="transfer" itemName={reference} busy={pending} onCancel={() => setOpen(null)} onConfirm={() => run("delete")} />}
+      {open === "delete" && <ConfirmDeleteModal itemType={T.transfers.list.deleteType} itemName={reference} busy={pending} onCancel={() => setOpen(null)} onConfirm={() => run("delete")} />}
     </>
   );
 }

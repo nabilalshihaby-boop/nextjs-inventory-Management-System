@@ -4,9 +4,12 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Icon from "@/components/layout/Icon";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
+import RowMenu from "@/components/ui/RowMenu";
 import Modal, { ConfirmDeleteModal } from "@/components/ui/Modal";
 import Pagination, { paginate } from "@/components/ui/Pagination";
-import type { CatalogField, CatalogResult } from "@/lib/catalog";
+import type { CatalogEntity, CatalogField, CatalogResult } from "@/lib/catalog";
 
 // Shared port of design/Product Categories.html, Brands.html and Units.html (identical layouts):
 // TableToolbar (+ Create button), DataTable (thumb + name) with a row action menu (Edit / Delete),
@@ -14,23 +17,6 @@ import type { CatalogField, CatalogResult } from "@/lib/catalog";
 // ConfirmDeleteModal. Rows come from the server; mutations go through OWNER/ADMIN Server Actions.
 
 export type CatalogRow = { id: string; name: string; image: string | null };
-
-export type CatalogLabels = {
-  /** Table column header, e.g. "Brand". */
-  column: string;
-  /** "Create Brand" (button + modal title). */
-  create: string;
-  /** "Edit Brand" (modal title). */
-  edit: string;
-  /** Used in the delete text: "Are you sure you want to delete this brand?" */
-  itemType: string;
-  /** For search aria-label / messages, e.g. "brands". */
-  plural: string;
-  /** Empty state, e.g. "No brands yet". */
-  empty: string;
-  /** Image field label, e.g. "Brand Image". */
-  imageLabel: string;
-};
 
 export type CatalogActions = {
   create: (formData: FormData) => Promise<CatalogResult>;
@@ -44,18 +30,22 @@ const ACCEPT = ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp";
 export default function CatalogTable({
   rows,
   canManage,
-  labels,
+  entity,
   idPrefix,
   actions,
 }: {
   rows: CatalogRow[];
   canManage: boolean;
-  labels: CatalogLabels;
+  entity: CatalogEntity;
   /** Prefix for element ids (e.g. "br" → #br-name, #br-image). */
   idPrefix: string;
   actions: CatalogActions;
 }) {
   const router = useRouter();
+  const T = useT();
+  const N = T.catalog[entity];
+  const U = T.catalog.ui;
+  const labels = { column: N.column, create: N.create, edit: N.edit, itemType: N.one, plural: N.plural, empty: N.empty, imageLabel: N.imageLabel };
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -94,7 +84,7 @@ export default function CatalogTable({
     if (!f) return;
     // Quick client check (as in the design); the server validates the real file contents again.
     const ext = f.name.split(".").pop()?.toLowerCase() ?? "";
-    const problem = !["jpg", "jpeg", "png", "webp"].includes(ext) ? "Use a JPG, PNG or WebP image" : f.size > MAX_BYTES ? "Image must be 2 MB or smaller" : null;
+    const problem = !["jpg", "jpeg", "png", "webp"].includes(ext) ? T.catalog.img.type : f.size > MAX_BYTES ? T.catalog.img.size : null;
     if (problem) {
       setErr({ ...err, image: problem });
       toast.error(problem, { id: toastId });
@@ -126,8 +116,8 @@ export default function CatalogTable({
 
   function save() {
     if (!name.trim()) {
-      setErr({ ...err, name: "Name is required" });
-      toast.error("Name is required", { id: toastId });
+      setErr({ ...err, name: T.catalog.val.nameRequired });
+      toast.error(T.catalog.val.nameRequired, { id: toastId });
       return;
     }
     const fd = new FormData();
@@ -139,7 +129,7 @@ export default function CatalogTable({
       try {
         handle(row ? await actions.update(row.id, fd) : await actions.create(fd), close);
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: toastId });
+        toast.error(T.common.somethingWrong, { id: toastId });
       }
     });
   }
@@ -153,7 +143,7 @@ export default function CatalogTable({
         setDel(null);
         handle(r, () => {});
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: toastId });
+        toast.error(T.common.somethingWrong, { id: toastId });
       }
     });
   }
@@ -165,8 +155,8 @@ export default function CatalogTable({
           <Icon name="search" size={18} className="sp-input-icon" />
           <input
             className="sp-input "
-            placeholder="Search"
-            aria-label={`Search ${labels.plural}`}
+            placeholder={U.search}
+            aria-label={fmt(U.searchAria, { plural: labels.plural })}
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
@@ -189,7 +179,7 @@ export default function CatalogTable({
             <thead>
               <tr>
                 <th>{labels.column}</th>
-                {canManage && <th className="act">Action</th>}
+                {canManage && <th className="act">{U.action}</th>}
               </tr>
             </thead>
             <tbody>
@@ -211,9 +201,9 @@ export default function CatalogTable({
                       <RowMenu
                         label={r.name}
                         items={[
-                          { label: "Edit", icon: "pencil", onClick: () => open(r) },
+                          { label: U.edit, icon: "pencil", onClick: () => open(r) },
                           "-",
-                          { label: "Delete", icon: "trash-2", danger: true, onClick: () => setDel(r) },
+                          { label: U.delete, icon: "trash-2", danger: true, onClick: () => setDel(r) },
                         ]}
                       />
                     </td>
@@ -226,10 +216,10 @@ export default function CatalogTable({
                     {rows.length === 0 ? (
                       <span>
                         <b style={{ color: "var(--text-1)" }}>{labels.empty}</b>
-                        {canManage ? ` — use ${labels.create} to add the first one.` : "."}
+                        {canManage ? fmt(U.addFirst, { create: labels.create }) : "."}
                       </span>
                     ) : (
-                      `No ${labels.plural} match your search.`
+                      fmt(U.noMatch, { plural: labels.plural })
                     )}
                   </td>
                 </tr>
@@ -259,10 +249,10 @@ export default function CatalogTable({
           footer={
             <>
               <button type="button" className="sp-btn sp-btn--secondary" onClick={close} disabled={pending}>
-                Cancel
+                {T.common.cancel}
               </button>
               <button type="button" className="sp-btn sp-btn--primary" onClick={save} disabled={pending}>
-                {pending ? "Saving…" : "Save"}
+                {pending ? T.common.saving : T.common.save}
               </button>
             </>
           }
@@ -270,12 +260,12 @@ export default function CatalogTable({
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             <div className={"sp-field" + (err.name ? " sp-field--error" : "")}>
               <label className="sp-label" htmlFor={`${idPrefix}-name`}>
-                Name<i>*</i>
+                {U.name}<i>*</i>
               </label>
               <input
                 id={`${idPrefix}-name`}
                 className="sp-input "
-                placeholder="Enter Name"
+                placeholder={U.namePh}
                 value={name}
                 autoFocus
                 aria-invalid={!!err.name || undefined}
@@ -294,14 +284,14 @@ export default function CatalogTable({
                 <div style={{ position: "relative", width: 120 }}>
                   {shownImage ? (
                     // eslint-disable-next-line @next/next/no-img-element -- blob preview / runtime upload
-                    <img src={shownImage} alt={`${labels.imageLabel} preview`} style={{ width: 120, height: 120, borderRadius: 12, objectFit: "cover", display: "block" }} />
+                    <img src={shownImage} alt={fmt(U.preview, { label: labels.imageLabel })} style={{ width: 120, height: 120, borderRadius: 12, objectFit: "cover", display: "block" }} />
                   ) : (
                     <span className="sp-thumb" style={{ width: 120, height: 120, borderRadius: 12 }} />
                   )}
                   <button
                     type="button"
                     className="sp-btn sp-btn--secondary sp-btn--sm sp-btn--icon"
-                    aria-label="Change image"
+                    aria-label={U.change}
                     style={{ position: "absolute", top: -8, right: -8, borderRadius: "50%" }}
                     onClick={() => fileRef.current?.click()}
                   >
@@ -311,15 +301,15 @@ export default function CatalogTable({
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   <button type="button" className="sp-btn sp-btn--secondary sp-btn--sm" onClick={() => fileRef.current?.click()}>
                     <Icon name="upload" size={16} />
-                    Choose image
+                    {U.choose}
                   </button>
                   {shownImage && (
                     <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm" onClick={removePicked}>
                       <Icon name="trash-2" size={16} />
-                      Remove
+                      {U.remove}
                     </button>
                   )}
-                  <span className="t-caption">JPG, PNG or WebP, up to 2 MB</span>
+                  <span className="t-caption">{T.catalog.img.hint}</span>
                 </div>
                 <input ref={fileRef} id={`${idPrefix}-image`} type="file" accept={ACCEPT} onChange={pick} style={{ display: "none" }} />
               </div>
@@ -333,61 +323,5 @@ export default function CatalogTable({
         <ConfirmDeleteModal itemType={labels.itemType} itemName={del.name} busy={pending} onCancel={() => setDel(null)} onConfirm={confirmDelete} />
       )}
     </>
-  );
-}
-
-type MenuItem = { label: string; icon: "pencil" | "trash-2"; danger?: boolean; onClick: () => void } | "-";
-
-// Design RowMenu (.sp-rowmenu + .sp-menu): ellipsis button opening Edit / Delete.
-function RowMenu({ label, items }: { label: string; items: MenuItem[] }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-  return (
-    <div className="sp-rowmenu" ref={ref}>
-      <button
-        type="button"
-        className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-        aria-label={`Row actions for ${label}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-      >
-        <Icon name="ellipsis-vertical" size={18} />
-      </button>
-      {open && (
-        <div className="sp-menu" role="menu">
-          {items.map((it, i) =>
-            it === "-" ? (
-              <div key={i} className="sp-menu-sep" role="separator" />
-            ) : (
-              <button
-                key={i}
-                type="button"
-                role="menuitem"
-                className={"sp-menu-item" + (it.danger ? " sp-menu-item--danger" : "")}
-                onClick={() => {
-                  setOpen(false);
-                  it.onClick();
-                }}
-              >
-                <Icon name={it.icon} size={16} />
-                {it.label}
-              </button>
-            ),
-          )}
-        </div>
-      )}
-    </div>
   );
 }

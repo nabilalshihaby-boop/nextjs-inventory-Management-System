@@ -8,11 +8,15 @@ import { formatDateOnly, formatDateTime } from "@/lib/format";
 import { formatMoney, formatQuantity } from "@/lib/money";
 import { canManageTransfers } from "@/lib/roles";
 import { getDefaultCurrency, getSystemSettings } from "@/lib/settings";
-import { STATUS_LABEL, STATUS_TONE, fromUnits, lineTotalCents, toUnits, transferTotal } from "@/lib/transfers";
+import { STATUS_TONE, fromUnits, lineTotalCents, toUnits, transferTotal } from "@/lib/transfers";
 import Icon from "@/components/layout/Icon";
+import { getLocaleInfo } from "@/lib/i18n/server";
+import { fmt as fmtMsg } from "@/lib/i18n/config";
 import TransferActions from "@/components/transfers/TransferActions";
 
-export const metadata: Metadata = { title: "Transfer Details" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getLocaleInfo()).dict.transfers.detailsTitle };
+}
 
 export const instant = false;
 
@@ -23,6 +27,8 @@ export default async function TransferDetailsPage({ params }: PageProps<"/transf
   const session = await auth();
   if (!session?.user?.id) redirect("/");
   const canManage = canManageTransfers(session.user.role);
+  const { locale, dict } = await getLocaleInfo();
+  const X = dict.transfers.details;
 
   const { id } = await params;
   const t = await db.stockTransfer.findUnique({
@@ -57,29 +63,29 @@ export default async function TransferDetailsPage({ params }: PageProps<"/transf
   const total = transferTotal(lines.map((l) => ({ quantity: l.qty, unitCost: l.cost })));
 
   const info: [string, string][] = [
-    ["Reference", t.reference],
-    ["Date", formatDateOnly(t.transferDate, fmt)],
-    ["From Warehouse", t.fromWarehouse.name],
-    ["To Warehouse", t.toWarehouse.name],
-    ["Created By", creator ? `${creator.firstName} ${creator.lastName}` : "—"],
-    ["Created On", formatDateTime(t.createdAt, fmt)],
-    ["Last Updated", formatDateTime(t.updatedAt, fmt)],
+    [X.reference, t.reference],
+    [X.date, formatDateOnly(t.transferDate, fmt)],
+    [X.from, t.fromWarehouse.name],
+    [X.to, t.toWarehouse.name],
+    [X.createdBy, creator ? `${creator.firstName} ${creator.lastName}` : "—"],
+    [X.createdOn, formatDateTime(t.createdAt, fmt, locale)],
+    [X.lastUpdated, formatDateTime(t.updatedAt, fmt, locale)],
   ];
 
   return (
     <>
       <div className="sp-page-head">
         <h1 className="t-page-title" style={{ margin: 0, display: "flex", alignItems: "center", gap: 12 }}>
-          Transfer {t.reference}
+          {fmtMsg(X.pageTitle, { ref: t.reference })}
           <span className={`sp-badge sp-badge--${STATUS_TONE[t.status]}`} data-testid="transfer-status" data-status={t.status}>
             <i />
-            {STATUS_LABEL[t.status]}
+            {dict.transfers.status[t.status]}
           </span>
         </h1>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <Link href="/transfers" className="sp-btn sp-btn--secondary">
             <Icon name="arrow-left" size={18} />
-            Back
+            {X.back}
           </Link>
           {canManage && <TransferActions id={t.id} reference={t.reference} status={t.status} />}
         </div>
@@ -87,7 +93,7 @@ export default async function TransferDetailsPage({ params }: PageProps<"/transf
 
       <div className="sp-card sp-form-card" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
         <div>
-          <div className="sp-band">Transfer Info</div>
+          <div className="sp-band">{X.info}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: "16px 32px", padding: "16px 20px", font: "400 14px/20px var(--font-body)" }}>
             {info.map(([k, v]) => (
               <div key={k}>
@@ -97,37 +103,37 @@ export default async function TransferDetailsPage({ params }: PageProps<"/transf
             ))}
           </div>
           <p className="t-caption" style={{ margin: "0 20px" }}>
-            {t.status === "PENDING" && "Pending — no stock has moved yet."}
-            {t.status === "SENT" && "Sent — the quantities were deducted from the source warehouse and will be added to the destination on completion."}
-            {t.status === "COMPLETED" && "Completed — stock was moved from the source to the destination. This transfer can't be changed."}
+            {t.status === "PENDING" && X.pendingNote}
+            {t.status === "SENT" && X.sentNote}
+            {t.status === "COMPLETED" && X.completedNote}
           </p>
         </div>
 
         <div>
-          <div className="sp-band">Order Items</div>
+          <div className="sp-band">{X.items}</div>
           <div className="sp-table-card" style={{ boxShadow: "none", marginTop: 12 }}>
             <div className="sp-table-scroll">
               <table className="sp-table" data-testid="transfer-items">
                 <thead>
                   <tr>
-                    <th>Product</th>
-                    {canManage && <th>Net Unit Cost</th>}
-                    <th>Qty</th>
-                    {canManage && <th className="num">Subtotal</th>}
+                    <th>{X.colProduct}</th>
+                    {canManage && <th>{X.colCost}</th>}
+                    <th>{X.colQty}</th>
+                    {canManage && <th className="num">{X.colSubtotal}</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {lines.map((l) => (
                     <tr key={l.id}>
                       <td style={{ padding: "12px 20px" }}>
-                        <div style={{ fontWeight: 600, marginBottom: 4 }}>{l.product.code}</div>
+                        <div style={{ fontWeight: 600, marginBottom: 4 }}><bdi dir="ltr">{l.product.code}</bdi></div>
                         <span className="sp-badge sp-badge--success">{l.product.name}</span>
                       </td>
-                      {canManage && <td>{formatMoney(l.cost, currency)}</td>}
+                      {canManage && <td><bdi dir="ltr">{formatMoney(l.cost, currency)}</bdi></td>}
                       <td>
-                        {formatQuantity(l.qty)} {l.product.productUnit.name}
+                        <bdi dir="ltr">{formatQuantity(l.qty)}</bdi> {l.product.productUnit.name}
                       </td>
-                      {canManage && <td className="num">{formatMoney(fromUnits(lineTotalCents(l.qty, l.cost), 2), currency)}</td>}
+                      {canManage && <td className="num"><bdi dir="ltr">{formatMoney(fromUnits(lineTotalCents(l.qty, l.cost), 2), currency)}</bdi></td>}
                     </tr>
                   ))}
                 </tbody>
@@ -138,25 +144,25 @@ export default async function TransferDetailsPage({ params }: PageProps<"/transf
 
         <div className="sp-sum" data-testid="transfer-summary">
           <div>
-            <span>Items</span>
+            <span>{X.sumItems}</span>
             <span>{lines.length}</span>
           </div>
           <div>
-            <span>Total Quantity</span>
-            <span>{formatQuantity(totalQty)}</span>
+            <span>{X.sumQty}</span>
+            <span><bdi dir="ltr">{formatQuantity(totalQty)}</bdi></span>
           </div>
           {canManage && (
             <div>
-              <span>Grand Total</span>
-              <span data-testid="transfer-total">{formatMoney(total, currency)}</span>
+              <span>{X.sumTotal}</span>
+              <span data-testid="transfer-total"><bdi dir="ltr">{formatMoney(total, currency)}</bdi></span>
             </div>
           )}
         </div>
 
         <div>
-          <div className="sp-band">Note</div>
+          <div className="sp-band">{X.note}</div>
           <p className="t-body" style={{ margin: 0, padding: "16px 20px", whiteSpace: "pre-wrap", color: t.note ? "var(--text-1)" : "var(--text-3)" }}>
-            {t.note || "No note"}
+            {t.note || X.noNote}
           </p>
         </div>
       </div>

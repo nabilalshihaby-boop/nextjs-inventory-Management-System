@@ -5,6 +5,8 @@ import { Fragment, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Icon from "@/components/layout/Icon";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
 import Modal, { ConfirmDeleteModal } from "@/components/ui/Modal";
 import Pagination, { paginate } from "@/components/ui/Pagination";
 import { deleteWarehouse } from "@/app/(dashboard)/warehouse/actions";
@@ -16,6 +18,8 @@ import type { WarehouseRow } from "@/lib/warehouses";
 
 export default function WarehouseTable({ rows, canManage }: { rows: WarehouseRow[]; canManage: boolean }) {
   const router = useRouter();
+  const T = useT();
+  const L = T.warehouses.list;
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -45,7 +49,7 @@ export default function WarehouseTable({ rows, canManage }: { rows: WarehouseRow
         toast.success(r.message, { id: "warehouse" });
         router.refresh();
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "warehouse" });
+        toast.error(T.common.somethingWrong, { id: "warehouse" });
       }
     });
   }
@@ -59,8 +63,8 @@ export default function WarehouseTable({ rows, canManage }: { rows: WarehouseRow
           <Icon name="search" size={18} className="sp-input-icon" />
           <input
             className="sp-input "
-            placeholder="Search"
-            aria-label="Search warehouses"
+            placeholder={L.search}
+            aria-label={L.searchAria}
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
@@ -72,7 +76,7 @@ export default function WarehouseTable({ rows, canManage }: { rows: WarehouseRow
         {canManage && (
           <Link href="/warehouse/create" className="sp-btn sp-btn--primary">
             <Icon name="plus" size={18} />
-            Create Warehouse
+            {L.create}
           </Link>
         )}
       </div>
@@ -82,13 +86,13 @@ export default function WarehouseTable({ rows, canManage }: { rows: WarehouseRow
           <table className="sp-table">
             <thead>
               <tr>
-                <th>Warehouse</th>
-                <th>Phone Number</th>
-                <th>Country</th>
-                <th>City</th>
-                <th>Zip Code</th>
-                <th>Created On</th>
-                <th className="num">Action</th>
+                <th>{L.colWarehouse}</th>
+                <th>{L.colPhone}</th>
+                <th>{L.colCountry}</th>
+                <th>{L.colCity}</th>
+                <th>{L.colZip}</th>
+                <th>{L.colCreated}</th>
+                <th className="num">{L.colAction}</th>
               </tr>
             </thead>
             <tbody>
@@ -97,13 +101,13 @@ export default function WarehouseTable({ rows, canManage }: { rows: WarehouseRow
                   <td>
                     <div style={{ padding: "6px 0" }}>
                       <div style={{ color: "var(--primary-700)", fontWeight: 600 }}>{r.name}</div>
-                      <div style={{ color: "var(--text-2)" }}>{r.email}</div>
+                      <div style={{ color: "var(--text-2)" }}><bdi dir="ltr">{r.email}</bdi></div>
                     </div>
                   </td>
-                  <td>{r.phoneNumber}</td>
+                  <td><bdi dir="ltr">{r.phoneNumber}</bdi></td>
                   <td>{r.countryName}</td>
                   <td>{r.city}</td>
-                  <td>{r.zipCode}</td>
+                  <td><bdi dir="ltr">{r.zipCode}</bdi></td>
                   <td>
                     <span className="sp-badge sp-badge--info">{r.createdOn}</span>
                   </td>
@@ -112,7 +116,7 @@ export default function WarehouseTable({ rows, canManage }: { rows: WarehouseRow
                       <button
                         type="button"
                         className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-                        aria-label={`View ${r.name}`}
+                        aria-label={fmt(L.viewAria, { name: r.name })}
                         style={{ color: "var(--success-500)" }}
                         onClick={() => setView(r)}
                       >
@@ -123,7 +127,7 @@ export default function WarehouseTable({ rows, canManage }: { rows: WarehouseRow
                           <Link
                             href={`/warehouse/${encodeURIComponent(r.id)}/edit`}
                             className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-                            aria-label={`Edit ${r.name}`}
+                            aria-label={fmt(L.editAria, { name: r.name })}
                             style={{ color: "var(--primary-600)" }}
                           >
                             <Icon name="pencil" size={16} />
@@ -131,7 +135,7 @@ export default function WarehouseTable({ rows, canManage }: { rows: WarehouseRow
                           <button
                             type="button"
                             className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-                            aria-label={`Delete ${r.name}`}
+                            aria-label={fmt(L.deleteAria, { name: r.name })}
                             style={{ color: "var(--danger-500)" }}
                             onClick={() => setDel(r)}
                           >
@@ -148,11 +152,11 @@ export default function WarehouseTable({ rows, canManage }: { rows: WarehouseRow
                   <td colSpan={cols} style={{ textAlign: "center", color: "var(--text-2)" }}>
                     {rows.length === 0 ? (
                       <span>
-                        <b style={{ color: "var(--text-1)" }}>No warehouses yet</b>
-                        {canManage ? " — use Create Warehouse to add your first warehouse." : "."}
+                        <b style={{ color: "var(--text-1)" }}>{L.emptyTitle}</b>
+                        {canManage ? L.emptyHint : "."}
                       </span>
                     ) : (
-                      "No warehouses match your search."
+                      L.noMatch
                     )}
                   </td>
                 </tr>
@@ -181,24 +185,24 @@ export default function WarehouseTable({ rows, canManage }: { rows: WarehouseRow
           onClose={() => setView(null)}
           footer={
             <button type="button" className="sp-btn sp-btn--secondary" onClick={() => setView(null)}>
-              Close
+              {L.close}
             </button>
           }
         >
           <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "12px 24px", font: "400 14px/20px var(--font-body)" }}>
             {(
               [
-                ["Email", view.email],
-                ["Phone Number", view.phoneNumber],
-                ["Country", view.countryName],
-                ["City", view.city],
-                ["Zip Code", view.zipCode],
-                ["Created On", view.createdOn],
+                [L.email, view.email, true],
+                [L.colPhone, view.phoneNumber, true],
+                [L.colCountry, view.countryName, false],
+                [L.colCity, view.city, false],
+                [L.colZip, view.zipCode, true],
+                [L.colCreated, view.createdOn, true],
               ] as const
-            ).map(([k, x]) => (
+            ).map(([k, x, ltr]) => (
               <Fragment key={k}>
                 <span style={{ color: "var(--text-3)" }}>{k}</span>
-                <span style={{ fontWeight: 600 }}>{x}</span>
+                <span style={{ fontWeight: 600 }}>{ltr ? <bdi dir="ltr">{x}</bdi> : x}</span>
               </Fragment>
             ))}
           </div>
@@ -206,7 +210,7 @@ export default function WarehouseTable({ rows, canManage }: { rows: WarehouseRow
       )}
 
       {del && canManage && (
-        <ConfirmDeleteModal itemType="warehouse" itemName={del.name} busy={pending} onCancel={() => setDel(null)} onConfirm={confirmDelete} />
+        <ConfirmDeleteModal itemType={L.deleteType} itemName={del.name} busy={pending} onCancel={() => setDel(null)} onConfirm={confirmDelete} />
       )}
     </>
   );

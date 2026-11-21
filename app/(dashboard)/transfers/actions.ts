@@ -8,7 +8,10 @@ import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
 import { canManageTransfers } from "@/lib/roles";
 import { formatQuantity } from "@/lib/money";
-import { formatReference, transferInputSchema, type TransferField, type TransferInput } from "@/lib/transfers";
+import { formatReference, makeTransferSchema, type TransferField, type TransferInput } from "@/lib/transfers";
+import { getDict } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n/config";
+import type { Dictionary } from "@/lib/i18n";
 
 // Inventory Transfers. Integrity rules (all enforced here, server-side):
 // - OWNER/ADMIN only; auth() is re-read in every action and the role never comes from the client.
@@ -35,10 +38,6 @@ export type TransferResult =
     };
 
 const idSchema = z.string().trim().min(1).max(64);
-const NOT_FOUND = "Transfer not found";
-const ONLY_PENDING = "Only pending transfers can be edited. Sent and completed transfers are inventory history.";
-const NO_DELETE = "Sent and completed transfers are inventory history and can't be deleted.";
-const CHANGED = "This transfer was changed by someone else. Refresh the page and try again.";
 
 /** Thrown inside a transaction to roll it back when the source doesn't have enough stock. */
 class StockError extends Error {
@@ -52,18 +51,18 @@ class StockError extends Error {
 /** Thrown inside a transaction when the transfer's status is no longer the expected one. */
 class StateError extends Error {}
 
-async function authorize(): Promise<{ userId: string } | { error: TransferResult }> {
+async function authorize(t: Dictionary): Promise<{ userId: string } | { error: TransferResult }> {
   const session = await auth();
-  if (!session?.user?.id) return { error: { ok: false, message: "Your session has expired. Please sign in again." } };
-  if (!canManageTransfers(session.user.role)) return { error: { ok: false, message: "You don't have permission to change transfers." } };
+  if (!session?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
+  if (!canManageTransfers(session.user.role)) return { error: { ok: false, message: t.transfers.err.noPermission } };
   return { userId: session.user.id };
 }
 
 const isKnown = (e: unknown, ...codes: string[]): e is Prisma.PrismaClientKnownRequestError =>
   e instanceof Prisma.PrismaClientKnownRequestError && codes.includes(e.code);
 
-function parse(input: unknown): { ok: true; data: TransferInput } | { ok: false; error: TransferResult } {
-  const parsed = transferInputSchema.safeParse(input);
+function parse(input: unknown, t: Dictionary): { ok: true; data: TransferInput } | { ok: false; error: TransferResult } {
+  const parsed = makeTransferSchema(t.transfers.val).safeParse(input);
   if (parsed.success) return { ok: true, data: parsed.data };
   const fieldErrors: Partial<Record<TransferField, string>> = {};
   const itemErrors: Record<string, string> = {};
@@ -77,7 +76,7 @@ function parse(input: unknown): { ok: true; data: TransferInput } | { ok: false;
       fieldErrors[(k as TransferField) ?? "items"] ??= issue.message;
     }
   }
-  return { ok: false, error: { ok: false, message: Object.values(fieldErrors)[0] ?? "Please check the form", fieldErrors, itemErrors } };
+  return { ok: false, error: { ok: false, message: Object.values(fieldErrors)[0] ?? t.common.checkForm, fieldErrors, itemErrors } };
 }
 
 type Line = { productId: string; quantity: string; unitCost: string; label: string };
@@ -87,7 +86,7 @@ type Line = { productId: string; quantity: string; unitCost: string; label: stri
  * stock in the source warehouse right now (friendly pre-check; the conditional update inside the
  * transaction is the real guarantee). Returns lines with server-side cost snapshots.
  */
-async function resolve(data: TransferInput): Promise<{ ok: true; lines: Line[] } | { ok: false; error: TransferResult }> {
+async function resolve(data: TransferInput, t: Dictionary): Promise<{ ok: true; lines: Line[] } | { ok: false; error: TransferResult }> {
   const productIds = data.items.map((i) => i.productId);
   const [warehouses, products, stocks] = await Promise.all([
     db.warehouse.findMany({ where: { id: { in: [data.fromWarehouseId, data.toWarehouseId] } }, select: { id: true } }),
@@ -97,8 +96,8 @@ async function resolve(data: TransferInput): Promise<{ ok: true; lines: Line[] }
   const fieldErrors: Partial<Record<TransferField, string>> = {};
   const itemErrors: Record<string, string> = {};
   const wh = new Set(warehouses.map((w) => w.id));
-  if (!wh.has(data.fromWarehouseId)) fieldErrors.fromWarehouseId = "Choose a valid source warehouse";
-  if (!wh.has(data.toWarehouseId)) fieldErrors.toWarehouseId = "Choose a valid destination warehouse";
+  if (!wh.has(data.fromWarehouseId)) fieldErrors.fromWarehouseId = t.transfers.err.validSource;
+  if (!wh.has(data.toWarehouseId)) fieldErrors.toWarehouseId = t.transfers.err.validDest;
 
   const byId = new Map(products.map((p) => [p.id, p]));
   const onHand = new Map(stocks.map((s) => [s.productId, s.quantity]));
@@ -106,12 +105,12 @@ async function resolve(data: TransferInput): Promise<{ ok: true; lines: Line[] }
   for (const item of data.items) {
     const p = byId.get(item.productId);
     if (!p) {
-      itemErrors[item.productId] = "This product no longer exists";
+      itemErrors[item.productId] = t.transfers.err.productGone;
       continue;
     }
     const available = onHand.get(p.id) ?? new Prisma.Decimal(0);
     if (new Prisma.Decimal(item.quantity).gt(available)) {
-      itemErrors[p.id] = `Only ${formatQuantity(available.toFixed(3))} available in the source warehouse`;
+      itemErrors[p.id] = fmt(t.transfers.err.onlyAvailable, { qty: formatQuantity(available.toFixed(3)) });
     }
     lines.push({ productId: p.id, quantity: item.quantity, unitCost: p.cost.toFixed(2), label: `${p.code} ${p.name}` });
   }
@@ -156,8 +155,8 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-function stockFailure(e: StockError): TransferResult {
-  const message = `Not enough stock of ${e.label} in the source warehouse. Refresh and adjust the quantity.`;
+function stockFailure(e: StockError, t: Dictionary): TransferResult {
+  const message = fmt(t.transfers.err.notEnough, { label: e.label });
   return { ok: false, message, fieldErrors: { items: message }, itemErrors: { [e.productId]: message } };
 }
 
@@ -167,14 +166,16 @@ function revalidate(id?: string) {
   revalidatePath("/products"); // "In Stock" totals
 }
 
-const STATUS_DONE = { PENDING: "Transfer saved as pending", SENT: "Transfer sent", COMPLETED: "Transfer completed" } as const;
+const statusDone = (t: Dictionary, status: "PENDING" | "SENT" | "COMPLETED", ref: string) =>
+  fmt(status === "PENDING" ? t.transfers.ok.savedPending : status === "SENT" ? t.transfers.ok.sentNew : t.transfers.ok.completedNew, { ref });
 
 export async function createTransfer(input: unknown): Promise<TransferResult> {
-  const a = await authorize();
+  const t = await getDict();
+  const a = await authorize(t);
   if ("error" in a) return a.error;
-  const v = parse(input);
+  const v = parse(input, t);
   if (!v.ok) return v.error;
-  const r = await resolve(v.data);
+  const r = await resolve(v.data, t);
   if (!r.ok) return r.error;
   const d = v.data;
 
@@ -196,33 +197,35 @@ export async function createTransfer(input: unknown): Promise<TransferResult> {
           },
           select: { id: true, number: true },
         });
-        const t = await tx.stockTransfer.update({ where: { id: t0.id }, data: { reference: formatReference(t0.number) }, select: { id: true, reference: true } });
+        const tr = await tx.stockTransfer.update({ where: { id: t0.id }, data: { reference: formatReference(t0.number) }, select: { id: true, reference: true } });
         if (d.status === "SENT" || d.status === "COMPLETED") await deductSource(tx, d.fromWarehouseId, r.lines);
         if (d.status === "COMPLETED") await addDestination(tx, d.toWarehouseId, r.lines);
-        return t;
+        return tr;
       }),
     );
     revalidate(created.id);
-    return { ok: true, message: `${STATUS_DONE[d.status]} (${created.reference})`, id: created.id };
+    return { ok: true, message: statusDone(t, d.status, created.reference), id: created.id };
   } catch (e) {
-    if (e instanceof StockError) return stockFailure(e);
-    if (isKnown(e, "P2003")) return { ok: false, message: "A selected warehouse or product no longer exists. Refresh and try again." };
+    if (e instanceof StockError) return stockFailure(e, t);
+    if (isKnown(e, "P2003")) return { ok: false, message: t.transfers.err.refsGone };
     throw e;
   }
 }
 
 /** Edit a PENDING transfer (details, lines and status). Its new status's stock effect is applied. */
 export async function updateTransfer(id: unknown, input: unknown): Promise<TransferResult> {
-  const a = await authorize();
+  const t = await getDict();
+  const E = t.transfers.err;
+  const a = await authorize(t);
   if ("error" in a) return a.error;
   const tid = idSchema.safeParse(id);
-  if (!tid.success) return { ok: false, message: NOT_FOUND };
+  if (!tid.success) return { ok: false, message: E.notFound };
   const existing = await db.stockTransfer.findUnique({ where: { id: tid.data }, select: { id: true, status: true, reference: true } });
-  if (!existing) return { ok: false, message: NOT_FOUND };
-  if (existing.status !== "PENDING") return { ok: false, message: ONLY_PENDING };
-  const v = parse(input);
+  if (!existing) return { ok: false, message: E.notFound };
+  if (existing.status !== "PENDING") return { ok: false, message: E.onlyPending };
+  const v = parse(input, t);
   if (!v.ok) return v.error;
-  const r = await resolve(v.data);
+  const r = await resolve(v.data, t);
   if (!r.ok) return r.error;
   const d = v.data;
 
@@ -250,13 +253,13 @@ export async function updateTransfer(id: unknown, input: unknown): Promise<Trans
       }),
     );
   } catch (e) {
-    if (e instanceof StockError) return stockFailure(e);
-    if (e instanceof StateError) return { ok: false, message: ONLY_PENDING };
-    if (isKnown(e, "P2003")) return { ok: false, message: "A selected warehouse or product no longer exists. Refresh and try again." };
+    if (e instanceof StockError) return stockFailure(e, t);
+    if (e instanceof StateError) return { ok: false, message: E.onlyPending };
+    if (isKnown(e, "P2003")) return { ok: false, message: E.refsGone };
     throw e;
   }
   revalidate(existing.id);
-  return { ok: true, message: d.status === "PENDING" ? `Transfer ${existing.reference} updated` : `${STATUS_DONE[d.status]} (${existing.reference})`, id: existing.id };
+  return { ok: true, message: d.status === "PENDING" ? fmt(t.transfers.ok.updated, { ref: existing.reference }) : statusDone(t, d.status, existing.reference), id: existing.id };
 }
 
 /** Lines of a transfer as stored (warehouses and quantities from MySQL, never from the client). */
@@ -270,13 +273,15 @@ async function loadLines(tx: Tx, transferId: string): Promise<Line[]> {
 
 /** PENDING → SENT: deduct the source warehouse once. */
 export async function sendTransfer(id: unknown): Promise<TransferResult> {
-  const a = await authorize();
+  const dict = await getDict();
+  const E = dict.transfers.err;
+  const a = await authorize(dict);
   if ("error" in a) return a.error;
   const tid = idSchema.safeParse(id);
-  if (!tid.success) return { ok: false, message: NOT_FOUND };
+  if (!tid.success) return { ok: false, message: E.notFound };
   const t = await db.stockTransfer.findUnique({ where: { id: tid.data }, select: { id: true, status: true, reference: true, fromWarehouseId: true } });
-  if (!t) return { ok: false, message: NOT_FOUND };
-  if (t.status !== "PENDING") return { ok: false, message: `Only pending transfers can be sent (this one is ${t.status.toLowerCase()}).` };
+  if (!t) return { ok: false, message: E.notFound };
+  if (t.status !== "PENDING") return { ok: false, message: fmt(E.onlySend, { status: dict.transfers.statusLower[t.status] }) };
 
   try {
     await db.$transaction(async (tx) => {
@@ -285,26 +290,28 @@ export async function sendTransfer(id: unknown): Promise<TransferResult> {
       await deductSource(tx, t.fromWarehouseId, await loadLines(tx, t.id));
     });
   } catch (e) {
-    if (e instanceof StockError) return stockFailure(e);
-    if (e instanceof StateError) return { ok: false, message: CHANGED };
+    if (e instanceof StockError) return stockFailure(e, dict);
+    if (e instanceof StateError) return { ok: false, message: E.changed };
     throw e;
   }
   revalidate(t.id);
-  return { ok: true, message: `Transfer ${t.reference} sent` };
+  return { ok: true, message: fmt(dict.transfers.ok.sent, { ref: t.reference }) };
 }
 
 /** PENDING → COMPLETED (deduct source + add destination) or SENT → COMPLETED (add destination only). */
 export async function completeTransfer(id: unknown): Promise<TransferResult> {
-  const a = await authorize();
+  const dict = await getDict();
+  const E = dict.transfers.err;
+  const a = await authorize(dict);
   if ("error" in a) return a.error;
   const tid = idSchema.safeParse(id);
-  if (!tid.success) return { ok: false, message: NOT_FOUND };
+  if (!tid.success) return { ok: false, message: E.notFound };
   const t = await db.stockTransfer.findUnique({
     where: { id: tid.data },
     select: { id: true, status: true, reference: true, fromWarehouseId: true, toWarehouseId: true },
   });
-  if (!t) return { ok: false, message: NOT_FOUND };
-  if (t.status === "COMPLETED") return { ok: false, message: "This transfer is already completed." };
+  if (!t) return { ok: false, message: E.notFound };
+  if (t.status === "COMPLETED") return { ok: false, message: E.alreadyCompleted };
   const from = t.status; // PENDING or SENT
 
   try {
@@ -318,27 +325,29 @@ export async function completeTransfer(id: unknown): Promise<TransferResult> {
       }),
     );
   } catch (e) {
-    if (e instanceof StockError) return stockFailure(e);
-    if (e instanceof StateError) return { ok: false, message: CHANGED };
+    if (e instanceof StockError) return stockFailure(e, dict);
+    if (e instanceof StateError) return { ok: false, message: E.changed };
     throw e;
   }
   revalidate(t.id);
-  return { ok: true, message: `Transfer ${t.reference} completed` };
+  return { ok: true, message: fmt(dict.transfers.ok.completed, { ref: t.reference }) };
 }
 
 /** Delete a PENDING transfer (no stock was moved). SENT/COMPLETED are never deleted. */
 export async function deleteTransfer(id: unknown): Promise<TransferResult> {
-  const a = await authorize();
+  const dict = await getDict();
+  const E = dict.transfers.err;
+  const a = await authorize(dict);
   if ("error" in a) return a.error;
   const tid = idSchema.safeParse(id);
-  if (!tid.success) return { ok: false, message: NOT_FOUND };
+  if (!tid.success) return { ok: false, message: E.notFound };
   const t = await db.stockTransfer.findUnique({ where: { id: tid.data }, select: { id: true, status: true, reference: true } });
-  if (!t) return { ok: false, message: NOT_FOUND };
-  if (t.status !== "PENDING") return { ok: false, message: NO_DELETE };
+  if (!t) return { ok: false, message: E.notFound };
+  if (t.status !== "PENDING") return { ok: false, message: E.noDelete };
 
   // Conditional delete: refuses if it was sent/completed in the meantime. Items cascade.
   const r = await db.stockTransfer.deleteMany({ where: { id: t.id, status: "PENDING" } });
-  if (r.count !== 1) return { ok: false, message: NO_DELETE };
+  if (r.count !== 1) return { ok: false, message: E.noDelete };
   revalidate();
-  return { ok: true, message: `Transfer ${t.reference} deleted` };
+  return { ok: true, message: fmt(dict.transfers.ok.deleted, { ref: t.reference }) };
 }

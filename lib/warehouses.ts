@@ -1,26 +1,22 @@
 import { z } from "zod";
 import { isCountryCode } from "@/lib/countries";
+import { en } from "@/lib/i18n/dictionaries/en";
+import type { Dictionary } from "@/lib/i18n";
 
 // Shared Warehouse rules (Server Actions validate with this; safe to import on the client).
 
-export const warehouseInputSchema = z.object({
-  name: z.string().trim().min(1, "Name is required").max(120, "Name is too long"),
-  email: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .min(1, "Email is required")
-    .max(191, "Email is too long")
-    .pipe(z.email("Enter a valid email")),
-  phoneNumber: z
-    .string()
-    .trim()
-    .min(1, "Phone number is required")
-    .regex(/^[0-9+()\-.\s]{6,32}$/, "Enter a valid phone number"),
-  countryCode: z.string().trim().refine(isCountryCode, "Country is required"),
-  city: z.string().trim().min(1, "City is required").max(120, "City is too long"),
-  zipCode: z.string().trim().max(20, "Zip code is too long"),
-});
+/** Validation schema; messages are dictionary text (English by default). */
+export function makeWarehouseSchema(m: Dictionary["warehouses"]["val"] = en.warehouses.val) {
+  return z.object({
+    name: z.string().trim().min(1, m.nameRequired).max(120, m.nameLong),
+    email: z.string().trim().toLowerCase().min(1, m.emailRequired).max(191, m.emailLong).pipe(z.email(m.emailInvalid)),
+    phoneNumber: z.string().trim().min(1, m.phoneRequired).regex(/^[0-9+()\-.\s]{6,32}$/, m.phoneInvalid),
+    countryCode: z.string().trim().refine(isCountryCode, m.countryRequired),
+    city: z.string().trim().min(1, m.cityRequired).max(120, m.cityLong),
+    zipCode: z.string().trim().max(20, m.zipLong),
+  });
+}
+export const warehouseInputSchema = makeWarehouseSchema();
 
 export type WarehouseInput = z.infer<typeof warehouseInputSchema>;
 export type WarehouseField = keyof WarehouseInput;

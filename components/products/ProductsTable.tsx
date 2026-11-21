@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import toast from "react-hot-toast";
 import Icon from "@/components/layout/Icon";
+import { useT } from "@/components/i18n/I18nProvider";
 import Pagination, { paginate } from "@/components/ui/Pagination";
 import RowMenu from "@/components/ui/RowMenu";
 import type { ProductRow } from "@/lib/products";
@@ -12,13 +13,11 @@ import type { ProductRow } from "@/lib/products";
 // DataTable (Product image / Name / Code / Brand / Price / Product Unit / In Stock / Created On)
 // and Pagination, plus a row menu (Edit only) for OWNER/ADMIN. Search/paging run over the
 // server-loaded list. Filter, Export and Import are deferred ("Coming soon").
-const SOON = {
-  filter: "Product filters are coming soon.",
-  export: "Export Products is coming soon.",
-  import: "Import Products is coming soon.",
-};
 
 export default function ProductsTable({ rows, canManage }: { rows: ProductRow[]; canManage: boolean }) {
+  const T = useT();
+  const L = T.products.list;
+  const SOON = { filter: L.soonFilter, export: L.soonExport, import: L.soonImport };
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -37,8 +36,8 @@ export default function ProductsTable({ rows, canManage }: { rows: ProductRow[];
           <Icon name="search" size={18} className="sp-input-icon" />
           <input
             className="sp-input "
-            placeholder="Search"
-            aria-label="Search products"
+            placeholder={L.search}
+            aria-label={L.searchAria}
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
@@ -50,20 +49,20 @@ export default function ProductsTable({ rows, canManage }: { rows: ProductRow[];
         {canManage && (
           <>
             {/* aria-disabled (not disabled) keeps them focusable so the explanation can be read/shown. */}
-            <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label="Filter (coming soon)" aria-disabled="true" title={SOON.filter} style={disabled} onClick={() => soon(SOON.filter)}>
+            <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={L.filterAria} aria-disabled="true" title={SOON.filter} style={disabled} onClick={() => soon(SOON.filter)}>
               <Icon name="filter" size={18} />
             </button>
             <button type="button" className="sp-btn sp-btn--secondary" aria-disabled="true" title={SOON.export} style={disabled} onClick={() => soon(SOON.export)}>
               <Icon name="upload" size={18} />
-              Export Products
+              {L.export}
             </button>
             <button type="button" className="sp-btn sp-btn--secondary" aria-disabled="true" title={SOON.import} style={disabled} onClick={() => soon(SOON.import)}>
               <Icon name="download" size={18} />
-              Import Products
+              {L.import}
             </button>
             <Link href="/products/create" className="sp-btn sp-btn--primary">
               <Icon name="plus" size={18} />
-              Create Product
+              {L.create}
             </Link>
           </>
         )}
@@ -74,15 +73,15 @@ export default function ProductsTable({ rows, canManage }: { rows: ProductRow[];
           <table className="sp-table">
             <thead>
               <tr>
-                <th>Product</th>
-                <th>Name</th>
-                <th>Code</th>
-                <th>Brand</th>
-                <th>Price</th>
-                <th>Product Unit</th>
-                <th>In Stock</th>
-                <th>Created On</th>
-                {canManage && <th className="act">Action</th>}
+                <th>{L.colProduct}</th>
+                <th>{L.colName}</th>
+                <th>{L.colCode}</th>
+                <th>{L.colBrand}</th>
+                <th>{L.colPrice}</th>
+                <th>{L.colUnit}</th>
+                <th>{L.colStock}</th>
+                <th>{L.colCreated}</th>
+                {canManage && <th className="act">{L.colAction}</th>}
               </tr>
             </thead>
             <tbody>
@@ -98,16 +97,16 @@ export default function ProductsTable({ rows, canManage }: { rows: ProductRow[];
                   </td>
                   <td className="primary-cell">{r.name}</td>
                   <td>
-                    <span className="sp-code">{r.code}</span>
+                    <span className="sp-code"><bdi dir="ltr">{r.code}</bdi></span>
                   </td>
                   <td>{r.brand}</td>
-                  <td>{r.price}</td>
+                  <td><bdi dir="ltr">{r.price}</bdi></td>
                   <td>
                     <span className="sp-badge sp-badge--neutral">{r.unit}</span>
                   </td>
                   <td>
-                    <b style={{ fontWeight: 600, color: r.lowStock ? "var(--danger-700)" : undefined }} title={r.lowStock ? "At or below the stock alert" : undefined}>
-                      {r.inStock}
+                    <b style={{ fontWeight: 600, color: r.lowStock ? "var(--danger-700)" : undefined }} title={r.lowStock ? L.lowStock : undefined}>
+                      <bdi dir="ltr">{r.inStock}</bdi>
                     </b>
                   </td>
                   <td>
@@ -115,7 +114,7 @@ export default function ProductsTable({ rows, canManage }: { rows: ProductRow[];
                   </td>
                   {canManage && (
                     <td className="act">
-                      <RowMenu label={r.name} items={[{ label: "Edit", icon: "pencil", href: `/products/${encodeURIComponent(r.id)}/edit` }]} />
+                      <RowMenu label={r.name} items={[{ label: L.edit, icon: "pencil", href: `/products/${encodeURIComponent(r.id)}/edit` }]} />
                     </td>
                   )}
                 </tr>
@@ -125,11 +124,11 @@ export default function ProductsTable({ rows, canManage }: { rows: ProductRow[];
                   <td colSpan={cols} style={{ textAlign: "center", color: "var(--text-2)" }}>
                     {rows.length === 0 ? (
                       <span>
-                        <b style={{ color: "var(--text-1)" }}>No products yet</b>
-                        {canManage ? " — use Create Product to add your first product." : "."}
+                        <b style={{ color: "var(--text-1)" }}>{L.emptyTitle}</b>
+                        {canManage ? L.emptyHint : "."}
                       </span>
                     ) : (
-                      "No products match your search."
+                      L.noMatch
                     )}
                   </td>
                 </tr>

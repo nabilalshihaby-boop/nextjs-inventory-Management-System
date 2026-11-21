@@ -5,12 +5,16 @@
 // names under public/uploads/<folder>, only the relative path stored in MySQL.
 // LOCAL DEVELOPMENT ONLY: files written to public/ at runtime are not served by `next start` and
 // may not persist — production needs persistent object storage (see lib/image-upload.ts).
+// Messages are dictionary text (getDict) so they follow the signed-in user's language.
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { Prisma } from "@/app/generated/prisma/client";
 import { canManageCatalog } from "@/lib/roles";
 import { deleteImage, saveImage, validateImage, type ValidImage } from "@/lib/image-upload";
+import { getDict } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n/config";
+import type { Dictionary } from "@/lib/i18n";
 
 export type CatalogField = "name" | "image";
 export type CatalogResult =
@@ -19,11 +23,11 @@ export type CatalogResult =
 
 type Row = { id: string; image: string | null };
 
+export type CatalogEntity = "category" | "brand" | "unit";
+
 export type CatalogConfig = {
-  /** e.g. "Brand" / "Product category" (sentence case, singular). */
-  label: string;
-  /** e.g. "brands" / "product categories". */
-  plural: string;
+  /** Which dictionary entry (`catalog.<entity>`) names this entity in messages. */
+  entity: CatalogEntity;
   /** Upload folder under public/uploads. */
   folder: string;
   /** List route to revalidate. */
@@ -35,56 +39,54 @@ export type CatalogConfig = {
   create: (data: { name: string; image: string | null }) => Promise<unknown>;
   update: (id: string, data: { name: string; image?: string | null }) => Promise<unknown>;
   remove: (id: string) => Promise<unknown>;
-  /**
-   * Records that block deletion (e.g. ["3 products"]). Products don't exist yet, so this returns
-   * [] for now; once they do, count products referencing this record here and give the Product
-   * relation onDelete: Restrict so the database enforces it as well.
-   */
-  references: (id: string) => Promise<string[]>;
+  /** Number of products using this record (they block deletion; the FK is RESTRICT as well). */
+  references: (id: string) => Promise<number>;
 };
 
 const idSchema = z.string().trim().min(1).max(64);
-const nameSchema = z.string().trim().min(1, "Name is required").max(120, "Name is too long");
 const isUniqueViolation = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
 const isReferenceViolation = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && (e.code === "P2003" || e.code === "P2014");
 
-export function catalogActions(c: CatalogConfig) {
-  const duplicate = `A ${c.label.toLowerCase()} with this name already exists`;
-  const notFound = `${c.label} not found`;
+const imageMessage = (t: Dictionary, key: "type" | "size" | "invalid" | undefined, fallback: string) => (key ? t.catalog.img[key] : fallback);
 
+export function catalogActions(c: CatalogConfig) {
   /** OWNER/ADMIN only — re-checked in every mutation; the role never comes from the client. */
-  async function authorize(): Promise<CatalogResult | null> {
+  async function authorize(t: Dictionary): Promise<CatalogResult | null> {
     const session = await auth();
-    if (!session?.user?.id) return { ok: false, message: "Your session has expired. Please sign in again." };
-    if (!canManageCatalog(session.user.role)) return { ok: false, message: `You don't have permission to change ${c.plural}.` };
+    if (!session?.user?.id) return { ok: false, message: t.common.sessionExpired };
+    if (!canManageCatalog(session.user.role)) return { ok: false, message: fmt(t.catalog.err.noPermission, { plural: t.catalog[c.entity].plural }) };
     return null;
   }
 
   /** FormData only: name, optional image file, removeImage flag. */
-  async function parseForm(formData: unknown) {
-    if (!(formData instanceof FormData)) return { ok: false as const, error: { ok: false, message: "Invalid request" } as CatalogResult };
+  async function parseForm(formData: unknown, t: Dictionary) {
+    if (!(formData instanceof FormData)) return { ok: false as const, error: { ok: false, message: t.catalog.err.invalidRequest } as CatalogResult };
+    const nameSchema = z.string().trim().min(1, t.catalog.val.nameRequired).max(120, t.catalog.val.nameLong);
     const fieldErrors: Partial<Record<CatalogField, string>> = {};
     const rawName = formData.get("name");
     const name = nameSchema.safeParse(typeof rawName === "string" ? rawName : "");
-    if (!name.success) fieldErrors.name = name.error.issues[0]?.message ?? "Name is required";
+    if (!name.success) fieldErrors.name = name.error.issues[0]?.message ?? t.catalog.val.nameRequired;
     const removeImage = formData.get("removeImage") === "on";
     const file = formData.get("image");
     let image: ValidImage | null = null;
     if (file instanceof File && file.size > 0 && !removeImage) {
       const r = await validateImage(file);
-      if ("error" in r) fieldErrors.image = r.error;
+      if ("error" in r) fieldErrors.image = imageMessage(t, r.key, r.error);
       else image = r;
     }
     if (!name.success || Object.keys(fieldErrors).length) {
-      return { ok: false as const, error: { ok: false, message: Object.values(fieldErrors)[0] ?? "Please check the form", fieldErrors } as CatalogResult };
+      return { ok: false as const, error: { ok: false, message: Object.values(fieldErrors)[0] ?? t.common.checkForm, fieldErrors } as CatalogResult };
     }
     return { ok: true as const, name: name.data, image, removeImage };
   }
 
   async function create(formData: unknown): Promise<CatalogResult> {
-    const denied = await authorize();
+    const t = await getDict();
+    const N = t.catalog[c.entity];
+    const duplicate = fmt(t.catalog.err.duplicate, { one: N.one });
+    const denied = await authorize(t);
     if (denied) return denied;
-    const p = await parseForm(formData);
+    const p = await parseForm(formData, t);
     if (!p.ok) return p.error;
     // Unique regardless of case (column collation); checked first for a clean message.
     if (await c.findByName(p.name)) return { ok: false, message: duplicate, fieldErrors: { name: duplicate } };
@@ -97,15 +99,19 @@ export function catalogActions(c: CatalogConfig) {
       throw e;
     }
     revalidatePath(c.path);
-    return { ok: true, message: `${c.label} created` };
+    return { ok: true, message: fmt(t.catalog.ok.created, { label: N.label }) };
   }
 
   async function update(id: unknown, formData: unknown): Promise<CatalogResult> {
-    const denied = await authorize();
+    const t = await getDict();
+    const N = t.catalog[c.entity];
+    const duplicate = fmt(t.catalog.err.duplicate, { one: N.one });
+    const notFound = fmt(t.catalog.err.notFound, { label: N.label });
+    const denied = await authorize(t);
     if (denied) return denied;
     const rid = idSchema.safeParse(id);
     if (!rid.success) return { ok: false, message: notFound };
-    const p = await parseForm(formData);
+    const p = await parseForm(formData, t);
     if (!p.ok) return p.error;
     // The id only selects the row; it is looked up server-side before anything changes.
     const existing = await c.findById(rid.data);
@@ -122,30 +128,34 @@ export function catalogActions(c: CatalogConfig) {
     }
     if (newImage !== undefined && existing.image !== newImage) await deleteImage(c.folder, existing.image); // replaced/removed
     revalidatePath(c.path);
-    return { ok: true, message: `${c.label} updated` };
+    return { ok: true, message: fmt(t.catalog.ok.updated, { label: N.label }) };
   }
 
   async function remove(id: unknown): Promise<CatalogResult> {
-    const denied = await authorize();
+    const t = await getDict();
+    const N = t.catalog[c.entity];
+    const notFound = fmt(t.catalog.err.notFound, { label: N.label });
+    const denied = await authorize(t);
     if (denied) return denied;
     const rid = idSchema.safeParse(id);
     if (!rid.success) return { ok: false, message: notFound };
     const existing = await c.findById(rid.data);
     if (!existing) return { ok: false, message: notFound };
 
-    const blockers = await c.references(existing.id);
-    if (blockers.length) {
-      return { ok: false, message: `This ${c.label.toLowerCase()} can't be deleted because it is still used by ${blockers.join(", ")}.` };
+    const products = await c.references(existing.id);
+    if (products) {
+      const list = fmt(products === 1 ? t.catalog.err.productOne : t.catalog.err.productMany, { n: products });
+      return { ok: false, message: fmt(t.catalog.err.blockers, { one: N.one, list }) };
     }
     try {
       await c.remove(existing.id);
     } catch (e) {
-      if (isReferenceViolation(e)) return { ok: false, message: `This ${c.label.toLowerCase()} can't be deleted because products still use it.` };
+      if (isReferenceViolation(e)) return { ok: false, message: fmt(t.catalog.err.inUse, { one: N.one }) };
       throw e;
     }
     await deleteImage(c.folder, existing.image);
     revalidatePath(c.path);
-    return { ok: true, message: `${c.label} deleted` };
+    return { ok: true, message: fmt(t.catalog.ok.deleted, { label: N.label }) };
   }
 
   return { create, update, remove };
