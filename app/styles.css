@@ -242,7 +242,7 @@ svg.sp-icon{background:none;-webkit-mask:none;mask:none}
 @page bp-landscape{size:A4 landscape;margin:10mm 12mm 12mm}
 .bp-report-actions{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 auto 16px;max-width:210mm}
 .bp-report--landscape~.bp-report-actions,.bp-report-actions:has(+.bp-report--landscape){max-width:297mm}
-.bp-report{background:#fff;color:#111827;max-width:210mm;margin:0 auto;padding:14mm 12mm;border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-sm);font:400 12px/1.45 var(--font-body)}
+.bp-report{overflow-x:auto;background:#fff;color:#111827;max-width:210mm;margin:0 auto;padding:14mm 12mm;border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-sm);font:400 12px/1.45 var(--font-body)}
 .bp-report--landscape{max-width:297mm}
 .bp-report *{color:inherit}
 .bp-report-head{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;padding-bottom:12px;border-bottom:2px solid #111827;margin-bottom:14px;break-inside:avoid}

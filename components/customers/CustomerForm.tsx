@@ -5,6 +5,7 @@ import { useState, useTransition, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Icon from "@/components/layout/Icon";
+import { useT } from "@/components/i18n/I18nProvider";
 import { createCustomer, updateCustomer, type CustomerResult } from "@/app/(dashboard)/customers/actions";
 import { todayLocalIso, type CustomerField, type CustomerFormValues } from "@/lib/customers";
 import type { CountryOption } from "@/lib/countries";
@@ -26,6 +27,9 @@ export default function CustomerForm({
   countries: CountryOption[];
 }) {
   const router = useRouter();
+  const T = useT();
+  const F = T.customers.form;
+  const V = T.customers.val;
   const editing = !!customerId;
   const [f, setF] = useState<CustomerFormValues>(initial ?? EMPTY);
   const [e, setE] = useState<Partial<Record<CustomerField, string>>>({});
@@ -40,13 +44,13 @@ export default function CustomerForm({
   function save() {
     // Same checks as the design (+ DOB); the server action validates everything again with zod.
     const n: Partial<Record<CustomerField, string>> = {};
-    if (!f.name.trim()) n.name = "Name is required";
-    if (!/^\S+@\S+\.\S+$/.test(f.email.trim())) n.email = "Enter a valid email";
-    if (!f.phoneNumber.trim()) n.phoneNumber = "Phone number is required";
-    if (f.dateOfBirth && f.dateOfBirth > todayLocalIso()) n.dateOfBirth = "Date of birth can't be in the future";
-    if (!f.countryCode) n.countryCode = "Country is required";
-    if (!f.city.trim()) n.city = "City is required";
-    if (!f.address.trim()) n.address = "Address is required";
+    if (!f.name.trim()) n.name = V.nameRequired;
+    if (!/^\S+@\S+\.\S+$/.test(f.email.trim())) n.email = V.emailInvalid;
+    if (!f.phoneNumber.trim()) n.phoneNumber = V.phoneRequired;
+    if (f.dateOfBirth && f.dateOfBirth > todayLocalIso()) n.dateOfBirth = V.dobFuture;
+    if (!f.countryCode) n.countryCode = V.countryRequired;
+    if (!f.city.trim()) n.city = V.cityRequired;
+    if (!f.address.trim()) n.address = V.addressRequired;
     setE(n);
     if (Object.keys(n).length) {
       toast.error(Object.values(n)[0]!, { id: "customer" });
@@ -57,7 +61,7 @@ export default function CustomerForm({
       try {
         r = editing ? await updateCustomer(customerId, f) : await createCustomer(f);
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "customer" });
+        toast.error(T.common.somethingWrong, { id: "customer" });
         return;
       }
       if (!r.ok) {
@@ -85,7 +89,7 @@ export default function CustomerForm({
     wrap(k, (
       <>
         {label(k, text, required)}
-        <input id={`cu-${k}`} name={k} type={type} className="sp-input " placeholder={placeholder} value={f[k]} onChange={set(k)} aria-invalid={!!e[k] || undefined} max={type === "date" ? todayLocalIso() : undefined} />
+        <input id={`cu-${k}`} name={k} type={type} className="sp-input " dir={type === "email" || type === "tel" ? "ltr" : undefined} placeholder={placeholder} value={f[k]} onChange={set(k)} aria-invalid={!!e[k] || undefined} max={type === "date" ? todayLocalIso() : undefined} />
         {err(k)}
       </>
     ));
@@ -94,12 +98,12 @@ export default function CustomerForm({
     <>
       <div className="sp-page-head">
         <h1 className="t-page-title" style={{ margin: 0 }}>
-          {editing ? "Edit Customer" : "Create Customer"}
+          {editing ? F.editTitle : F.createTitle}
         </h1>
         <div style={{ display: "flex", gap: 12 }}>
           <Link href="/customers" className="sp-btn sp-btn--secondary">
             <Icon name="arrow-left" size={18} />
-            Back
+            {F.back}
           </Link>
         </div>
       </div>
@@ -114,13 +118,13 @@ export default function CustomerForm({
       >
         <div className="sp-card sp-form-card">
           <div className="sp-form-grid" style={{ "--cols": 2 } as CSSProperties}>
-            {input("name", "Name", "Enter Name")}
-            {input("email", "Email", "Enter Email", "email")}
-            {input("phoneNumber", "Phone Number", "Enter Phone Number", "tel")}
-            {input("dateOfBirth", "DOB", "", "date", false)}
+            {input("name", F.name, F.namePh)}
+            {input("email", F.email, F.emailPh, "email")}
+            {input("phoneNumber", F.phone, F.phonePh, "tel")}
+            {input("dateOfBirth", F.dob, "", "date", false)}
             {wrap("countryCode", (
               <>
-                {label("countryCode", "Country")}
+                {label("countryCode", F.country)}
                 <select
                   id="cu-countryCode"
                   name="countryCode"
@@ -130,7 +134,7 @@ export default function CustomerForm({
                   aria-invalid={!!e.countryCode || undefined}
                 >
                   <option value="" disabled>
-                    Select Country
+                    {F.countryPh}
                   </option>
                   {countries.map((c) => (
                     <option key={c.code} value={c.code}>
@@ -141,21 +145,21 @@ export default function CustomerForm({
                 {err("countryCode")}
               </>
             ))}
-            {input("city", "City", "Enter City")}
+            {input("city", F.city, F.cityPh)}
             {wrap("address", (
               <>
-                {label("address", "Address")}
-                <textarea id="cu-address" name="address" className="sp-textarea " rows={4} placeholder="Enter Address" value={f.address} onChange={set("address")} aria-invalid={!!e.address || undefined} />
+                {label("address", F.address)}
+                <textarea id="cu-address" name="address" className="sp-textarea " rows={4} placeholder={F.addressPh} value={f.address} onChange={set("address")} aria-invalid={!!e.address || undefined} />
                 {err("address")}
               </>
             ))}
           </div>
           <div className="sp-form-actions">
             <button type="button" className="sp-btn sp-btn--secondary" onClick={() => router.push("/customers")} disabled={pending}>
-              Cancel
+              {F.cancel}
             </button>
             <button type="submit" className="sp-btn sp-btn--primary" disabled={!ok || pending}>
-              {pending ? "Saving…" : "Save"}
+              {pending ? T.common.saving : F.save}
             </button>
           </div>
         </div>

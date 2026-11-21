@@ -5,8 +5,9 @@ import { useEffect, useRef, useState, useTransition, type ChangeEvent, type CSSP
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Icon from "@/components/layout/Icon";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
 import { createUser, updateUser, type UserResult } from "@/app/(dashboard)/users/actions";
-import { ROLE_LABELS } from "@/lib/roles";
 import { ASSIGNABLE_ROLES, MIN_PASSWORD, type UserField, type UserFormValues } from "@/lib/users";
 
 // Port of design/Create User.html: PageHeader (+ Back), FormCard (2 columns, Cancel / Save):
@@ -21,6 +22,9 @@ type Text = "firstName" | "lastName" | "email" | "phoneNumber" | "password" | "c
 
 export default function UserForm({ userId, initial }: { userId?: string; initial?: UserFormValues }) {
   const router = useRouter();
+  const T = useT();
+  const F = T.users.form;
+  const V = T.users.val;
   const editing = !!userId;
   const start = initial ?? EMPTY;
   const [f, setF] = useState<Record<Text | "role", string>>({ firstName: start.firstName, lastName: start.lastName, email: start.email, phoneNumber: start.phoneNumber, role: start.role, password: "", confirmPassword: "" });
@@ -45,7 +49,7 @@ export default function UserForm({ userId, initial }: { userId?: string; initial
     if (!x) return;
     // Quick client-side check for a better message; the server validates the actual content.
     const ext = x.name.split(".").pop()?.toLowerCase() ?? "";
-    const problem = !["jpg", "jpeg", "png", "webp"].includes(ext) ? "Use a JPG, PNG or WebP image" : x.size > MAX_BYTES ? "Image must be 2 MB or smaller" : null;
+    const problem = !["jpg", "jpeg", "png", "webp"].includes(ext) ? T.profile.avatarType : x.size > MAX_BYTES ? T.profile.avatarSize : null;
     if (problem) {
       setE({ ...e, avatar: problem });
       toast.error(problem, { id: "user" });
@@ -59,15 +63,15 @@ export default function UserForm({ userId, initial }: { userId?: string; initial
 
   function save() {
     const n: Partial<Record<UserField, string>> = {};
-    if (!f.firstName.trim()) n.firstName = "First name is required";
-    if (!f.lastName.trim()) n.lastName = "Last name is required";
-    if (!/^\S+@\S+\.\S+$/.test(f.email.trim())) n.email = "Enter a valid email";
-    if (!f.phoneNumber.trim()) n.phoneNumber = "Phone number is required";
+    if (!f.firstName.trim()) n.firstName = V.firstRequired;
+    if (!f.lastName.trim()) n.lastName = V.lastRequired;
+    if (!/^\S+@\S+\.\S+$/.test(f.email.trim())) n.email = V.emailInvalid;
+    if (!f.phoneNumber.trim()) n.phoneNumber = V.phoneRequired;
     if (!editing || f.password || f.confirmPassword) {
-      if (f.password.length < MIN_PASSWORD) n.password = `Password must be at least ${MIN_PASSWORD} characters`;
-      else if (f.password !== f.confirmPassword) n.confirmPassword = "Passwords do not match";
+      if (f.password.length < MIN_PASSWORD) n.password = fmt(V.passwordMin, { min: MIN_PASSWORD });
+      else if (f.password !== f.confirmPassword) n.confirmPassword = V.mismatch;
     }
-    if (!f.role) n.role = "Choose a role";
+    if (!f.role) n.role = V.roleRequired;
     setE(n);
     if (Object.keys(n).length) {
       toast.error(Object.values(n)[0]!, { id: "user" });
@@ -82,7 +86,7 @@ export default function UserForm({ userId, initial }: { userId?: string; initial
       try {
         r = editing ? await updateUser(userId, fd) : await createUser(fd);
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "user" });
+        toast.error(T.common.somethingWrong, { id: "user" });
         return;
       }
       if (!r.ok) {
@@ -104,7 +108,7 @@ export default function UserForm({ userId, initial }: { userId?: string; initial
         {label}
         {required && <i>*</i>}
       </label>
-      <input id={`us-${k}`} name={k} type={type} className="sp-input " placeholder={placeholder} value={f[k]} onChange={set(k)} autoComplete={autoComplete} aria-invalid={!!e[k] || undefined} />
+      <input id={`us-${k}`} name={k} type={type} className="sp-input " dir={type === "email" || type === "tel" || type === "password" ? "ltr" : undefined} placeholder={placeholder} value={f[k]} onChange={set(k)} autoComplete={autoComplete} aria-invalid={!!e[k] || undefined} />
       {e[k] && <span className="sp-error" id={`us-${k}-error`}>{e[k]}</span>}
     </div>
   );
@@ -113,12 +117,12 @@ export default function UserForm({ userId, initial }: { userId?: string; initial
     <>
       <div className="sp-page-head">
         <h1 className="t-page-title" style={{ margin: 0 }}>
-          {editing ? "Edit User" : "Create User"}
+          {editing ? T.users.editTitle : T.users.createTitle}
         </h1>
         <div style={{ display: "flex", gap: 12 }}>
           <Link href="/users" className="sp-btn sp-btn--secondary">
             <Icon name="arrow-left" size={18} />
-            Back
+            {F.back}
           </Link>
         </div>
       </div>
@@ -136,7 +140,7 @@ export default function UserForm({ userId, initial }: { userId?: string; initial
           <div className="sp-form-grid" style={{ "--cols": 2 } as CSSProperties}>
             <div className={"sp-field sp-span-all" + (e.avatar ? " sp-field--error" : "")}>
               <label className="sp-label" htmlFor="us-avatar">
-                Change Image
+                {F.changeImage}
               </label>
               <div style={{ position: "relative", width: 100 }}>
                 <span className="sp-avatar" style={{ width: 100, height: 100, fontSize: 30, overflow: "hidden", background: shown ? "transparent" : undefined }} data-testid="avatar-preview">
@@ -147,12 +151,12 @@ export default function UserForm({ userId, initial }: { userId?: string; initial
                     <Icon name="user" size={44} />
                   )}
                 </span>
-                <button type="button" className="sp-btn sp-btn--secondary sp-btn--sm sp-btn--icon" aria-label="Change image" style={{ position: "absolute", top: -6, right: -6, borderRadius: "50%" }} onClick={() => fileRef.current?.click()}>
+                <button type="button" className="sp-btn sp-btn--secondary sp-btn--sm sp-btn--icon" aria-label={F.changeImageAria} style={{ position: "absolute", top: -6, insetInlineEnd: -6, borderRadius: "50%" }} onClick={() => fileRef.current?.click()}>
                   <Icon name="pencil" size={16} />
                 </button>
                 <input ref={fileRef} id="us-avatar" type="file" accept={ACCEPT} hidden onChange={onFile} />
               </div>
-              {e.avatar ? <span className="sp-error">{e.avatar}</span> : <span className="sp-hint">JPG, PNG or WebP, up to 2 MB.</span>}
+              {e.avatar ? <span className="sp-error">{e.avatar}</span> : <span className="sp-hint">{F.imageHint}</span>}
               {(start.image || file) && (
                 <label className="sp-check" style={{ marginTop: 4 }}>
                   <input
@@ -167,28 +171,28 @@ export default function UserForm({ userId, initial }: { userId?: string; initial
                       }
                     }}
                   />
-                  Remove image
+                  {F.removeImage}
                 </label>
               )}
             </div>
 
-            {field("firstName", "First Name", "Enter First Name", "text", true, "off")}
-            {field("lastName", "Last Name", "Enter Last Name", "text", true, "off")}
-            {field("email", "Email", "Enter Email", "email", true, "off")}
-            {field("phoneNumber", "Phone Number", "Enter Phone Number", "tel", true, "off")}
-            {field("password", "Password", editing ? "Leave empty to keep the current password" : "Enter Password", "password", !editing, "new-password")}
-            {field("confirmPassword", "Confirm Password", editing ? "Repeat the new password" : "Enter Confirm Password", "password", !editing, "new-password")}
+            {field("firstName", F.firstName, F.firstNamePh, "text", true, "off")}
+            {field("lastName", F.lastName, F.lastNamePh, "text", true, "off")}
+            {field("email", F.email, F.emailPh, "email", true, "off")}
+            {field("phoneNumber", F.phone, F.phonePh, "tel", true, "off")}
+            {field("password", F.password, editing ? F.passwordPhEdit : F.passwordPh, "password", !editing, "new-password")}
+            {field("confirmPassword", F.confirm, editing ? F.confirmPhEdit : F.confirmPh, "password", !editing, "new-password")}
             <div className={"sp-field" + (e.role ? " sp-field--error" : "")}>
               <label className="sp-label" htmlFor="us-role">
-                Role<i>*</i>
+                {F.role}<i>*</i>
               </label>
               <select id="us-role" name="role" className={"sp-select " + (f.role ? "" : "sp-select--placeholder")} value={f.role} onChange={set("role")} aria-invalid={!!e.role || undefined}>
                 <option value="" disabled>
-                  Choose Role
+                  {F.rolePh}
                 </option>
                 {ASSIGNABLE_ROLES.map((r) => (
                   <option key={r} value={r}>
-                    {ROLE_LABELS[r]}
+                    {(T.roles as Record<string, string>)[r]}
                   </option>
                 ))}
               </select>
@@ -196,16 +200,16 @@ export default function UserForm({ userId, initial }: { userId?: string; initial
             </div>
             {editing && (
               <span className="t-caption sp-span-all" style={{ marginTop: -8 }}>
-                Leave both password fields empty to keep the current password. A new password must be at least {MIN_PASSWORD} characters.
+                {fmt(F.editHint, { min: MIN_PASSWORD })}
               </span>
             )}
           </div>
           <div className="sp-form-actions">
             <button type="button" className="sp-btn sp-btn--secondary" onClick={() => router.push("/users")} disabled={pending}>
-              Cancel
+              {F.cancel}
             </button>
             <button type="submit" className="sp-btn sp-btn--primary" disabled={!ok || pending}>
-              {pending ? "Saving…" : "Save"}
+              {pending ? T.common.saving : F.save}
             </button>
           </div>
         </div>

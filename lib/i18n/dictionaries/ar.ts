@@ -15,12 +15,13 @@ import { arQuot } from "@/lib/i18n/dictionaries/ar-quot";
 import { arFinance } from "@/lib/i18n/dictionaries/ar-fin";
 import { arExpenses } from "@/lib/i18n/dictionaries/ar-exp";
 import { arRegister, arRegisterReport, arDenom } from "@/lib/i18n/dictionaries/ar-reg";
-import { arPosTx } from "@/lib/i18n/dictionaries/ar-postx";
+import { arPosTx, arPosReceipt } from "@/lib/i18n/dictionaries/ar-postx";
 import { arCurrencies } from "@/lib/i18n/dictionaries/ar-cur";
 import { arWarehouses } from "@/lib/i18n/dictionaries/ar-wh";
 import { arCatalog, arProducts } from "@/lib/i18n/dictionaries/ar-prod";
 import { arTransfers } from "@/lib/i18n/dictionaries/ar-xfer";
 import { arAdjustments } from "@/lib/i18n/dictionaries/ar-adj";
+import { arUsers } from "@/lib/i18n/dictionaries/ar-users";
 export const ar: Dictionary = {
   common: {
     save: "حفظ",
@@ -303,6 +304,7 @@ export const ar: Dictionary = {
     previewProduct: "المنتج",
     previewStatus: "الحالة",
     previewPaid: "مدفوع",
+    previewSample: "حبوب إسبريسو",
     previewProducts: "المنتجات",
     previewSales: "المبيعات",
     previewLowStock: "مخزون منخفض",
@@ -324,6 +326,8 @@ export const ar: Dictionary = {
     title: "إعدادات النظام",
     defaultCurrency: "العملة الافتراضية",
     noCurrencies: "لا توجد عملات متاحة بعد",
+    defaultWarehouse: "المستودع الافتراضي",
+    noWarehousesYet: "لا توجد مستودعات متاحة بعد",
     noCurrenciesHint: "لا توجد عملات بعد.",
     createCurrency: "أنشئ عملة",
     firstThenChoose: "أولًا، ثم اخترها هنا.",
@@ -613,15 +617,17 @@ export const ar: Dictionary = {
   registerReport: arRegisterReport,
   denom: arDenom,
   posTx: arPosTx,
+  posReceipt: arPosReceipt,
   currencies: arCurrencies,
   warehouses: arWarehouses,
   catalog: arCatalog,
   products: arProducts,
   transfers: arTransfers,
   adjustments: arAdjustments,
+  users: arUsers,
   langAdmin: {
     title: "اللغات",
-    sections: { nav: "لوحة التحكم والتنقل", auth: "تسجيل الدخول والحساب", settings: "الإعدادات والتفضيلات", pos: "نقطة البيع والصندوق", shared: "الواجهة المشتركة والتقارير", sales: "المبيعات", purchases: "المشتريات", finance: "المالية", products: "المنتجات والمخزون", people: "العملاء والموردون", reports: "التقارير" },
+    sections: { nav: "لوحة التحكم والتنقل", auth: "تسجيل الدخول والحساب", settings: "الإعدادات والتفضيلات", pos: "نقطة البيع والصندوق", shared: "الواجهة المشتركة والتقارير", sales: "المبيعات", purchases: "المشتريات", finance: "المالية", products: "المنتجات والمخزون", people: "العملاء والموردون", users: "المستخدمون والأدوار", reports: "التقارير" },
     intro: "عدّل النصوص العربية التي تظهر للمستخدمين المسجّلين. النص الإنجليزي يأتي من كود التطبيق ولا يمكن تعديله هنا.",
     search: "ابحث بالإنجليزية أو العربية أو المفتاح",
     emptySection: "لا توجد ترجمات في هذا القسم بعد",

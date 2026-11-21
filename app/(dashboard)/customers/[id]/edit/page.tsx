@@ -5,9 +5,12 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { getCountryOptions } from "@/lib/countries";
 import { canManageCustomers } from "@/lib/roles";
+import { getDict, getLocale } from "@/lib/i18n/server";
 import CustomerForm from "@/components/customers/CustomerForm";
 
-export const metadata: Metadata = { title: "Edit Customer" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).customers.form.editTitle };
+}
 
 export const instant = false;
 
@@ -34,7 +37,7 @@ export default async function EditCustomerPage({ params }: PageProps<"/customers
         city: c.city,
         address: c.address,
       }}
-      countries={getCountryOptions()}
+      countries={getCountryOptions(await getLocale())}
     />
   );
 }

@@ -10,7 +10,9 @@ import Icon from "@/components/layout/Icon";
 import ProfileForm from "@/components/profile/ProfileForm";
 import PosPinForm from "@/components/profile/PosPinForm";
 
-export const metadata: Metadata = { title: "Profile" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).profile.title };
+}
 
 // The form needs the session and the user's database record, so navigations to this page are
 // allowed to block (the layout's `instant = false` only covers navigations from outside the group).

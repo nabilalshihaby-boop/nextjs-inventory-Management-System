@@ -3,8 +3,8 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import Icon, { type IconName } from "@/components/layout/Icon";
 import DashboardChart from "@/components/dashboard/DashboardChart";
-import { getDict } from "@/lib/i18n/server";
-import { fmt } from "@/lib/i18n/config";
+import { getLocaleInfo } from "@/lib/i18n/server";
+import { fmt, intlTag } from "@/lib/i18n/config";
 import type { Dictionary } from "@/lib/i18n";
 
 // Converted from design/Dashboard.html — main-area content only.
@@ -12,7 +12,7 @@ import type { Dictionary } from "@/lib/i18n";
 // All figures below are the design's demo data; replace them with real queries later.
 
 export async function generateMetadata(): Promise<Metadata> {
-  return { title: (await getDict()).nav.dash };
+  return { title: (await getLocaleInfo()).dict.nav.dash };
 }
 
 export const instant = false;
@@ -87,7 +87,7 @@ function StatCard({ tone, icon, value, label, note }: { tone: Tone; icon: IconNa
         <Icon name={icon} size={28} />
       </div>
       <div className="sp-stat-body">
-        <div className="sp-stat-value">{value}</div>
+        <div className="sp-stat-value"><bdi dir="ltr">{value}</bdi></div>
         <div className="sp-stat-label">{label}</div>
         {note && <div className="sp-stat-note">{note}</div>}
       </div>
@@ -121,7 +121,11 @@ function Card({ title, center, action, children }: { title: string; center?: boo
 const tileLinkStyle = { textDecoration: "none", display: "block" } as const;
 
 export default async function DashboardPage() {
-  const D = (await getDict()).dash;
+  const { dict, locale } = await getLocaleInfo();
+  const D = dict.dash;
+  const B = D.body;
+  // Display only: the demo period (May 2026) is named in the selected language; figures are untouched.
+  const month = new Intl.DateTimeFormat(intlTag(locale), { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2026, 4, 1)));
   const recNote = { total: D.receivables.totalNote, collections: D.receivables.collectionsNote, outstanding: fmt(D.receivables.outstandingNote, { n: CUSTOMER_COUNT }) };
   const recLabel = { total: D.receivables.total, collections: D.receivables.collections, outstanding: D.receivables.outstanding };
   return (
@@ -149,9 +153,9 @@ export default async function DashboardPage() {
 
       <div className="sp-dash">
         <Card
-          title="This Week Sales & Purchases"
+          title={B.weekTitle}
           action={
-            <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label="Chart menu">
+            <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={B.chartMenu}>
               <Icon name="menu" size={16} />
             </button>
           }
@@ -161,35 +165,35 @@ export default async function DashboardPage() {
               kind="bar"
               labels={WEEK}
               datasets={[
-                { label: "Sales", data: WEEK_SALES, tone: "--tone-teal" },
-                { label: "Purchases", data: WEEK_PURCHASES, tone: "--tone-green" },
+                { label: B.sales, data: WEEK_SALES, tone: "--tone-teal" },
+                { label: B.purchases, data: WEEK_PURCHASES, tone: "--tone-green" },
               ]}
             />
           </div>
         </Card>
 
-        <Card title="Top Selling Products (2026)" center>
+        <Card title={fmt(B.topYear, { period: "2026" })} center>
           <div className="sp-card-body">
             <DashboardChart kind="pie" labels={TOP_2026.map((x) => x[0])} values={TOP_2026.map((x) => x[1])} unit="sold" />
           </div>
         </Card>
 
-        <Card title="Top Selling Products (May)">
+        <Card title={fmt(B.topMonth, { period: month })}>
           <div className="sp-table-scroll">
             <table className="sp-table">
               <thead>
                 <tr>
-                  <th>Product</th>
-                  <th>Quantity</th>
-                  <th>Grand Total</th>
+                  <th>{B.colProduct}</th>
+                  <th>{B.colQuantity}</th>
+                  <th>{B.colTotal}</th>
                 </tr>
               </thead>
               <tbody>
                 {TOP_PRODUCTS_MAY.map(([name, qty, total]) => (
                   <tr key={name}>
                     <td className="primary-cell">{name}</td>
-                    <td>{qty}</td>
-                    <td>{egp(total)}</td>
+                    <td><bdi dir="ltr">{qty}</bdi></td>
+                    <td><bdi dir="ltr">{egp(total)}</bdi></td>
                   </tr>
                 ))}
               </tbody>
@@ -197,7 +201,7 @@ export default async function DashboardPage() {
           </div>
         </Card>
 
-        <Card title="Top 5 Customers (May)" center>
+        <Card title={fmt(B.topCustomers, { period: month })} center>
           <div className="sp-card-body">
             <DashboardChart
               kind="pie"
@@ -210,35 +214,35 @@ export default async function DashboardPage() {
       </div>
 
       <div className="sp-sec">
-        <Card title="Recent Sales">
+        <Card title={B.recentSales}>
           <div className="sp-table-scroll">
             <table className="sp-table">
               <thead>
                 <tr>
-                  <th>Reference</th>
-                  <th>Customer</th>
-                  <th>Status</th>
-                  <th>Grand Total</th>
-                  <th>Paid</th>
-                  <th>Due</th>
-                  <th>Payment Status</th>
+                  <th>{B.colReference}</th>
+                  <th>{B.colCustomer}</th>
+                  <th>{B.colStatus}</th>
+                  <th>{B.colTotal}</th>
+                  <th>{B.colPaid}</th>
+                  <th>{B.colDue}</th>
+                  <th>{B.colPayment}</th>
                 </tr>
               </thead>
               <tbody>
                 {RECENT_SALES.map(([ref, total]) => (
                   <tr key={ref}>
                     <td>
-                      <span className="sp-code">{ref}</span>
+                      <span className="sp-code"><bdi dir="ltr">{ref}</bdi></span>
                     </td>
                     <td className="primary-cell">direct-customer</td>
                     <td>
-                      <Badge tone="success">Received</Badge>
+                      <Badge tone="success">{B.received}</Badge>
                     </td>
-                    <td>{total}</td>
-                    <td>{total}</td>
-                    <td>EGP 0.00</td>
+                    <td><bdi dir="ltr">{total}</bdi></td>
+                    <td><bdi dir="ltr">{total}</bdi></td>
+                    <td><bdi dir="ltr">EGP 0.00</bdi></td>
                     <td>
-                      <Badge tone="success">Paid</Badge>
+                      <Badge tone="success">{B.paid}</Badge>
                     </td>
                   </tr>
                 ))}
@@ -248,22 +252,22 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
-      <Card title="Stock Alert">
+      <Card title={B.stockAlert}>
         <div className="sp-table-scroll">
           <table className="sp-table">
             <thead>
               <tr>
-                <th>Code</th>
-                <th>Product</th>
-                <th>Warehouse</th>
-                <th>Quantity</th>
-                <th>Alert Quantity</th>
+                <th>{B.colCode}</th>
+                <th>{B.colProduct}</th>
+                <th>{B.colWarehouse}</th>
+                <th>{B.colQuantity}</th>
+                <th>{B.colAlertQty}</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <td>
-                  <span className="sp-code">002</span>
+                  <span className="sp-code"><bdi dir="ltr">002</bdi></span>
                 </td>
                 <td className="primary-cell">ipl laser hair removal</td>
                 <td>Office</td>
@@ -279,7 +283,7 @@ export default async function DashboardPage() {
               </tr>
               <tr>
                 <td>
-                  <span className="sp-code">001</span>
+                  <span className="sp-code"><bdi dir="ltr">001</bdi></span>
                 </td>
                 <td className="primary-cell">FACE FAT AND DOUBLE CHIN</td>
                 <td>Office</td>

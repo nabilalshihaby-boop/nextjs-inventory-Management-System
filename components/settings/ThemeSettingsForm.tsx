@@ -490,7 +490,7 @@ function Preview({ s, brandName }: { s: ThemeState; brandName: string }) {
                 </thead>
                 <tbody>
                   <tr>
-                    <td style={{ padding: "0 12px", height: 46 }}>Espresso Beans</td>
+                    <td style={{ padding: "0 12px", height: 46 }}>{T.theme.previewSample}</td>
                     <td style={{ padding: "0 12px" }}>
                       <span className="sp-badge sp-badge--success"><i />{T.theme.previewPaid}</span>
                     </td>

@@ -9,7 +9,9 @@ import { stamp } from "@/lib/i18n/translation-input";
 import { canManageSystemSettings } from "@/lib/roles";
 import TranslationManager, { type TranslationRow } from "@/components/settings/TranslationManager";
 
-export const metadata: Metadata = { title: "Languages" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).langAdmin.title };
+}
 
 export const instant = false;
 

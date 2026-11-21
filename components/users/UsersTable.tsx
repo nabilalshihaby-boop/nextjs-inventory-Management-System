@@ -5,6 +5,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Icon from "@/components/layout/Icon";
+import { useT } from "@/components/i18n/I18nProvider";
+import { fmt } from "@/lib/i18n/config";
 import { ConfirmDeleteModal } from "@/components/ui/Modal";
 import Pagination, { paginate } from "@/components/ui/Pagination";
 import { deleteUser } from "@/app/(dashboard)/users/actions";
@@ -17,6 +19,8 @@ import type { UserRow } from "@/lib/users";
 
 export default function UsersTable({ rows }: { rows: UserRow[] }) {
   const router = useRouter();
+  const T = useT();
+  const L = T.users.list;
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -39,7 +43,7 @@ export default function UsersTable({ rows }: { rows: UserRow[] }) {
         else toast.success(r.message, { id: "user" });
         router.refresh();
       } catch {
-        toast.error("Something went wrong. Please try again.", { id: "user" });
+        toast.error(T.common.somethingWrong, { id: "user" });
       }
     });
   }
@@ -51,8 +55,8 @@ export default function UsersTable({ rows }: { rows: UserRow[] }) {
           <Icon name="search" size={18} className="sp-input-icon" />
           <input
             className="sp-input "
-            placeholder="Search"
-            aria-label="Search users"
+            placeholder={L.search}
+            aria-label={L.searchAria}
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
@@ -63,7 +67,7 @@ export default function UsersTable({ rows }: { rows: UserRow[] }) {
         <div className="sp-grow" />
         <Link href="/users/create" className="sp-btn sp-btn--primary">
           <Icon name="plus" size={18} />
-          Create User
+          {L.create}
         </Link>
       </div>
 
@@ -72,11 +76,11 @@ export default function UsersTable({ rows }: { rows: UserRow[] }) {
           <table className="sp-table">
             <thead>
               <tr>
-                <th>User</th>
-                <th>Role</th>
-                <th>Phone Number</th>
-                <th>Created On</th>
-                <th className="num">Action</th>
+                <th>{L.colUser}</th>
+                <th>{L.colRole}</th>
+                <th>{L.colPhone}</th>
+                <th>{L.colCreated}</th>
+                <th className="num">{L.colAction}</th>
               </tr>
             </thead>
             <tbody>
@@ -95,29 +99,29 @@ export default function UsersTable({ rows }: { rows: UserRow[] }) {
                       <div>
                         <div style={{ color: "var(--primary-700)", fontWeight: 600 }}>
                           {r.name}
-                          {r.isSelf && <span className="t-caption" style={{ marginLeft: 6 }}>(you)</span>}
+                          {r.isSelf && <span className="t-caption" style={{ marginInlineStart: 6 }}>{L.you}</span>}
                         </div>
-                        <div style={{ color: "var(--text-2)" }}>{r.email}</div>
+                        <div style={{ color: "var(--text-2)" }}><bdi dir="ltr">{r.email}</bdi></div>
                       </div>
                     </div>
                   </td>
                   <td data-testid="role">{r.roleLabel}</td>
-                  <td>{r.phoneNumber}</td>
+                  <td><bdi dir="ltr">{r.phoneNumber}</bdi></td>
                   <td>
                     <span className="sp-badge sp-badge--info">{r.createdOn}</span>
                   </td>
                   <td className="num">
                     <span style={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
                       {r.role === "OWNER" ? (
-                        <Link href="/profile" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={`Edit ${r.name} in Profile`} title="The Owner account is edited in Profile" style={{ color: "var(--primary-600)" }}>
+                        <Link href="/profile" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={fmt(L.editOwnerAria, { name: r.name })} title={L.editOwnerTitle} style={{ color: "var(--primary-600)" }}>
                           <Icon name="pencil" size={16} />
                         </Link>
                       ) : (
                         <>
-                          <Link href={`/users/${encodeURIComponent(r.id)}/edit`} className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={`Edit ${r.name}`} style={{ color: "var(--primary-600)" }}>
+                          <Link href={`/users/${encodeURIComponent(r.id)}/edit`} className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={fmt(L.editAria, { name: r.name })} style={{ color: "var(--primary-600)" }}>
                             <Icon name="pencil" size={16} />
                           </Link>
-                          <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={`Delete ${r.name}`} style={{ color: "var(--danger-500)" }} onClick={() => setDel(r)}>
+                          <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={fmt(L.deleteAria, { name: r.name })} style={{ color: "var(--danger-500)" }} onClick={() => setDel(r)}>
                             <Icon name="trash-2" size={16} />
                           </button>
                         </>
@@ -129,14 +133,14 @@ export default function UsersTable({ rows }: { rows: UserRow[] }) {
               {p.visible.length === 0 && (
                 <tr>
                   <td colSpan={5} style={{ textAlign: "center", color: "var(--text-2)" }}>
-                    {rows.length === 0 ? "No users yet." : "No users match your search."}
+                    {rows.length === 0 ? L.noUsers : L.noMatch}
                   </td>
                 </tr>
               )}
               {onlyOwner && !needle && (
                 <tr>
                   <td colSpan={5} style={{ textAlign: "center", color: "var(--text-2)" }} data-testid="users-empty">
-                    <b style={{ color: "var(--text-1)" }}>No users yet</b> — use Create User to add Administrators or Users.
+                    <b style={{ color: "var(--text-1)" }}>{L.emptyTitle}</b>{L.emptyHint}
                   </td>
                 </tr>
               )}
@@ -158,7 +162,7 @@ export default function UsersTable({ rows }: { rows: UserRow[] }) {
         />
       </div>
 
-      {del && <ConfirmDeleteModal itemType="user" itemName={del.name} busy={pending} onCancel={() => setDel(null)} onConfirm={confirmDelete} />}
+      {del && <ConfirmDeleteModal itemType={L.deleteType} itemName={del.name} busy={pending} onCancel={() => setDel(null)} onConfirm={confirmDelete} />}
     </>
   );
 }

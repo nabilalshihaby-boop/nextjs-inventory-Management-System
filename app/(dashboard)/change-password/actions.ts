@@ -50,7 +50,7 @@ export async function changePassword(_prev: ChangePasswordState, formData: FormD
   if (!parsed.success) {
     const fieldErrors: Partial<Record<PasswordField, string>> = {};
     for (const issue of parsed.error.issues) fieldErrors[issue.path[0] as PasswordField] ??= issue.message;
-    const first = parsed.error.issues[0]?.message ?? "Please check the form";
+    const first = parsed.error.issues[0]?.message ?? t.common.checkForm;
     return { status: "error", message: first, fieldErrors };
   }
   const { currentPassword, newPassword } = parsed.data;

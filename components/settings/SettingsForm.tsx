@@ -315,7 +315,7 @@ export default function SettingsForm({
                 </span>
               )}
             </Field>
-            {unavailable("st-defaultWarehouse", "Default Warehouse", "No warehouses available yet")}
+            {unavailable("st-defaultWarehouse", t.settings.defaultWarehouse, t.settings.noWarehousesYet)}
             <Field k="country" error={e.country} label={t.settings.country} required>
               {select(
                 "country",

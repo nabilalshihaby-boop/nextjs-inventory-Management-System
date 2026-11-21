@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useLocale, useT } from "@/components/i18n/I18nProvider";
 
 // Chart.js 4.4.1 — the exact build design/Dashboard.html uses — loaded once from jsDelivr at runtime
 // (not installed as a package), pinned with Subresource Integrity.
@@ -59,7 +60,9 @@ export type DashboardChartProps =
       unit: "egp" | "sold";
     };
 
-function buildConfig(p: DashboardChartProps) {
+type Labels = { amount: string; sold: string };
+
+function buildConfig(p: DashboardChartProps, L: Labels, rtl: boolean) {
   if (p.kind === "bar") {
     return {
       type: "bar",
@@ -75,17 +78,18 @@ function buildConfig(p: DashboardChartProps) {
       options: {
         maintainAspectRatio: false,
         plugins: {
-          legend: { position: "top" },
-          tooltip: { callbacks: { label: (c: TooltipItem) => c.dataset.label + ": " + egp(c.parsed.y) } },
+          legend: { position: "top", rtl },
+          tooltip: { rtl, callbacks: { label: (c: TooltipItem) => c.dataset.label + ": " + egp(c.parsed.y) } },
         },
         scales: {
           y: {
             beginAtZero: true,
             ticks: { callback: (v: number) => v / 1000 + "k" },
-            title: { display: true, text: "Amount" },
+            title: { display: true, text: L.amount },
             grid: { color: cssVar("--border") },
+            position: rtl ? "right" : "left",
           },
-          x: { grid: { color: cssVar("--border") } },
+          x: { grid: { color: cssVar("--border") }, reverse: rtl },
         },
       },
     };
@@ -99,11 +103,12 @@ function buildConfig(p: DashboardChartProps) {
     options: {
       maintainAspectRatio: false,
       plugins: {
-        legend: { position: "top" },
+        legend: { position: "top", rtl },
         tooltip: {
+          rtl,
           callbacks: {
             label: (c: TooltipItem) =>
-              c.label + ": " + (p.unit === "egp" ? egp(c.parsed) : c.parsed + " sold"),
+              c.label + ": " + (p.unit === "egp" ? egp(c.parsed) : c.parsed + " " + L.sold),
           },
         },
       },
@@ -113,6 +118,11 @@ function buildConfig(p: DashboardChartProps) {
 
 export default function DashboardChart(props: DashboardChartProps) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const T = useT();
+  const { dir } = useLocale();
+  const rtl = dir === "rtl";
+  const amount = T.dash.body.amount;
+  const sold = T.dash.body.sold;
   const configKey = JSON.stringify(props);
 
   useEffect(() => {
@@ -123,7 +133,7 @@ export default function DashboardChart(props: DashboardChartProps) {
         if (cancelled || !ref.current) return;
         Chart.defaults.font.family = cssVar("--font-body").replace(/"/g, "");
         Chart.defaults.color = cssVar("--text-2");
-        chart = new Chart(ref.current, buildConfig(JSON.parse(configKey) as DashboardChartProps));
+        chart = new Chart(ref.current, buildConfig(JSON.parse(configKey) as DashboardChartProps, { amount, sold }, rtl));
       })
       .catch(() => {
         /* CDN unreachable: leave the empty chart area, as the design would */
@@ -132,7 +142,7 @@ export default function DashboardChart(props: DashboardChartProps) {
       cancelled = true;
       chart?.destroy();
     };
-  }, [configKey]);
+  }, [configKey, amount, sold, rtl]);
 
   return (
     <div className="sp-chart">

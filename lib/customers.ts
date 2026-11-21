@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { isCountryCode } from "@/lib/countries";
+import { en } from "@/lib/i18n/dictionaries/en";
+import type { Dictionary } from "@/lib/i18n";
 
 // Shared Customer rules (Server Actions validate with this; safe to import on the client).
 
@@ -15,26 +17,30 @@ function isRealDate(v: string) {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v && d.getUTCFullYear() >= 1900;
 }
 
-export const customerInputSchema = z.object({
-  name: z.string().trim().min(1, "Name is required").max(120, "Name is too long"),
-  email: z.string().trim().toLowerCase().min(1, "Email is required").max(191, "Email is too long").pipe(z.email("Enter a valid email")),
-  phoneNumber: z
-    .string()
-    .trim()
-    .min(1, "Phone number is required")
-    .regex(/^[0-9+()\-.\s]{6,32}$/, "Enter a valid phone number"),
-  countryCode: z.string().trim().refine(isCountryCode, "Country is required"),
-  city: z.string().trim().min(1, "City is required").max(120, "City is too long"),
-  address: z.string().trim().min(1, "Address is required").max(500, "Address is too long"),
-  /** Optional: "" (none) or a real YYYY-MM-DD date that isn't in the future. */
-  dateOfBirth: z
-    .string()
-    .trim()
-    .optional()
-    .default("")
-    .refine((v) => v === "" || isRealDate(v), "Enter a valid date of birth")
-    .refine((v) => v === "" || !isRealDate(v) || v <= todayLocalIso(), "Date of birth can't be in the future"),
-});
+/** Customer schema with dictionary messages (English by default). */
+export function makeCustomerSchema(m: Dictionary["customers"]["val"] = en.customers.val) {
+  return z.object({
+    name: z.string().trim().min(1, m.nameRequired).max(120, m.nameLong),
+    email: z.string().trim().toLowerCase().min(1, m.emailRequired).max(191, m.emailLong).pipe(z.email(m.emailInvalid)),
+    phoneNumber: z
+      .string()
+      .trim()
+      .min(1, m.phoneRequired)
+      .regex(/^[0-9+()\-.\s]{6,32}$/, m.phoneInvalid),
+    countryCode: z.string().trim().refine(isCountryCode, m.countryRequired),
+    city: z.string().trim().min(1, m.cityRequired).max(120, m.cityLong),
+    address: z.string().trim().min(1, m.addressRequired).max(500, m.addressLong),
+    /** Optional: "" (none) or a real YYYY-MM-DD date that isn't in the future. */
+    dateOfBirth: z
+      .string()
+      .trim()
+      .optional()
+      .default("")
+      .refine((v) => v === "" || isRealDate(v), m.dobInvalid)
+      .refine((v) => v === "" || !isRealDate(v) || v <= todayLocalIso(), m.dobFuture),
+  });
+}
+export const customerInputSchema = makeCustomerSchema();
 
 export type CustomerInput = z.infer<typeof customerInputSchema>;
 export type CustomerField = keyof CustomerInput;

@@ -10,7 +10,9 @@ import ClearCacheSection from "@/components/settings/ClearCacheSection";
 import LanguageSwitch from "@/components/i18n/LanguageSwitch";
 import { getDict } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Appearance & Cache" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).theme.titlePersonal };
+}
 
 export const instant = false;
 

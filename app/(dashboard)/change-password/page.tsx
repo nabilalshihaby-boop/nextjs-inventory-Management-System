@@ -7,7 +7,9 @@ import Icon from "@/components/layout/Icon";
 import { getDict } from "@/lib/i18n/server";
 import ChangePasswordForm from "@/components/profile/ChangePasswordForm";
 
-export const metadata: Metadata = { title: "Change Password" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).password.title };
+}
 
 // Needs the session per request, so navigations here may block (same as /profile).
 export const instant = false;

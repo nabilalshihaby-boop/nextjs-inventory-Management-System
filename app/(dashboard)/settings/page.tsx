@@ -9,7 +9,9 @@ import { canManageSystemSettings } from "@/lib/roles";
 import { DATE_FORMATS, getCurrencyOptions, getSystemSettings, toSettingsValues } from "@/lib/settings";
 import SettingsForm from "@/components/settings/SettingsForm";
 
-export const metadata: Metadata = { title: "Settings" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).settings.title };
+}
 
 // Needs the session + database per request, so navigations here may block.
 export const instant = false;

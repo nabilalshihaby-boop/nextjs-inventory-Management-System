@@ -3,9 +3,12 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { auth } from "@/auth";
 import { canManageUsers } from "@/lib/roles";
+import { getDict } from "@/lib/i18n/server";
 import UserForm from "@/components/users/UserForm";
 
-export const metadata: Metadata = { title: "Create User" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).users.createTitle };
+}
 
 export const instant = false;
 

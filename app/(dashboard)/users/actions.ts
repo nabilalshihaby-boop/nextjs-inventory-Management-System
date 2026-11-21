@@ -8,7 +8,10 @@ import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
 import { deleteImage, saveImage, validateImage, type ValidImage } from "@/lib/image-upload";
 import { canManageUsers } from "@/lib/roles";
-import { createUserSchema, updateUserSchema, type UserField } from "@/lib/users";
+import { makeUserSchemas, type UserField } from "@/lib/users";
+import { getDict } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n/config";
+import type { Dictionary } from "@/lib/i18n";
 
 // Users management (OWNER only). Security rules enforced here, server-side:
 // - auth() is re-read in every action; only the OWNER may proceed (the role is never taken from
@@ -26,8 +29,6 @@ export type UserResult = { ok: true; message: string } | { ok: false; message: s
 const FOLDER = "users";
 const BCRYPT_COST = 12;
 const idSchema = z.string().trim().min(1).max(64);
-const DUPLICATE = "This email is already used by another account";
-const OWNER_LOCKED = "The Owner account can't be changed here. The Owner edits their own details in Profile and Change Password.";
 
 const str = (fd: FormData, k: string) => {
   const v = fd.get(k);
@@ -35,25 +36,26 @@ const str = (fd: FormData, k: string) => {
 };
 const isUnique = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
 
-async function authorize(): Promise<{ userId: string } | { error: UserResult }> {
+async function authorize(t: Dictionary): Promise<{ userId: string } | { error: UserResult }> {
   const session = await auth();
-  if (!session?.user?.id) return { error: { ok: false, message: "Your session has expired. Please sign in again." } };
-  if (!canManageUsers(session.user.role)) return { error: { ok: false, message: "Only the Owner can manage users." } };
+  if (!session?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
+  if (!canManageUsers(session.user.role)) return { error: { ok: false, message: t.users.err.noPermission } };
   return { userId: session.user.id };
 }
 
-function collect(issues: z.core.$ZodIssue[]): UserResult {
+function collect(issues: z.core.$ZodIssue[], t: Dictionary): UserResult {
   const fieldErrors: Partial<Record<UserField, string>> = {};
   for (const i of issues) fieldErrors[i.path[0] as UserField] ??= i.message;
-  return { ok: false, message: Object.values(fieldErrors)[0] ?? "Please check the form", fieldErrors };
+  return { ok: false, message: Object.values(fieldErrors)[0] ?? t.common.checkForm, fieldErrors };
 }
 
 /** Optional avatar from the form (validated by content). */
-async function readAvatar(fd: FormData): Promise<{ image: ValidImage | null } | { error: string }> {
+async function readAvatar(fd: FormData, t: Dictionary): Promise<{ image: ValidImage | null } | { error: string }> {
   const file = fd.get("avatar");
   if (!(file instanceof File) || file.size === 0) return { image: null };
   const r = await validateImage(file);
-  return "error" in r ? r : { image: r };
+  if (!("error" in r)) return { image: r };
+  return { error: r.key === "type" ? t.profile.avatarType : r.key === "size" ? t.profile.avatarSize : t.profile.avatarNotImage };
 }
 
 /** Remove an avatar file this app created (user uploads or self-service profile avatars). */
@@ -63,11 +65,13 @@ async function removeAvatarFile(p: string | null) {
 }
 
 export async function createUser(formData: FormData): Promise<UserResult> {
-  const a = await authorize();
+  const t = await getDict();
+  const a = await authorize(t);
   if ("error" in a) return a.error;
-  if (!(formData instanceof FormData)) return { ok: false, message: "Invalid request" };
+  if (!(formData instanceof FormData)) return { ok: false, message: t.users.err.invalidRequest };
+  const DUPLICATE = t.users.err.duplicate;
 
-  const parsed = createUserSchema.safeParse({
+  const parsed = makeUserSchemas(t.users.val).create.safeParse({
     firstName: str(formData, "firstName"),
     lastName: str(formData, "lastName"),
     email: str(formData, "email"),
@@ -76,8 +80,8 @@ export async function createUser(formData: FormData): Promise<UserResult> {
     confirmPassword: str(formData, "confirmPassword"),
     role: str(formData, "role"), // "OWNER" (or anything else) fails here
   });
-  if (!parsed.success) return collect(parsed.error.issues);
-  const avatar = await readAvatar(formData);
+  if (!parsed.success) return collect(parsed.error.issues, t);
+  const avatar = await readAvatar(formData, t);
   if ("error" in avatar) return { ok: false, message: avatar.error, fieldErrors: { avatar: avatar.error } };
   const d = parsed.data;
   if (await db.user.findUnique({ where: { email: d.email }, select: { id: true } })) return { ok: false, message: DUPLICATE, fieldErrors: { email: DUPLICATE } };
@@ -95,7 +99,7 @@ export async function createUser(formData: FormData): Promise<UserResult> {
     throw e;
   }
   revalidatePath("/users");
-  return { ok: true, message: "User created" };
+  return { ok: true, message: t.users.ok.created };
 }
 
 /**
@@ -103,17 +107,19 @@ export async function createUser(formData: FormData): Promise<UserResult> {
  * password (confirmed) replaces it, so the old one stops working. The Owner account is locked.
  */
 export async function updateUser(id: unknown, formData: FormData): Promise<UserResult> {
-  const a = await authorize();
+  const t = await getDict();
+  const a = await authorize(t);
   if ("error" in a) return a.error;
-  if (!(formData instanceof FormData)) return { ok: false, message: "Invalid request" };
+  if (!(formData instanceof FormData)) return { ok: false, message: t.users.err.invalidRequest };
+  const DUPLICATE = t.users.err.duplicate;
   const uid = idSchema.safeParse(id);
-  if (!uid.success) return { ok: false, message: "User not found" };
+  if (!uid.success) return { ok: false, message: t.users.err.notFound };
 
   const target = await db.user.findUnique({ where: { id: uid.data }, select: { id: true, role: true, image: true } });
-  if (!target) return { ok: false, message: "User not found" };
-  if (target.role === "OWNER" || target.id === a.userId) return { ok: false, message: OWNER_LOCKED };
+  if (!target) return { ok: false, message: t.users.err.notFound };
+  if (target.role === "OWNER" || target.id === a.userId) return { ok: false, message: t.users.err.ownerLocked };
 
-  const parsed = updateUserSchema.safeParse({
+  const parsed = makeUserSchemas(t.users.val).update.safeParse({
     firstName: str(formData, "firstName"),
     lastName: str(formData, "lastName"),
     email: str(formData, "email"),
@@ -122,8 +128,8 @@ export async function updateUser(id: unknown, formData: FormData): Promise<UserR
     confirmPassword: str(formData, "confirmPassword"),
     role: str(formData, "role"),
   });
-  if (!parsed.success) return collect(parsed.error.issues);
-  const avatar = await readAvatar(formData);
+  if (!parsed.success) return collect(parsed.error.issues, t);
+  const avatar = await readAvatar(formData, t);
   if ("error" in avatar) return { ok: false, message: avatar.error, fieldErrors: { avatar: avatar.error } };
   const d = parsed.data;
   if (await db.user.findFirst({ where: { email: d.email, NOT: { id: target.id } }, select: { id: true } })) {
@@ -156,51 +162,53 @@ export async function updateUser(id: unknown, formData: FormData): Promise<UserR
   }
   if (image !== undefined && target.image !== image) await removeAvatarFile(target.image);
   revalidatePath("/users");
-  return { ok: true, message: d.password ? "User updated and password changed — their existing sessions were signed out" : "User updated" };
+  return { ok: true, message: d.password ? t.users.ok.updatedPassword : t.users.ok.updated };
 }
 
 /**
  * Business records that keep a user's id as their author. Deleting such a user would orphan the
  * history, so deletion is refused. Add new modules' createdById/userId counts here as they arrive.
  */
-async function findUserReferences(userId: string): Promise<string[]> {
+async function findUserReferences(userId: string, t: Dictionary): Promise<string[]> {
   const [entries, transfers, adjustments] = await Promise.all([
     db.productStockEntry.count({ where: { createdById: userId } }),
     db.stockTransfer.count({ where: { createdById: userId } }),
     db.stockAdjustment.count({ where: { createdById: userId } }),
   ]);
   const out: string[] = [];
-  if (entries) out.push(`${entries} opening-stock entr${entries === 1 ? "y" : "ies"}`);
-  if (transfers) out.push(`${transfers} transfer${transfers === 1 ? "" : "s"}`);
-  if (adjustments) out.push(`${adjustments} stock adjustment${adjustments === 1 ? "" : "s"}`);
+  const E = t.users.err;
+  if (entries) out.push(fmt(entries === 1 ? E.entry : E.entries, { n: entries }));
+  if (transfers) out.push(fmt(transfers === 1 ? E.transfer : E.transfers, { n: transfers }));
+  if (adjustments) out.push(fmt(adjustments === 1 ? E.adjustment : E.adjustments, { n: adjustments }));
   return out;
 }
 
 export async function deleteUser(id: unknown): Promise<UserResult> {
-  const a = await authorize();
+  const t = await getDict();
+  const a = await authorize(t);
   if ("error" in a) return a.error;
   const uid = idSchema.safeParse(id);
-  if (!uid.success) return { ok: false, message: "User not found" };
+  if (!uid.success) return { ok: false, message: t.users.err.notFound };
 
   const target = await db.user.findUnique({ where: { id: uid.data }, select: { id: true, role: true, image: true } });
-  if (!target) return { ok: false, message: "User not found" };
-  if (target.id === a.userId) return { ok: false, message: "You can't delete your own account." };
-  if (target.role === "OWNER") return { ok: false, message: "The Owner account can't be deleted." };
+  if (!target) return { ok: false, message: t.users.err.notFound };
+  if (target.id === a.userId) return { ok: false, message: t.users.err.deleteSelf };
+  if (target.role === "OWNER") return { ok: false, message: t.users.err.deleteOwner };
 
-  const refs = await findUserReferences(target.id);
+  const refs = await findUserReferences(target.id, t);
   if (refs.length) {
-    return { ok: false, message: `This user can't be deleted because they recorded ${refs.join(", ")}. Their history must be kept; change their role or password instead.` };
+    return { ok: false, message: fmt(t.users.err.blockers, { list: refs.join(t.users.err.sep) }) };
   }
   try {
     // Conditional on the role so a concurrent change can never delete an Owner.
     const r = await db.user.deleteMany({ where: { id: target.id, role: { in: ["ADMIN", "USER"] } } });
-    if (r.count !== 1) return { ok: false, message: "User not found" };
+    if (r.count !== 1) return { ok: false, message: t.users.err.notFound };
   } catch (e) {
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2003") return { ok: false, message: "This user can't be deleted because other records still use it." };
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2003") return { ok: false, message: t.users.err.inUse };
     throw e;
   }
   await removeAvatarFile(target.image);
   revalidatePath("/users");
   // Their existing session ends on its next request: auth.ts re-checks the account in MySQL.
-  return { ok: true, message: "User deleted" };
+  return { ok: true, message: t.users.ok.deleted };
 }

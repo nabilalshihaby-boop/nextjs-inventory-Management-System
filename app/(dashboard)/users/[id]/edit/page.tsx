@@ -4,9 +4,12 @@ import { connection } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { canManageUsers } from "@/lib/roles";
+import { getDict } from "@/lib/i18n/server";
 import UserForm from "@/components/users/UserForm";
 
-export const metadata: Metadata = { title: "Edit User" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).users.editTitle };
+}
 
 export const instant = false;
 

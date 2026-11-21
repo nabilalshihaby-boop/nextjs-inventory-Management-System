@@ -14,12 +14,13 @@ import { enQuot } from "@/lib/i18n/dictionaries/en-quot";
 import { enFinance } from "@/lib/i18n/dictionaries/en-fin";
 import { enExpenses } from "@/lib/i18n/dictionaries/en-exp";
 import { enRegister, enRegisterReport, enDenom } from "@/lib/i18n/dictionaries/en-reg";
-import { enPosTx } from "@/lib/i18n/dictionaries/en-postx";
+import { enPosTx, enPosReceipt } from "@/lib/i18n/dictionaries/en-postx";
 import { enCurrencies } from "@/lib/i18n/dictionaries/en-cur";
 import { enWarehouses } from "@/lib/i18n/dictionaries/en-wh";
 import { enCatalog, enProducts } from "@/lib/i18n/dictionaries/en-prod";
 import { enTransfers } from "@/lib/i18n/dictionaries/en-xfer";
 import { enAdjustments } from "@/lib/i18n/dictionaries/en-adj";
+import { enUsers } from "@/lib/i18n/dictionaries/en-users";
 export const en = {
   common: {
     save: "Save",
@@ -303,6 +304,7 @@ export const en = {
     previewProduct: "Product",
     previewStatus: "Status",
     previewPaid: "Paid",
+    previewSample: "Espresso Beans",
     previewProducts: "Products",
     previewSales: "Sales",
     previewLowStock: "Low stock",
@@ -324,6 +326,8 @@ export const en = {
     title: "System Settings",
     defaultCurrency: "Default Currency",
     noCurrencies: "No currencies available yet",
+    defaultWarehouse: "Default Warehouse",
+    noWarehousesYet: "No warehouses available yet",
     noCurrenciesHint: "No currencies yet.",
     createCurrency: "Create a currency",
     firstThenChoose: "first, then choose it here.",
@@ -613,15 +617,17 @@ export const en = {
   registerReport: enRegisterReport,
   denom: enDenom,
   posTx: enPosTx,
+  posReceipt: enPosReceipt,
   currencies: enCurrencies,
   warehouses: enWarehouses,
   catalog: enCatalog,
   products: enProducts,
   transfers: enTransfers,
   adjustments: enAdjustments,
+  users: enUsers,
   langAdmin: {
     title: "Languages",
-    sections: { nav: "Dashboard & Navigation", auth: "Authentication & Account", settings: "Settings & Preferences", pos: "POS & Register", shared: "Shared UI & Reports", sales: "Sales", purchases: "Purchases", finance: "Finance", products: "Products & Inventory", people: "Customers & Suppliers", reports: "Reports" },
+    sections: { nav: "Dashboard & Navigation", auth: "Authentication & Account", settings: "Settings & Preferences", pos: "POS & Register", shared: "Shared UI & Reports", sales: "Sales", purchases: "Purchases", finance: "Finance", products: "Products & Inventory", people: "Customers & Suppliers", users: "Users & Roles", reports: "Reports" },
     intro: "Edit the Arabic wording shown to signed-in users. English comes from the application code and cannot be edited here.",
     search: "Search by English, Arabic, or key",
     emptySection: "No translations in this section yet",

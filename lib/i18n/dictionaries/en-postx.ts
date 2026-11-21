@@ -1,4 +1,32 @@
 // English text for POS checkout and held-order server messages (the ones Phase 1 left in English).
+// English text of the POS receipt report (body, headers, totals and footer).
+export const enPosReceipt = {
+  title: "POS Receipt",
+  sale: "Sale",
+  dateTime: "Date & Time",
+  customer: "Customer",
+  warehouse: "Warehouse",
+  servedBy: "Served by",
+  colItem: "Item",
+  colQty: "Qty",
+  colUnitPrice: "Unit Price",
+  colTax: "Tax",
+  colAmount: "Amount",
+  grandTotal: "Grand Total",
+  subTotal: "Sub Total",
+  orderTax: "Order Tax",
+  paid: "Paid",
+  due: "Due",
+  colPayment: "Payment",
+  colMethod: "Method",
+  colInto: "Received Into",
+  totalPaid: "Total Paid ({status})",
+  statusPartial: "Partially paid",
+  statusPaid: "Paid",
+  notes: "Notes: {notes}",
+  thanks: "Thank you for your purchase. Returns are handled through Sales Returns.",
+};
+
 export const enPosTx = {
   checkout: {
     keyInvalid: "This checkout key is invalid. Refresh the POS and try again.",

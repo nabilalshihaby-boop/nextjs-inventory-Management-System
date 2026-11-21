@@ -8,7 +8,8 @@ export const SECTIONS = [
   { id: "nav", label: "Dashboard & Navigation", groups: ["nav", "roles", "shell", "dash"] },
   { id: "auth", label: "Authentication & Account", groups: ["auth", "profile", "password", "pin"] },
   { id: "settings", label: "Settings & Preferences", groups: ["prefs", "theme", "settings", "denom", "currencies"] },
-  { id: "pos", label: "POS & Register", groups: ["pos", "register", "posTx"] },
+  { id: "users", label: "Users & Roles", groups: ["users"] },
+  { id: "pos", label: "POS & Register", groups: ["pos", "register", "posTx", "posReceipt"] },
   { id: "shared", label: "Shared UI & Reports", groups: ["common", "report"] },
   // Prepared for later phases (no keys yet -> "No translations in this section yet").
   { id: "sales", label: "Sales", groups: ["sales", "salesReturns", "quotations"] },

@@ -5,11 +5,14 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 import { canManageUsers, roleLabel } from "@/lib/roles";
+import { getLocaleInfo } from "@/lib/i18n/server";
 import { getSystemSettings } from "@/lib/settings";
 import type { UserRow } from "@/lib/users";
 import UsersTable from "@/components/users/UsersTable";
 
-export const metadata: Metadata = { title: "Users" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getLocaleInfo()).dict.users.title };
+}
 
 export const instant = false;
 
@@ -21,6 +24,7 @@ export default async function UsersPage() {
   if (!session?.user?.id) redirect("/");
   if (!canManageUsers(session.user.role)) redirect("/dashboard");
 
+  const { locale, dict } = await getLocaleInfo();
   const [users, settings] = await Promise.all([
     db.user.findMany({
       orderBy: [{ role: "asc" }, { createdAt: "desc" }], // Owner first (enum order), then newest
@@ -37,10 +41,10 @@ export default async function UsersPage() {
       email: u.email,
       phoneNumber: u.phoneNumber,
       role: u.role,
-      roleLabel: roleLabel(u.role),
+      roleLabel: (dict.roles as Record<string, string>)[u.role] ?? roleLabel(u.role),
       image: u.image,
       initials: name.split(/\s+/).map((w) => w[0] ?? "").join("").slice(0, 2).toUpperCase(),
-      createdOn: formatDateTime(u.createdAt, settings?.dateFormat),
+      createdOn: formatDateTime(u.createdAt, settings?.dateFormat, locale),
       isSelf: u.id === session.user.id,
     };
   });

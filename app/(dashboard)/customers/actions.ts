@@ -4,18 +4,18 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getDict } from "@/lib/i18n/server";
 import { fmt } from "@/lib/i18n/config";
+import type { Dictionary } from "@/lib/i18n";
 import { auth } from "@/auth";
 import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
 import { canManageCustomers } from "@/lib/roles";
-import { customerInputSchema, type CustomerField, type CustomerInput } from "@/lib/customers";
+import { makeCustomerSchema, type CustomerField, type CustomerInput } from "@/lib/customers";
 
 export type CustomerResult =
   | { ok: true; message: string }
   | { ok: false; message: string; fieldErrors?: Partial<Record<CustomerField, string>> };
 
 const idSchema = z.string().trim().min(1).max(64);
-const DUPLICATE = "A customer with this name already exists";
 
 /** OWNER/ADMIN only — re-checked in every mutation; the role never comes from the client. */
 async function authorize(): Promise<CustomerResult | null> {
@@ -27,12 +27,12 @@ async function authorize(): Promise<CustomerResult | null> {
 }
 
 type Validated = { ok: true; data: CustomerInput } | { ok: false; error: CustomerResult };
-function validate(input: unknown): Validated {
-  const parsed = customerInputSchema.safeParse(input);
+function validate(input: unknown, t: Dictionary): Validated {
+  const parsed = makeCustomerSchema(t.customers.val).safeParse(input);
   if (parsed.success) return { ok: true, data: parsed.data };
   const fieldErrors: Partial<Record<CustomerField, string>> = {};
   for (const issue of parsed.error.issues) fieldErrors[issue.path[0] as CustomerField] ??= issue.message;
-  return { ok: false, error: { ok: false, message: Object.values(fieldErrors)[0] ?? "Please check the form", fieldErrors } };
+  return { ok: false, error: { ok: false, message: Object.values(fieldErrors)[0] ?? t.common.checkForm, fieldErrors } };
 }
 
 const toData = (d: CustomerInput) => ({
@@ -46,47 +46,49 @@ const toData = (d: CustomerInput) => ({
 });
 
 const isUniqueViolation = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
-const duplicate = (): CustomerResult => ({ ok: false, message: DUPLICATE, fieldErrors: { name: DUPLICATE } });
+const duplicate = (t: Dictionary): CustomerResult => ({ ok: false, message: t.customers.duplicate, fieldErrors: { name: t.customers.duplicate } });
 
 export async function createCustomer(input: unknown): Promise<CustomerResult> {
   const denied = await authorize();
   if (denied) return denied;
-  const v = validate(input);
+  const t = await getDict();
+  const v = validate(input, t);
   if (!v.ok) return v.error;
 
   // Name is unique regardless of case (column collation); checked here for a clean message.
-  if (await db.customer.findUnique({ where: { name: v.data.name }, select: { id: true } })) return duplicate();
+  if (await db.customer.findUnique({ where: { name: v.data.name }, select: { id: true } })) return duplicate(t);
   try {
     await db.customer.create({ data: toData(v.data) });
   } catch (e) {
-    if (isUniqueViolation(e)) return duplicate();
+    if (isUniqueViolation(e)) return duplicate(t);
     throw e;
   }
   revalidatePath("/customers");
-  return { ok: true, message: "Customer created" };
+  return { ok: true, message: t.customers.ok.created };
 }
 
 export async function updateCustomer(id: unknown, input: unknown): Promise<CustomerResult> {
   const denied = await authorize();
   if (denied) return denied;
+  const t = await getDict();
   const cid = idSchema.safeParse(id);
-  if (!cid.success) return { ok: false, message: "Customer not found" };
-  const v = validate(input);
+  if (!cid.success) return { ok: false, message: t.customers.err.notFound };
+  const v = validate(input, t);
   if (!v.ok) return v.error;
 
   // The id only selects the row; it is looked up server-side before anything changes.
   const existing = await db.customer.findUnique({ where: { id: cid.data }, select: { id: true } });
-  if (!existing) return { ok: false, message: "Customer not found" };
-  if (await db.customer.findFirst({ where: { name: v.data.name, NOT: { id: existing.id } }, select: { id: true } })) return duplicate();
+  if (!existing) return { ok: false, message: t.customers.err.notFound };
+  if (await db.customer.findFirst({ where: { name: v.data.name, NOT: { id: existing.id } }, select: { id: true } })) return duplicate(t);
 
   try {
     await db.customer.update({ where: { id: existing.id }, data: toData(v.data) });
   } catch (e) {
-    if (isUniqueViolation(e)) return duplicate();
+    if (isUniqueViolation(e)) return duplicate(t);
     throw e;
   }
   revalidatePath("/customers");
-  return { ok: true, message: "Customer updated" };
+  return { ok: true, message: t.customers.ok.updated };
 }
 
 /**

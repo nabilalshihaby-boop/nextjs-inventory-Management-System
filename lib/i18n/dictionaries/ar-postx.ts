@@ -1,6 +1,34 @@
 // Default Arabic for POS checkout and held-order server messages. Must match en-postx.ts exactly (typed).
 import type { Dictionary } from "@/lib/i18n/dictionaries/en";
 
+// Default Arabic for the POS receipt report. Must match en-postx.ts exactly (typed).
+export const arPosReceipt: Dictionary["posReceipt"] = {
+  title: "إيصال نقطة البيع",
+  sale: "عملية البيع",
+  dateTime: "التاريخ والوقت",
+  customer: "العميل",
+  warehouse: "المستودع",
+  servedBy: "خدمه",
+  colItem: "الصنف",
+  colQty: "الكمية",
+  colUnitPrice: "سعر الوحدة",
+  colTax: "الضريبة",
+  colAmount: "المبلغ",
+  grandTotal: "الإجمالي الكلي",
+  subTotal: "الإجمالي الفرعي",
+  orderTax: "ضريبة الطلب",
+  paid: "المدفوع",
+  due: "المستحق",
+  colPayment: "الدفعة",
+  colMethod: "الطريقة",
+  colInto: "تم الاستلام في",
+  totalPaid: "إجمالي المدفوع ({status})",
+  statusPartial: "مدفوع جزئيًا",
+  statusPaid: "مدفوع",
+  notes: "ملاحظات: {notes}",
+  thanks: "شكرًا لشرائك. تتم معالجة المرتجعات عبر مرتجعات المبيعات.",
+};
+
 export const arPosTx: Dictionary["posTx"] = {
   checkout: {
     keyInvalid: "مفتاح إتمام البيع هذا غير صالح. حدّث نقطة البيع وحاول مرة أخرى.",

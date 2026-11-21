@@ -4,9 +4,12 @@ import { connection } from "next/server";
 import { auth } from "@/auth";
 import { getCountryOptions } from "@/lib/countries";
 import { canManageCustomers } from "@/lib/roles";
+import { getDict, getLocale } from "@/lib/i18n/server";
 import CustomerForm from "@/components/customers/CustomerForm";
 
-export const metadata: Metadata = { title: "Create Customer" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getDict()).customers.form.createTitle };
+}
 
 export const instant = false;
 
@@ -17,5 +20,5 @@ export default async function CreateCustomerPage() {
   if (!session?.user?.id) redirect("/");
   if (!canManageCustomers(session.user.role)) redirect("/customers");
 
-  return <CustomerForm countries={getCountryOptions()} />;
+  return <CustomerForm countries={getCountryOptions(await getLocale())} />;
 }

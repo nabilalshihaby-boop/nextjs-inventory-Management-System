@@ -6,13 +6,16 @@ import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 import { formatMoney, formatQuantity } from "@/lib/money";
 import { getReportCompany } from "@/lib/report-company";
-import { getDict } from "@/lib/i18n/server";
+import { getLocaleInfo } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n/config";
 import { canUsePos } from "@/lib/roles";
 import { getSystemSettings } from "@/lib/settings";
 import ReportActions from "@/components/reports/ReportActions";
 import ReportDocument, { ReportSummary } from "@/components/reports/ReportDocument";
 
-export const metadata: Metadata = { title: "POS Receipt" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getLocaleInfo()).dict.posReceipt.title };
+}
 
 export const instant = false;
 
@@ -26,6 +29,8 @@ export default async function PosReceiptPage({ params }: PageProps<"/reports/pos
   if (!session?.user?.id) redirect("/");
   if (!canUsePos(session.user.role)) redirect("/dashboard");
 
+  const { dict, locale } = await getLocaleInfo();
+  const R = dict.posReceipt;
   const { saleId } = await params;
   if (typeof saleId !== "string" || saleId.length > 64) notFound();
   const sale = await db.sale.findFirst({
@@ -53,29 +58,29 @@ export default async function PosReceiptPage({ params }: PageProps<"/reports/pos
 
   return (
     <>
-      <ReportActions backHref="/pos" backLabel={(await getDict()).report.backToPos} />
+      <ReportActions backHref="/pos" backLabel={dict.report.backToPos} />
       <ReportDocument
-        title="POS Receipt"
+        title={R.title}
         company={company}
         generatedAt={generatedAt}
         generatedBy={cashier ? `${cashier.firstName} ${cashier.lastName}` : undefined}
         testId="report-pos-receipt"
         meta={[
-          { label: "Sale", value: sale.reference },
-          { label: "Date & Time", value: formatDateTime(sale.createdAt, settings?.dateFormat) },
-          { label: "Customer", value: sale.customer.name },
-          { label: "Warehouse", value: sale.warehouse.name },
-          { label: "Served by", value: cashier ? `${cashier.firstName} ${cashier.lastName}` : "—" },
+          { label: R.sale, value: <bdi dir="ltr">{sale.reference}</bdi> },
+          { label: R.dateTime, value: <bdi dir="ltr">{formatDateTime(sale.createdAt, settings?.dateFormat, locale)}</bdi> },
+          { label: R.customer, value: sale.customer.name },
+          { label: R.warehouse, value: sale.warehouse.name },
+          { label: R.servedBy, value: cashier ? `${cashier.firstName} ${cashier.lastName}` : "—" },
         ]}
       >
         <table className="bp-report-table" data-testid="receipt-items">
           <thead>
             <tr>
-              <th>Item</th>
-              <th className="num">Qty</th>
-              <th className="num">Unit Price</th>
-              <th className="num">Tax</th>
-              <th className="num">Amount</th>
+              <th>{R.colItem}</th>
+              <th className="num">{R.colQty}</th>
+              <th className="num">{R.colUnitPrice}</th>
+              <th className="num">{R.colTax}</th>
+              <th className="num">{R.colAmount}</th>
             </tr>
           </thead>
           <tbody>
@@ -83,60 +88,60 @@ export default async function PosReceiptPage({ params }: PageProps<"/reports/pos
               <tr key={i.id} data-code={i.productCode}>
                 <td>
                   {i.productName}
-                  <span className="bp-report-muted" style={{ display: "block" }}>{i.productCode}</span>
+                  <span className="bp-report-muted" style={{ display: "block" }}><bdi dir="ltr">{i.productCode}</bdi></span>
                 </td>
-                <td className="num">{formatQuantity(i.quantity.toFixed(3))} {i.unitName}</td>
-                <td className="num">{m(i.unitPrice)}</td>
-                <td className="num">{m(i.taxAmount)}</td>
-                <td className="num">{m(i.subtotal)}</td>
+                <td className="num"><bdi dir="ltr">{formatQuantity(i.quantity.toFixed(3))}</bdi> {i.unitName}</td>
+                <td className="num"><bdi dir="ltr">{m(i.unitPrice)}</bdi></td>
+                <td className="num"><bdi dir="ltr">{m(i.taxAmount)}</bdi></td>
+                <td className="num"><bdi dir="ltr">{m(i.subtotal)}</bdi></td>
               </tr>
             ))}
           </tbody>
           <tfoot>
             <tr data-testid="receipt-total">
-              <td colSpan={4}>Grand Total</td>
-              <td className="num">{m(sale.grandTotal)}</td>
+              <td colSpan={4}>{R.grandTotal}</td>
+              <td className="num"><bdi dir="ltr">{m(sale.grandTotal)}</bdi></td>
             </tr>
           </tfoot>
         </table>
         <ReportSummary
           testId="receipt-summary"
           items={[
-            { label: "Sub Total", value: m(sale.subtotal) },
-            { label: "Order Tax", value: m(sale.orderTaxAmount) },
-            { label: "Grand Total", value: m(sale.grandTotal) },
-            { label: "Paid", value: m(sale.paidAmount) },
-            { label: "Due", value: m(due), strong: true },
+            { label: R.subTotal, value: m(sale.subtotal) },
+            { label: R.orderTax, value: m(sale.orderTaxAmount) },
+            { label: R.grandTotal, value: m(sale.grandTotal) },
+            { label: R.paid, value: m(sale.paidAmount) },
+            { label: R.due, value: m(due), strong: true },
           ]}
         />
         <table className="bp-report-table" data-testid="receipt-payments" style={{ marginTop: 12 }}>
           <thead>
             <tr>
-              <th>Payment</th>
-              <th>Method</th>
-              <th>Received Into</th>
-              <th className="num">Amount</th>
+              <th>{R.colPayment}</th>
+              <th>{R.colMethod}</th>
+              <th>{R.colInto}</th>
+              <th className="num">{R.colAmount}</th>
             </tr>
           </thead>
           <tbody>
             {pays.map((x) => (
               <tr key={x.reference} data-testid="receipt-payment-row">
-                <td>{x.reference}</td>
-                <td>{x.paymentMethod}</td>
+                <td><bdi dir="ltr">{x.reference}</bdi></td>
+                <td>{(dict.pos.methods as Record<string, string>)[x.paymentMethod] ?? x.paymentMethod}</td>
                 <td>{x.cashBankAccount.name}</td>
-                <td className="num">{m(x.amount)}</td>
+                <td className="num"><bdi dir="ltr">{m(x.amount)}</bdi></td>
               </tr>
             ))}
           </tbody>
           <tfoot>
             <tr data-testid="receipt-paid-total">
-              <td colSpan={3}>Total Paid ({due.gt(0) ? "Partially paid" : "Paid"})</td>
-              <td className="num">{m(sale.paidAmount)}</td>
+              <td colSpan={3}>{fmt(R.totalPaid, { status: due.gt(0) ? R.statusPartial : R.statusPaid })}</td>
+              <td className="num"><bdi dir="ltr">{m(sale.paidAmount)}</bdi></td>
             </tr>
           </tfoot>
         </table>
-        {sale.notes && <p className="bp-report-note">Notes: {sale.notes}</p>}
-        <p className="bp-report-note">Thank you for your purchase. Returns are handled through Sales Returns.</p>
+        {sale.notes && <p className="bp-report-note">{fmt(R.notes, { notes: sale.notes })}</p>}
+        <p className="bp-report-note">{R.thanks}</p>
       </ReportDocument>
     </>
   );
