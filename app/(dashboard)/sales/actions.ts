@@ -7,8 +7,8 @@ import { auth } from "@/auth";
 import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
 import { todayLocal } from "@/lib/cash-bank";
-import { formatQuantity } from "@/lib/money";
 import { canManageSales } from "@/lib/roles";
+import { SaleError, deductStock } from "@/lib/sale-stock";
 import { getDefaultCurrency } from "@/lib/settings";
 import { toUnits } from "@/lib/transfers";
 import { calcSale, formatSaleReference, saleInputSchema, type SaleField, type SaleInput } from "@/lib/sales";
@@ -37,11 +37,6 @@ const idSchema = z.string().trim().min(1).max(64);
 const MAX_TOTAL = toUnits("999999999999.99", 2);
 const NO_CURRENCY = "No default currency is configured. The Owner must choose one in System Settings before sales can be recorded.";
 
-class SaleError extends Error {
-  constructor(message: string, readonly itemId?: string) {
-    super(message);
-  }
-}
 const isKnown = (e: unknown, ...codes: string[]) => e instanceof Prisma.PrismaClientKnownRequestError && codes.includes(e.code);
 const dateOnly = (v: string) => new Date(`${v}T00:00:00.000Z`);
 const txOptions = { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 15_000 } as const;
@@ -112,23 +107,6 @@ async function prepare(d: SaleInput): Promise<{ ok: true; lines: Prisma.SaleItem
   });
   const stock = d.items.map((i) => ({ productId: i.productId, quantity: i.quantity, productCode: byId.get(i.productId)!.code, productName: byId.get(i.productId)!.name }));
   return { ok: true, lines, stock, totals };
-}
-
-/**
- * Deduct every line from the warehouse — conditional (never below zero), stable lock order.
- * Throws SaleError (→ the caller's transaction rolls back) naming the first line without stock.
- */
-async function deductStock(tx: Prisma.TransactionClient, warehouseId: string, lines: { productId: string; quantity: Prisma.Decimal | string; productCode: string; productName: string }[]) {
-  for (const l of [...lines].sort((a, b) => a.productId.localeCompare(b.productId))) {
-    const r = await tx.productStock.updateMany({ where: { productId: l.productId, warehouseId, quantity: { gte: l.quantity } }, data: { quantity: { decrement: l.quantity } } });
-    if (r.count !== 1) {
-      const [s, w] = await Promise.all([
-        tx.productStock.findUnique({ where: { productId_warehouseId: { productId: l.productId, warehouseId } }, select: { quantity: true } }),
-        tx.warehouse.findUnique({ where: { id: warehouseId }, select: { name: true } }),
-      ]);
-      throw new SaleError(`Not enough stock of ${l.productCode} ${l.productName} in ${w?.name ?? "the warehouse"}: ${formatQuantity(new Prisma.Decimal(l.quantity).toFixed(3))} needed, only ${formatQuantity((s?.quantity ?? new Prisma.Decimal(0)).toFixed(3))} available.`, l.productId);
-    }
-  }
 }
 
 async function lockSale(tx: Prisma.TransactionClient, id: string) {

@@ -135,6 +135,7 @@ const EXTRA_TITLES: { href: string; title: string }[] = [
   { href: "/preferences", title: "Appearance & Cache" },
   { href: "/suppliers/statement", title: "Supplier Statement" },
   { href: "/reports/supplier-statement", title: "Supplier Statement Report" },
+  { href: "/settings/denominations", title: "Cash Denominations" },
   { href: "/customers/statement", title: "Customer Statement" },
   { href: "/reports/customer-statement", title: "Customer Statement Report" },
 ];

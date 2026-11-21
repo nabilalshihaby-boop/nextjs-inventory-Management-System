@@ -33,6 +33,10 @@ model User {
   /// Bumped whenever all existing sessions must end (password reset/change). Every session read
   /// compares it with the value stored in the encrypted JWT (auth.ts). Never sent to the browser.
   sessionVersion Int             @default(0)
+  /// bcrypt hash of the optional POS Cashier PIN (OWNER/ADMIN, set on the Profile page). Only unlocks the POS
+  /// screen of an already signed-in session - never a login. Independent of passwordHash: a password change or
+  /// reset leaves it untouched. Never selected into pages/responses; removed with the user row.
+  posPinHash     String?         @db.VarChar(100)
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   preference     UserPreference?
@@ -58,6 +62,7 @@ model Currency {
   sales            Sale[]
   saleReturns      SaleReturn[]
   customerPayments CustomerPayment[]
+  denominations    CurrencyDenomination[]
 
   @@map("currencies")
 }
@@ -177,6 +182,7 @@ model Customer {
   sales            Sale[]
   saleReturns      SaleReturn[]
   customerPayments CustomerPayment[]
+  posWalkInIn      SystemSettings[]  @relation("PosWalkInCustomer")
 
   @@map("customers")
 }
@@ -685,6 +691,9 @@ model CashBankAccount {
   expenses         Expense[]
   supplierPayments SupplierPayment[]
   customerPayments CustomerPayment[]
+  registerSessions  CashRegisterSession[]
+  movementsFrom     CashRegisterMovement[]        @relation("RegisterMovementFrom")
+  movementsTo       CashRegisterMovement[]        @relation("RegisterMovementTo")
 
   @@map("cash_bank_accounts")
 }
@@ -720,6 +729,7 @@ model CashBankTransaction {
   /// Set (at creation only) on the one DEPOSIT produced by a customer payment.
   customerPaymentId    String?                 @unique
   customerPayment      CustomerPayment?        @relation("CustomerPaymentLedger", fields: [customerPaymentId], references: [id], onDelete: Restrict)
+  registerMovement      CashRegisterMovement?
   createdAt            DateTime                @default(now())
 
   @@index([expenseId])
@@ -751,6 +761,10 @@ model SystemSettings {
   /// Restrict: the database refuses to delete the currency selected here.
   defaultCurrencyId   String?
   defaultCurrency     Currency? @relation("DefaultCurrency", fields: [defaultCurrencyId], references: [id], onDelete: Restrict)
+  /// Optional POS Walk-in Customer: a REAL customer chosen by the Owner (never auto-created). Restrict:
+  /// the database refuses to delete the customer selected here, so this can never point at a stale row.
+  posWalkInCustomerId String?
+  posWalkInCustomer   Customer? @relation("PosWalkInCustomer", fields: [posWalkInCustomerId], references: [id], onDelete: Restrict)
   defaultEmail        String?   @db.VarChar(191)
   currencyIconRight   Boolean   @default(false)
   /// Relative path under /uploads/logos (local-development storage), or null.
@@ -908,6 +922,9 @@ model Sale {
   items              SaleItem[]
   returns            SaleReturn[]
   paymentAllocations CustomerPaymentAllocation[]
+  /// Set only on sales created by POS checkout: the idempotency key (unique) that makes a retried or
+  /// double-submitted checkout create the sale, stock deduction and payment at most once.
+  posCheckoutKey     String?                     @unique @db.VarChar(64)
 
   @@index([customerId])
   @@index([warehouseId])
@@ -1046,9 +1063,13 @@ model CustomerPayment {
   createdAt         DateTime                    @default(now())
   allocations       CustomerPaymentAllocation[]
   ledgerEntry       CashBankTransaction?        @relation("CustomerPaymentLedger")
+  /// Set only at creation, only for a POS CASH tender: the register shift it belongs to (immutable).
+  registerSessionId String?
+  registerSession   CashRegisterSession?        @relation(fields: [registerSessionId], references: [id], onDelete: Restrict)
 
   @@index([customerId])
   @@index([cashBankAccountId])
+  @@index([registerSessionId])
   @@map("customer_payments")
 }
 
@@ -1063,4 +1084,188 @@ model CustomerPaymentAllocation {
   @@unique([paymentId, saleId])
   @@index([saleId])
   @@map("customer_payment_allocations")
+}
+
+// ---------------------------------------------------------------------------------------------
+// POS held orders: a saved POS cart (draft). NOT a sale, payment or ledger entry and it never
+// touches stock, money, customer balances or product prices — a held order reserves nothing.
+// customer/warehouse/account/product ids are plain strings on purpose (no foreign keys): a draft
+// must never block deleting master data, and a deleted/missing/inactive reference is detected and
+// reported when the order is resumed (checkout re-reads and re-validates everything anyway).
+// Only its creator can read/resume/discard it. Completing a checkout consumes it (same transaction).
+enum PosHeldOrderStatus {
+  HELD
+  CONSUMED
+  DISCARDED
+}
+
+model PosHeldOrder {
+  id                String             @id @default(cuid())
+  /// MySQL AUTO_INCREMENT: concurrency-safe and never reused (gaps are possible).
+  number            Int                @unique @default(autoincrement())
+  /// "HO_000001" — generated server-side from `number`.
+  reference         String             @unique @db.VarChar(20)
+  /// Idempotency key of the Hold action: a double-clicked / retried Hold creates one order only.
+  holdKey           String             @unique @db.VarChar(64)
+  createdById       String             @db.VarChar(191)
+  status            PosHeldOrderStatus @default(HELD)
+  customerId        String?            @db.VarChar(191)
+  warehouseId       String?            @db.VarChar(191)
+  cashBankAccountId String?            @db.VarChar(191)
+  paymentMethod     String?            @db.VarChar(32)
+  notes             String?            @db.Text
+  /// Set when a POS checkout consumed this order (the resulting sale).
+  consumedSaleId    String?            @unique @db.VarChar(191)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  items             PosHeldOrderItem[]
+  /// Draft payment rows (split payment). Orders held before split payments existed have none and
+  /// carry the single account/method in the legacy columns above: they resume as ONE tender.
+  tenders           PosHeldOrderTender[]
+
+  @@index([createdById, status])
+  @@map("pos_held_orders")
+}
+
+model PosHeldOrderItem {
+  id          String       @id @default(cuid())
+  heldOrderId String
+  heldOrder   PosHeldOrder @relation(fields: [heldOrderId], references: [id], onDelete: Cascade)
+  productId   String       @db.VarChar(191)
+  /// Display snapshots only (the current product is re-read on resume and at checkout).
+  productCode String       @db.VarChar(64)
+  productName String       @db.VarChar(191)
+  quantity    Decimal      @db.Decimal(14, 3)
+  /// The unit price shown when it was held — informational; checkout always uses the live price.
+  unitPrice   Decimal      @db.Decimal(14, 2)
+
+  @@unique([heldOrderId, productId])
+  @@map("pos_held_order_items")
+}
+
+/// One draft payment row of a held POS order. Plain ids (no foreign keys) and nullable fields on
+/// purpose: a draft can be half-filled and must never block deleting an account.
+model PosHeldOrderTender {
+  id                String       @id @default(cuid())
+  heldOrderId       String
+  heldOrder         PosHeldOrder @relation(fields: [heldOrderId], references: [id], onDelete: Cascade)
+  position          Int
+  paymentMethod     String?      @db.VarChar(32)
+  cashBankAccountId String?      @db.VarChar(191)
+  amount            Decimal?     @db.Decimal(14, 2)
+
+  @@index([heldOrderId])
+  @@map("pos_held_order_tenders")
+}
+
+// ---------------------------------------------------------------------------------------------
+// POS register sessions: one physical cash-drawer SHIFT on a CASH account. Not an accounting
+// system: opening/closing writes NO ledger, sale, payment or stock row, and the account balance is
+// never touched. Expected Cash = openingCash + Σ POS CASH tenders (customer_payments) linked to this
+// session; the whole-account ledger balance is NOT used. Closed sessions are immutable.
+// `openAccountKey` = the account id while OPEN and NULL once CLOSED, with a UNIQUE index: MySQL
+// lets many NULLs coexist, so an account can have many closed shifts but only ONE open one.
+enum CashRegisterStatus {
+  OPEN
+  CLOSED
+}
+
+model CashRegisterSession {
+  id                String             @id @default(cuid())
+  /// MySQL AUTO_INCREMENT: concurrency-safe and never reused (gaps are possible).
+  number            Int                @unique @default(autoincrement())
+  /// "RS_000001" - generated server-side from `number`.
+  reference         String             @unique @db.VarChar(20)
+  cashBankAccountId String
+  cashBankAccount   CashBankAccount    @relation(fields: [cashBankAccountId], references: [id], onDelete: Restrict)
+  status            CashRegisterStatus @default(OPEN)
+  openAccountKey    String?            @unique @db.VarChar(191)
+  openingCash       Decimal            @db.Decimal(14, 2)
+  openedAt          DateTime           @default(now())
+  openedById        String             @db.VarChar(191)
+  openingNotes      String?            @db.Text
+  closedAt          DateTime?
+  closedById        String?            @db.VarChar(191)
+  /// Final snapshot, written once at close.
+  closingCash       Decimal?           @db.Decimal(14, 2)
+  expectedCash      Decimal?           @db.Decimal(14, 2)
+  difference        Decimal?           @db.Decimal(14, 2)
+  closingNotes      String?            @db.Text
+  tenders           CustomerPayment[]
+  movements         CashRegisterMovement[]
+  /// Immutable cash-count snapshot taken when the session was closed with denomination counting.
+  counts            CashRegisterCount[]
+
+  @@index([cashBankAccountId, status])
+  @@map("cash_register_sessions")
+}
+
+// Register Cash In / Cash Out: physical cash entering/leaving an OPEN register's drawer, always a
+// real balanced internal TRANSFER between the register's CASH account and a counter-account (the
+// linked ledger row is `transactionId`). Never revenue/expense/payment. Append-only: no edit/delete.
+// Expected Cash = opening + POS CASH tenders + Σ CASH_IN - Σ CASH_OUT (linked to the session only).
+enum CashRegisterMovementType {
+  CASH_IN
+  CASH_OUT
+}
+
+model CashRegisterMovement {
+  id            String                   @id @default(cuid())
+  /// MySQL AUTO_INCREMENT: concurrency-safe and never reused (gaps are possible).
+  number        Int                      @unique @default(autoincrement())
+  /// "RM_000001" - generated server-side from `number`.
+  reference     String                   @unique @db.VarChar(20)
+  sessionId     String
+  session       CashRegisterSession      @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  type          CashRegisterMovementType
+  amount        Decimal                  @db.Decimal(14, 2)
+  fromAccountId String
+  fromAccount   CashBankAccount          @relation("RegisterMovementFrom", fields: [fromAccountId], references: [id], onDelete: Restrict)
+  toAccountId   String
+  toAccount     CashBankAccount          @relation("RegisterMovementTo", fields: [toAccountId], references: [id], onDelete: Restrict)
+  /// The ledger TRANSFER row this movement created (one-to-one, immutable).
+  transactionId String                   @unique
+  transaction   CashBankTransaction      @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  notes         String                   @db.Text
+  createdAt     DateTime                 @default(now())
+  createdById   String                   @db.VarChar(191)
+
+  @@index([sessionId])
+  @@map("cash_register_movements")
+}
+
+// Cash denominations per currency (banknotes/coins) used to COUNT the drawer when closing a register.
+// Entered by the Owner (never seeded). A denomination used by a closed count is inactivated, not
+// deleted. Closed sessions keep their own snapshot rows (CashRegisterCount), so later edits never
+// change history.
+model CurrencyDenomination {
+  id         String   @id @default(cuid())
+  currencyId String
+  currency   Currency @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  value      Decimal  @db.Decimal(14, 2)
+  label      String?  @db.VarChar(60)
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([currencyId, value])
+  @@map("currency_denominations")
+}
+
+/// One line of a closed session cash count: a SNAPSHOT of the denomination value/label, the counted
+/// quantity and the line total (value x count). `denominationId` is a plain reference (no foreign key)
+/// used only to know a denomination has been used.
+model CashRegisterCount {
+  id             String              @id @default(cuid())
+  sessionId      String
+  session        CashRegisterSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  denominationId String?             @db.VarChar(191)
+  value          Decimal             @db.Decimal(14, 2)
+  label          String?             @db.VarChar(60)
+  count          Int
+  lineTotal      Decimal             @db.Decimal(14, 2)
+
+  @@index([sessionId])
+  @@index([denominationId])
+  @@map("cash_register_counts")
 }

@@ -98,6 +98,8 @@ export async function deleteCurrency(id: unknown): Promise<CurrencyResult> {
   if (accounts) return { ok: false, message: `This currency is used by ${accounts} cash & bank account${accounts === 1 ? "" : "s"} and can't be deleted.` };
   if (purchases) return { ok: false, message: `This currency is used by ${purchases} purchase${purchases === 1 ? "" : "s"} and can't be deleted.` };
   if (payments) return { ok: false, message: `This currency is used by ${payments} supplier payment${payments === 1 ? "" : "s"} and can't be deleted.` };
+  const denoms = await db.currencyDenomination.count({ where: { currencyId: existing.id } });
+  if (denoms) return { ok: false, message: `This currency has ${denoms} cash denomination${denoms === 1 ? "" : "s"} configured. Remove them in Settings > Cash Denominations first.` };
   const quotations = await db.quotation.count({ where: { currencyId: existing.id } });
   if (quotations) return { ok: false, message: `This currency is used by ${quotations} quotation${quotations === 1 ? "" : "s"} and can't be deleted.` };
   const sales = await db.sale.count({ where: { currencyId: existing.id } });

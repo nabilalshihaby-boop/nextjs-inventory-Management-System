@@ -22,6 +22,8 @@ const optional = (max: number, label: string) =>
 const schema = z.object({
   // A Currency record id; checked against the database below.
   defaultCurrencyId: z.string().trim().max(64),
+  // Optional POS Walk-in Customer: "" clears it, otherwise a real Customer id (checked below).
+  posWalkInCustomerId: z.string().trim().max(64),
   defaultEmail: z
     .string()
     .trim()
@@ -54,6 +56,7 @@ export async function saveSettings(_prev: SettingsState, formData: FormData): Pr
 
   const parsed = schema.safeParse({
     defaultCurrencyId: str(formData.get("defaultCurrencyId")),
+    posWalkInCustomerId: str(formData.get("posWalkInCustomerId")),
     defaultEmail: str(formData.get("defaultEmail")),
     currencyIconRight: formData.get("currencyIconRight") === "on",
     companyName: str(formData.get("companyName")),
@@ -86,6 +89,12 @@ export async function saveSettings(_prev: SettingsState, formData: FormData): Pr
     }
   }
 
+  // The Walk-in Customer must be an existing customer (never free text or a made-up id).
+  if (parsed.success && parsed.data.posWalkInCustomerId) {
+    const c = await db.customer.findUnique({ where: { id: parsed.data.posWalkInCustomerId }, select: { id: true } });
+    if (!c) fieldErrors.posWalkInCustomerId = "Choose an existing customer";
+  }
+
   // Logo: an uploaded file only (never a URL), validated by content.
   const removeLogo = formData.get("removeLogo") === "on";
   const file = formData.get("logo");
@@ -107,6 +116,7 @@ export async function saveSettings(_prev: SettingsState, formData: FormData): Pr
   const d = parsed.data;
   const data = {
     defaultCurrencyId: d.defaultCurrencyId,
+    posWalkInCustomerId: nullIfEmpty(d.posWalkInCustomerId),
     defaultEmail: nullIfEmpty(d.defaultEmail),
     currencyIconRight: d.currencyIconRight,
     companyName: d.companyName,
@@ -138,6 +148,7 @@ export async function saveSettings(_prev: SettingsState, formData: FormData): Pr
 
   // The Sign In page (/) shows the global company name and footer: refresh it too.
   revalidatePath("/");
+  revalidatePath("/pos");
 
   return { status: "success", message: "Settings saved", values: toSettingsValues(saved) };
 }

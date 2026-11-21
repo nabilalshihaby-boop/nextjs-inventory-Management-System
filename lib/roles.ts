@@ -108,6 +108,11 @@ export function canViewSupplierStatement(role: string | undefined): boolean {
   return role === "OWNER" || role === "ADMIN";
 }
 
+/** POS checkout (creates a completed sale + payment + stock/ledger effects): OWNER and ADMIN only. */
+export function canUsePos(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
 /** Customer account statement (sales, returns, payments, balances): OWNER and ADMIN only. */
 export function canViewCustomerStatement(role: string | undefined): boolean {
   return role === "OWNER" || role === "ADMIN";

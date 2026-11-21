@@ -4,9 +4,10 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { roleLabel } from "@/lib/roles";
+import { canUsePos, roleLabel } from "@/lib/roles";
 import Icon from "@/components/layout/Icon";
 import ProfileForm from "@/components/profile/ProfileForm";
+import PosPinForm from "@/components/profile/PosPinForm";
 
 export const metadata: Metadata = { title: "Profile" };
 
@@ -23,12 +24,12 @@ export default async function ProfilePage() {
 
   const user = await db.user.findUnique({
     where: { id: session.user.id },
-    // Never select passwordHash.
-    select: { firstName: true, lastName: true, email: true, phoneNumber: true, image: true, role: true },
+    // Never select passwordHash. posPinHash is read only to know whether a PIN exists (a boolean below).
+    select: { firstName: true, lastName: true, email: true, phoneNumber: true, image: true, role: true, posPinHash: true },
   });
   if (!user) redirect("/");
 
-  const { role, ...values } = user;
+  const { role, posPinHash, ...values } = user;
   return (
     <>
       <div className="sp-page-head">
@@ -43,6 +44,7 @@ export default async function ProfilePage() {
         </div>
       </div>
       <ProfileForm initial={values} roleLabel={roleLabel(role)} />
+      {canUsePos(role) && <PosPinForm hasPin={!!posPinHash} />}
     </>
   );
 }

@@ -109,6 +109,10 @@ export async function deleteCustomer(id: unknown): Promise<CustomerResult> {
   const existing = await db.customer.findUnique({ where: { id: cid.data }, select: { id: true } });
   if (!existing) return { ok: false, message: "Customer not found" };
 
+  // The POS Walk-in Customer setting must never point at a deleted customer (the database also refuses).
+  const walkIn = await db.systemSettings.findFirst({ where: { posWalkInCustomerId: existing.id }, select: { id: true } });
+  if (walkIn) return { ok: false, message: "This customer is the POS Walk-in Customer. Choose another (or none) in System Settings before deleting it." };
+
   const blockers = await findCustomerReferences(existing.id);
   if (blockers.length) return { ok: false, message: `This customer can't be deleted because it still has ${blockers.join(", ")}.` };
 

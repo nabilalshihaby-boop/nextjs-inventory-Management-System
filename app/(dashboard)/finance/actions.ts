@@ -6,6 +6,7 @@ import { auth } from "@/auth";
 import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
 import { LedgerError, appendLedgerRow, assertChronology, assertSufficient, dateOnly, ledgerReject, ledgerTxOptions, lockAccounts } from "@/lib/cash-bank-ledger";
+import { openRegisterBlock } from "@/lib/register-guard";
 import { canManageCashBankAccounts, canRecordCashBankTransactions } from "@/lib/roles";
 import { getDefaultCurrency } from "@/lib/settings";
 import {
@@ -113,11 +114,20 @@ export async function updateAccount(id: unknown, input: unknown): Promise<Financ
   if (!existing) return { ok: false, message: "Account not found" };
   if (await db.cashBankAccount.findFirst({ where: { name: d.name, NOT: { id: existing.id } }, select: { id: true } })) return { ok: false, message: DUPLICATE, fieldErrors: { name: DUPLICATE } };
   try {
-    await db.cashBankAccount.update({
-      where: { id: existing.id },
-      data: { name: d.name, type: d.type, reference: d.reference || null, bankName: d.type === "BANK" ? d.bankName : null, status: d.status, notes: d.notes || null },
-      select: { id: true },
+    // An account with an OPEN register session can't be deactivated or turned into a bank account.
+    const blocked = await db.$transaction(async (tx) => {
+      if (d.status === "INACTIVE" || d.type === "BANK") {
+        const msg = await openRegisterBlock(tx, existing.id);
+        if (msg) return msg;
+      }
+      await tx.cashBankAccount.update({
+        where: { id: existing.id },
+        data: { name: d.name, type: d.type, reference: d.reference || null, bankName: d.type === "BANK" ? d.bankName : null, status: d.status, notes: d.notes || null },
+        select: { id: true },
+      });
+      return null;
     });
+    if (blocked) return { ok: false, message: blocked };
   } catch (e) {
     if (isKnown(e, "P2002")) return { ok: false, message: DUPLICATE, fieldErrors: { name: DUPLICATE } };
     throw e;
@@ -132,8 +142,15 @@ export async function setAccountStatus(id: unknown, status: unknown): Promise<Fi
   const aid = idSchema.safeParse(id);
   const st = z.enum(["ACTIVE", "INACTIVE"]).safeParse(status);
   if (!aid.success || !st.success) return { ok: false, message: "Invalid request" };
-  const r = await db.cashBankAccount.updateMany({ where: { id: aid.data }, data: { status: st.data } });
-  if (r.count !== 1) return { ok: false, message: "Account not found" };
+  const res = await db.$transaction(async (tx) => {
+    if (st.data === "INACTIVE") {
+      const msg = await openRegisterBlock(tx, aid.data);
+      if (msg) return msg;
+    }
+    return (await tx.cashBankAccount.updateMany({ where: { id: aid.data }, data: { status: st.data } })).count;
+  });
+  if (typeof res === "string") return { ok: false, message: res };
+  if (res !== 1) return { ok: false, message: "Account not found" };
   revalidate();
   return { ok: true, message: st.data === "ACTIVE" ? "Account activated" : "Account deactivated" };
 }

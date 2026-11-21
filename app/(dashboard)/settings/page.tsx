@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { auth } from "@/auth";
+import { db } from "@/lib/db";
 import { getCountryOptions } from "@/lib/countries";
 import { canManageSystemSettings } from "@/lib/roles";
 import { DATE_FORMATS, getCurrencyOptions, getSystemSettings, toSettingsValues } from "@/lib/settings";
@@ -21,7 +22,7 @@ export default async function SettingsPage() {
   if (!session?.user?.id) redirect("/");
   if (!canManageSystemSettings(session.user.role)) redirect("/dashboard");
 
-  const [settings, currencies] = await Promise.all([getSystemSettings(), getCurrencyOptions()]);
+  const [settings, currencies, customers] = await Promise.all([getSystemSettings(), getCurrencyOptions(), db.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } })]);
 
   return (
     <>
@@ -35,6 +36,7 @@ export default async function SettingsPage() {
         initial={toSettingsValues(settings)}
         countries={getCountryOptions()}
         currencies={currencies}
+        customers={customers.map((c) => ({ value: c.id, label: c.name }))}
         dateFormats={[...DATE_FORMATS]}
       />
     </>

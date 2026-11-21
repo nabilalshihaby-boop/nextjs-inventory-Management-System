@@ -13,6 +13,8 @@ export const SETTINGS_ID = 1; // singleton row
 export type SettingsValues = {
   /** Currency record id ("" when none is selected yet). */
   defaultCurrencyId: string;
+  /** POS Walk-in Customer id ("" = none). */
+  posWalkInCustomerId: string;
   defaultEmail: string;
   currencyIconRight: boolean;
   companyLogo: string | null;
@@ -32,6 +34,7 @@ export type SettingsValues = {
 /** Empty form for when settings were never saved — no invented company data or defaults. */
 export const EMPTY_SETTINGS: SettingsValues = {
   defaultCurrencyId: "",
+  posWalkInCustomerId: "",
   defaultEmail: "",
   currencyIconRight: false,
   companyLogo: null,
@@ -54,6 +57,7 @@ export function toSettingsValues(s: SettingsRow | null): SettingsValues {
   if (!s) return EMPTY_SETTINGS;
   return {
     defaultCurrencyId: s.defaultCurrencyId ?? "",
+    posWalkInCustomerId: s.posWalkInCustomerId ?? "",
     defaultEmail: s.defaultEmail ?? "",
     currencyIconRight: s.currencyIconRight,
     companyLogo: s.companyLogo,

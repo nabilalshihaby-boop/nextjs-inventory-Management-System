@@ -35,11 +35,13 @@ export default function SettingsForm({
   initial,
   countries,
   currencies,
+  customers,
   dateFormats,
 }: {
   initial: SettingsValues;
   countries: CountryOption[];
   currencies: { value: string; label: string }[];
+  customers: { value: string; label: string }[];
   dateFormats: string[];
 }) {
   const router = useRouter();
@@ -290,7 +292,27 @@ export default function SettingsForm({
             <Field k="footerText" error={e.footerText} label="Footer">
               {input("footerText", "Enter Footer Text")}
             </Field>
-            {unavailable("st-defaultCustomer", "Default Customer", "No customers available yet")}
+            <Field k="posWalkInCustomerId" error={e.posWalkInCustomerId} label="POS Walk-in Customer">
+              {customers.length ? (
+                <>
+                  <select id="st-posWalkInCustomerId" name="posWalkInCustomerId" className="sp-select" value={f.posWalkInCustomerId} onChange={set("posWalkInCustomerId")} aria-describedby="st-posWalkInCustomerId-hint">
+                    <option value="">None — the cashier must choose a customer</option>
+                    {customers.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="sp-hint" id="st-posWalkInCustomerId-hint">
+                    Pre-selected at the POS for anonymous sales. It must be an existing customer, and can&apos;t be deleted while selected here.
+                  </span>
+                </>
+              ) : (
+                <span className="sp-hint">
+                  No customers yet. <Link href="/customers/create">Create a customer</Link> first, then choose it here.
+                </span>
+              )}
+            </Field>
             {unavailable("st-defaultWarehouse", "Default Warehouse", "No warehouses available yet")}
             <Field k="country" error={e.country} label="Country" required>
               {select(
@@ -359,6 +381,17 @@ export default function SettingsForm({
           Theme Settings
         </Link>
         <span className="t-caption">Customize theme colors, mode, sidebar style and border radius.</span>
+      </div>
+
+      <h2 className="t-section-title" style={{ margin: "32px 0 16px" }}>
+        POS Cash Drawer
+      </h2>
+      <div className="sp-card" style={{ padding: 24, display: "flex", alignItems: "center", gap: 16 }}>
+        <Link href="/settings/denominations" className="sp-btn sp-btn--secondary">
+          <Icon name="banknote" size={18} />
+          Cash Denominations
+        </Link>
+        <span className="t-caption">Banknotes and coins per currency, used to count the drawer when a register is closed.</span>
       </div>
 
       <ClearCacheSection />
