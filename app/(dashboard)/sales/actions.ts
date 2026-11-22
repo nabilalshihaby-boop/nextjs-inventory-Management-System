@@ -12,6 +12,7 @@ import { getDict } from "@/lib/i18n/server";
 import { errorMessage, tr } from "@/lib/i18n/messages";
 import type { Dictionary } from "@/lib/i18n";
 import { SaleError, deductStock } from "@/lib/sale-stock";
+import { StockHistoryError } from "@/lib/stock-history-guard";
 import { getDefaultCurrency } from "@/lib/settings";
 import { toUnits } from "@/lib/transfers";
 import { calcSale, formatSaleReference, makeSaleSchema, type SaleField, type SaleInput } from "@/lib/sales";
@@ -131,7 +132,7 @@ function revalidate(id?: string, quotationId?: string | null) {
 }
 
 function fail(e: unknown, t: Dictionary): SaleResult {
-  if (e instanceof SaleError) {
+  if (e instanceof SaleError || e instanceof StockHistoryError) {
     const message = errorMessage(t, e);
     return { ok: false, message, fieldErrors: e.itemId ? { items: message } : undefined, itemErrors: e.itemId ? { [e.itemId]: message } : undefined };
   }
@@ -164,6 +165,7 @@ export async function createSale(input: unknown): Promise<SaleResult> {
   try {
     const created = await withRetry(() =>
       db.$transaction(async (tx) => {
+        const at = new Date(); // the completion moment (stock-out time)
         const s0 = await tx.sale.create({
           data: {
             reference: `TMP_${randomBytes(8).toString("hex")}`, // replaced below, inside this transaction
@@ -181,14 +183,14 @@ export async function createSale(input: unknown): Promise<SaleResult> {
             paidAmount: "0",
             notes: d.notes || null,
             createdById: a.userId,
-            ...(d.status === "COMPLETED" ? { completedAt: new Date(), completedById: a.userId } : {}),
+            ...(d.status === "COMPLETED" ? { completedAt: at, completedById: a.userId } : {}),
             items: { create: p.lines },
           },
           select: { id: true, number: true },
         });
         const reference = formatSaleReference(s0.number);
         await tx.sale.update({ where: { id: s0.id }, data: { reference } });
-        if (d.status === "COMPLETED") await deductStock(tx, d.warehouseId, p.stock);
+        if (d.status === "COMPLETED") await deductStock(tx, d.warehouseId, p.stock, at);
         return { id: s0.id, reference };
       }, txOptions),
     );
@@ -214,6 +216,7 @@ export async function updateSale(id: unknown, input: unknown): Promise<SaleResul
   try {
     const r = await withRetry(() =>
       db.$transaction(async (tx) => {
+        const at = new Date(); // the completion moment (stock-out time)
         const s = await lockSale(tx, sid.data);
         if (!s) throw new SaleError("sales.err.notFound");
         if (s.status !== "PENDING") throw new SaleError("sales.err.completedNoEdit", { ref: s.reference });
@@ -232,11 +235,11 @@ export async function updateSale(id: unknown, input: unknown): Promise<SaleResul
             shipping: d.shipping,
             grandTotal: p.totals.grandTotal,
             notes: d.notes || null,
-            ...(d.status === "COMPLETED" ? { completedAt: new Date(), completedById: a.userId } : {}),
+            ...(d.status === "COMPLETED" ? { completedAt: at, completedById: a.userId } : {}),
             items: { create: p.lines },
           },
         });
-        if (d.status === "COMPLETED") await deductStock(tx, d.warehouseId, p.stock);
+        if (d.status === "COMPLETED") await deductStock(tx, d.warehouseId, p.stock, at);
         return s;
       }, txOptions),
     );
@@ -256,12 +259,13 @@ export async function completeSale(id: unknown): Promise<SaleResult> {
   try {
     const r = await withRetry(() =>
       db.$transaction(async (tx) => {
+        const at = new Date(); // the completion moment (stock-out time)
         const s = await lockSale(tx, sid.data);
         if (!s) throw new SaleError("sales.err.notFound");
         if (s.status !== "PENDING") throw new SaleError("sales.err.alreadyCompleted", { ref: s.reference });
         const items = await tx.saleItem.findMany({ where: { saleId: s.id }, select: { productId: true, quantity: true, productCode: true, productName: true } });
-        await tx.sale.update({ where: { id: s.id }, data: { status: "COMPLETED", completedAt: new Date(), completedById: a.userId } });
-        await deductStock(tx, s.warehouseId, items);
+        await tx.sale.update({ where: { id: s.id }, data: { status: "COMPLETED", completedAt: at, completedById: a.userId } });
+        await deductStock(tx, s.warehouseId, items, at);
         return s;
       }, txOptions),
     );

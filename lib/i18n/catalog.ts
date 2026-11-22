@@ -15,9 +15,9 @@ export const SECTIONS = [
   { id: "sales", label: "Sales", groups: ["sales", "salesReturns", "quotations"] },
   { id: "purchases", label: "Purchases", groups: ["purchases", "purchaseReturns"] },
   { id: "finance", label: "Finance", groups: ["finance", "expenses"] },
-  { id: "products", label: "Products & Inventory", groups: ["products", "catalog", "warehouses", "transfers", "adjustments", "importExport"] },
+  { id: "products", label: "Products & Inventory", groups: ["products", "catalog", "warehouses", "transfers", "adjustments", "importExport", "stockGuard"] },
   { id: "people", label: "Customers & Suppliers", groups: ["custPay", "customers", "stmt", "suppliers", "supplierPay", "supplierStmt"] },
-  { id: "reports", label: "Reports", groups: ["stmtReport", "supplierStmtReport", "registerReport"] },
+  { id: "reports", label: "Reports", groups: ["stmtReport", "supplierStmtReport", "registerReport", "invReports"] },
 ] as const;
 export type SectionId = (typeof SECTIONS)[number]["id"];
 

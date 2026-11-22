@@ -11,6 +11,9 @@ import { formatQuantity } from "@/lib/money";
 import { fromUnits } from "@/lib/transfers";
 import { formatAdjustmentReference, makeAdjustmentSchema, signedUnits, type AdjustmentField, type AdjustmentInput, type AdjustmentTypeValue } from "@/lib/adjustments";
 import { getDict } from "@/lib/i18n/server";
+import { errorMessage } from "@/lib/i18n/messages";
+import { StockHistoryError, assertNonNegativeHistory } from "@/lib/stock-history-guard";
+import { dayOfDateOnly } from "@/lib/inventory-reports";
 import { fmt } from "@/lib/i18n/config";
 import type { Dictionary } from "@/lib/i18n";
 
@@ -82,6 +85,9 @@ async function resolve(d: AdjustmentInput, t: Dictionary): Promise<{ ok: true; l
   return { ok: true, labels };
 }
 
+/** READ COMMITTED: the chronological history guard must read what the previous writer of the same stock rows committed. */
+const stockTx = <T,>(fn: (tx: Tx) => Promise<T>) => db.$transaction(fn, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 15_000 });
+
 type Line = { productId: string; quantity: string; type: AdjustmentTypeValue };
 type Deltas = Map<string, { productId: string; warehouseId: string; units: bigint }>;
 
@@ -136,11 +142,16 @@ async function lockOriginal(tx: Tx, id: string) {
   if (!locked.length) throw new GoneError();
   const a = await tx.stockAdjustment.findUniqueOrThrow({
     where: { id },
-    select: { id: true, reference: true, warehouseId: true, items: { select: { productId: true, quantity: true, type: true, product: { select: { code: true, name: true } } } } },
+    select: { id: true, reference: true, warehouseId: true, adjustmentDate: true, createdAt: true, items: { select: { productId: true, quantity: true, type: true, product: { select: { code: true, name: true } } } } },
   });
   const lines: Line[] = a.items.map((i) => ({ productId: i.productId, quantity: i.quantity.toFixed(3), type: i.type }));
   const labels = new Map(a.items.map((i) => [i.productId, `${i.product.code} ${i.product.name}`]));
   return { ...a, lines, labels };
+}
+
+function historyFailure(e: StockHistoryError, t: Dictionary): AdjustmentResult {
+  const message = errorMessage(t, e);
+  return { ok: false, message, fieldErrors: { items: message }, itemErrors: e.itemId ? { [e.itemId]: message } : undefined };
 }
 
 function stockFailure(e: StockError, action: "save" | "edit" | "delete", t: Dictionary): AdjustmentResult {
@@ -169,7 +180,7 @@ export async function createAdjustment(input: unknown): Promise<AdjustmentResult
 
   try {
     const created = await withRetry(() =>
-      db.$transaction(async (tx) => {
+      stockTx(async (tx) => {
         const t0 = await tx.stockAdjustment.create({
           data: {
             reference: `TMP_${randomBytes(8).toString("hex")}`, // replaced below, inside this transaction
@@ -178,18 +189,21 @@ export async function createAdjustment(input: unknown): Promise<AdjustmentResult
             createdById: a.userId,
             items: { create: d.items.map((i) => ({ productId: i.productId, quantity: i.quantity, type: i.type })) },
           },
-          select: { id: true, number: true },
+          select: { id: true, number: true, createdAt: true },
         });
         const ad = await tx.stockAdjustment.update({ where: { id: t0.id }, data: { reference: formatAdjustmentReference(t0.number) }, select: { id: true, reference: true } });
         const deltas: Deltas = new Map();
         addEffect(deltas, d.warehouseId, d.items, 1);
         await applyDeltas(tx, deltas, r.labels, t.adjustments.err.aProduct);
+        // A back-dated SUBTRACTION must keep every later balance >= 0 (additions can only raise balances).
+        await assertNonNegativeHistory(tx, d.items.filter((i) => i.type === "SUBTRACTION").map((i) => ({ productId: i.productId, warehouseId: d.warehouseId, day: d.adjustmentDate, at: t0.createdAt.getTime() })));
         return ad;
       }),
     );
     revalidate();
     return { ok: true, message: fmt(t.adjustments.ok.created, { ref: created.reference }), id: created.id };
   } catch (e) {
+    if (e instanceof StockHistoryError) return historyFailure(e, t);
     if (e instanceof StockError) return stockFailure(e, "save", t);
     if (isKnown(e, "P2003")) return { ok: false, message: t.adjustments.err.refsGone };
     throw e;
@@ -212,7 +226,7 @@ export async function updateAdjustment(id: unknown, input: unknown): Promise<Adj
 
   try {
     const ref = await withRetry(() =>
-      db.$transaction(async (tx) => {
+      stockTx(async (tx) => {
         const orig = await lockOriginal(tx, aid.data);
         const deltas: Deltas = new Map();
         addEffect(deltas, orig.warehouseId, orig.lines, -1); // reverse the original effect
@@ -221,12 +235,19 @@ export async function updateAdjustment(id: unknown, input: unknown): Promise<Adj
         await tx.stockAdjustmentItem.deleteMany({ where: { adjustmentId: orig.id } });
         await tx.stockAdjustmentItem.createMany({ data: d.items.map((i) => ({ adjustmentId: orig.id, productId: i.productId, quantity: i.quantity, type: i.type })) });
         await applyDeltas(tx, deltas, new Map([...orig.labels, ...r.labels]), t.adjustments.err.aProduct);
+        // Editing removes the old movements and adds the new ones: re-check every touched product + warehouse from the earliest of the old and new positions.
+        const at = orig.createdAt.getTime();
+        await assertNonNegativeHistory(tx, [
+          ...orig.lines.map((l) => ({ productId: l.productId, warehouseId: orig.warehouseId, day: dayOfDateOnly(orig.adjustmentDate), at })),
+          ...d.items.map((i) => ({ productId: i.productId, warehouseId: d.warehouseId, day: d.adjustmentDate, at })),
+        ]);
         return orig.reference;
       }),
     );
     revalidate();
     return { ok: true, message: fmt(t.adjustments.ok.updated, { ref }), id: aid.data };
   } catch (e) {
+    if (e instanceof StockHistoryError) return historyFailure(e, t);
     if (e instanceof StockError) return stockFailure(e, "edit", t);
     if (e instanceof GoneError) return { ok: false, message: t.adjustments.err.notFound };
     if (isKnown(e, "P2003")) return { ok: false, message: t.adjustments.err.refsGone };
@@ -244,18 +265,21 @@ export async function deleteAdjustment(id: unknown): Promise<AdjustmentResult> {
 
   try {
     const ref = await withRetry(() =>
-      db.$transaction(async (tx) => {
+      stockTx(async (tx) => {
         const orig = await lockOriginal(tx, aid.data);
         const deltas: Deltas = new Map();
         addEffect(deltas, orig.warehouseId, orig.lines, -1);
         await applyDeltas(tx, deltas, orig.labels, t.adjustments.err.aProduct);
         await tx.stockAdjustment.delete({ where: { id: orig.id } }); // items cascade
+        // The reversal removes the original movements: later balances must still be >= 0.
+        await assertNonNegativeHistory(tx, orig.lines.map((l) => ({ productId: l.productId, warehouseId: orig.warehouseId, day: dayOfDateOnly(orig.adjustmentDate), at: orig.createdAt.getTime() })));
         return orig.reference;
       }),
     );
     revalidate();
     return { ok: true, message: fmt(t.adjustments.ok.deleted, { ref }) };
   } catch (e) {
+    if (e instanceof StockHistoryError) return historyFailure(e, t);
     if (e instanceof StockError) return stockFailure(e, "delete", t);
     if (e instanceof GoneError) return { ok: false, message: t.adjustments.err.notFound };
     throw e;

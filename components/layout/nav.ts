@@ -90,6 +90,17 @@ export const NAV: NavItem[] = [
   },
   { id: "ro", label: "Roles/Permissions", icon: "shield-check", href: "/roles", title: "Roles" },
   { id: "wh", label: "Warehouse", icon: "warehouse", href: "/warehouse" },
+  {
+    id: "inv",
+    label: "Inventory Reports",
+    icon: "boxes",
+    roles: STAFF, // read-only stock reports: hidden from USER (the pages are protected server-side)
+    children: [
+      { id: "ir1", label: "Stock Balance by Warehouse", href: "/inventory-reports/stock-balance" },
+      { id: "ir2", label: "Product Movement", href: "/inventory-reports/product-movement" },
+      { id: "ir3", label: "Low Stock Items", href: "/inventory-reports/low-stock" },
+    ],
+  },
   { id: "re", label: "Reports", icon: "chart-column", href: "/reports" },
   { id: "cu", label: "Currencies", icon: "circle-dollar-sign", href: "/currencies" },
   { id: "la", label: "Languages", icon: "languages", href: "/settings/languages", roles: OWNER_ONLY },
@@ -138,6 +149,9 @@ const EXTRA_TITLES: { href: string; title: string }[] = [
   { href: "/settings/denominations", title: "Cash Denominations" },
   { href: "/customers/statement", title: "Customer Statement" },
   { href: "/reports/customer-statement", title: "Customer Statement Report" },
+  { href: "/reports/stock-balance", title: "Stock Balance Report" },
+  { href: "/reports/product-movement", title: "Product Movement Report" },
+  { href: "/reports/low-stock", title: "Low Stock Report" },
 ];
 
 /**
@@ -164,6 +178,9 @@ const EXTRA_KEYS: Record<string, string> = {
   "/settings/denominations": "denominations",
   "/customers/statement": "customerStatement",
   "/reports/customer-statement": "customerStatementReport",
+  "/reports/stock-balance": "stockBalanceReport",
+  "/reports/product-movement": "productMovementReport",
+  "/reports/low-stock": "lowStockReport",
 };
 
 /** Id of the group that owns the active leaf, if any. */

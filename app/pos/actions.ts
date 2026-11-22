@@ -14,6 +14,7 @@ import { errorMessage, tr } from "@/lib/i18n/messages";
 import { canUsePos } from "@/lib/roles";
 import { calcSale, formatSaleReference } from "@/lib/sales";
 import { SaleError, deductStock } from "@/lib/sale-stock";
+import { StockHistoryError } from "@/lib/stock-history-guard";
 import { getDefaultCurrency } from "@/lib/settings";
 import { fromUnits, toUnits } from "@/lib/transfers";
 
@@ -108,6 +109,7 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
 
         const today = dateOnly(todayLocal());
         // 1. The sale — FIRST statement: claims the unique checkout key (a duplicate blocks here).
+        const at = new Date(); // the completion moment (stock-out time)
         const s0 = await tx.sale.create({
           data: {
             reference: `TMP_${randomBytes(8).toString("hex")}`,
@@ -126,7 +128,7 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
             paidAmount: totals.grandTotal,
             notes: d.notes || null,
             createdById: userId,
-            completedAt: new Date(),
+            completedAt: at,
             completedById: userId,
             items: {
               create: d.items.map((i, n) => {
@@ -163,7 +165,7 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
         }
 
         // 2. Stock — conditional, once, all-or-nothing.
-        await deductStock(tx, warehouse.id, d.items.map((i) => ({ productId: i.productId, quantity: i.quantity, productCode: byId.get(i.productId)!.code, productName: byId.get(i.productId)!.name })));
+        await deductStock(tx, warehouse.id, d.items.map((i) => ({ productId: i.productId, quantity: i.quantity, productCode: byId.get(i.productId)!.code, productName: byId.get(i.productId)!.name })), at);
 
         // 3. Tender check — the payments must add up to EXACTLY the server-calculated Grand Total
         // (no partial, no change). Every receiving account is locked (id order), ACTIVE and in the sale currency.
@@ -240,7 +242,7 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
         const message = e.i18n ? tr(dict, e.i18n.key, e.i18n.vars) : e.message;
         return { ok: false, message, fieldErrors: e.field ? { [e.field]: message } : undefined };
       }
-      if (e instanceof SaleError) {
+      if (e instanceof SaleError || e instanceof StockHistoryError) {
         const m = errorMessage(dict, e);
         return { ok: false, message: m, fieldErrors: { items: m } };
       }

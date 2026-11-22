@@ -13,6 +13,7 @@ import { formatPurchaseReturnReference, makePurchaseReturnSchema, type PurchaseR
 import { getDict } from "@/lib/i18n/server";
 import { LocalizedError, errorMessage, tr, type Vars } from "@/lib/i18n/messages";
 import type { Dictionary } from "@/lib/i18n";
+import { StockHistoryError, assertNonNegativeHistory } from "@/lib/stock-history-guard";
 
 // Purchase Returns. Integrity rules (server-side, all inside ONE transaction):
 // - OWNER/ADMIN only; auth() is re-read and the role never comes from the client.
@@ -164,10 +165,13 @@ export async function createPurchaseReturn(input: unknown): Promise<PurchaseRetu
                 })),
               },
             },
-            select: { id: true, number: true },
+            select: { id: true, number: true, createdAt: true },
           });
           const reference = formatPurchaseReturnReference(r0.number);
           await tx.purchaseReturn.update({ where: { id: r0.id }, data: { reference } });
+          // Chronological guard: the return is dated d.returnDate (possibly in the past) and takes stock out, so every
+          // later balance of these products in this warehouse must still be >= 0.
+          await assertNonNegativeHistory(tx, lines.map((l) => ({ productId: l.pi.productId, warehouseId: p.warehouseId, day: d.returnDate, at: r0.createdAt.getTime() })));
           return { id: r0.id, reference, purchaseId: p.id, purchaseRef: p.reference };
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 15_000 },
@@ -181,6 +185,10 @@ export async function createPurchaseReturn(input: unknown): Promise<PurchaseRetu
       if (e instanceof ReturnError) {
         const message = errorMessage(t, e);
         return { ok: false, message, fieldErrors: e.field ? { [e.field]: message } : undefined, itemErrors: e.itemId ? { [e.itemId]: message } : undefined };
+      }
+      if (e instanceof StockHistoryError) {
+        const message = errorMessage(t, e);
+        return { ok: false, message, fieldErrors: { items: message } };
       }
       if (attempt < 4 && isKnown(e, "P2034")) continue; // deadlock / write conflict → retry
       if (isKnown(e, "P2003")) return { ok: false, message: t.purchaseReturns.err.refsGone };

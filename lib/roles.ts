@@ -36,6 +36,11 @@ export function canManageCustomers(role: string | undefined): boolean {
   return role === "OWNER" || role === "ADMIN";
 }
 
+/** Inventory Reports (stock balance, product movement, low stock): OWNER and ADMIN only; read-only. */
+export function canViewInventoryReports(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
 /** Products: every signed-in role may view/search; only OWNER and ADMIN may create or edit. */
 export function canManageProducts(role: string | undefined): boolean {
   return role === "OWNER" || role === "ADMIN";

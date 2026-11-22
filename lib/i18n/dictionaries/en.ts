@@ -22,6 +22,7 @@ import { enTransfers } from "@/lib/i18n/dictionaries/en-xfer";
 import { enAdjustments } from "@/lib/i18n/dictionaries/en-adj";
 import { enUsers } from "@/lib/i18n/dictionaries/en-users";
 import { enImpExp } from "@/lib/i18n/dictionaries/en-impexp";
+import { enInvReports, enStockGuard } from "@/lib/i18n/dictionaries/en-invrep";
 export const en = {
   common: {
     save: "Save",
@@ -118,6 +119,13 @@ export const en = {
     denominations: "Cash Denominations",
     customerStatement: "Customer Statement",
     customerStatementReport: "Customer Statement Report",
+    inv: "Inventory Reports",
+    ir1: "Stock Balance by Warehouse",
+    ir2: "Product Movement",
+    ir3: "Low Stock Items",
+    stockBalanceReport: "Stock Balance Report",
+    productMovementReport: "Product Movement Report",
+    lowStockReport: "Low Stock Report",
   },
   roles: { OWNER: "Owner", ADMIN: "Administrator", USER: "User" },
   shell: {
@@ -627,6 +635,8 @@ export const en = {
   adjustments: enAdjustments,
   users: enUsers,
   importExport: enImpExp,
+  invReports: enInvReports,
+  stockGuard: enStockGuard,
   langAdmin: {
     title: "Languages",
     sections: { nav: "Dashboard & Navigation", auth: "Authentication & Account", settings: "Settings & Preferences", pos: "POS & Register", shared: "Shared UI & Reports", sales: "Sales", purchases: "Purchases", finance: "Finance", products: "Products & Inventory", people: "Customers & Suppliers", users: "Users & Roles", reports: "Reports" },

@@ -10,6 +10,9 @@ import { canManageTransfers } from "@/lib/roles";
 import { formatQuantity } from "@/lib/money";
 import { formatReference, makeTransferSchema, type TransferField, type TransferInput } from "@/lib/transfers";
 import { getDict } from "@/lib/i18n/server";
+import { errorMessage } from "@/lib/i18n/messages";
+import { StockHistoryError, assertNonNegativeHistory } from "@/lib/stock-history-guard";
+import { dayOfDateOnly } from "@/lib/inventory-reports";
 import { fmt } from "@/lib/i18n/config";
 import type { Dictionary } from "@/lib/i18n";
 
@@ -26,6 +29,9 @@ import type { Dictionary } from "@/lib/i18n";
 //   inventory history. No sales, purchases, taxes, payments or ledger entries are created.
 
 type Tx = Prisma.TransactionClient;
+
+/** READ COMMITTED: the chronological history guard must read what the previous writer of the same stock rows committed. */
+const stockTx = <T,>(fn: (tx: Tx) => Promise<T>) => db.$transaction(fn, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 15_000 });
 
 export type TransferResult =
   | { ok: true; message: string; id?: string }
@@ -155,6 +161,11 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+function historyFailure(e: StockHistoryError, t: Dictionary): TransferResult {
+  const message = errorMessage(t, e);
+  return { ok: false, message, fieldErrors: { items: message }, itemErrors: e.itemId ? { [e.itemId]: message } : undefined };
+}
+
 function stockFailure(e: StockError, t: Dictionary): TransferResult {
   const message = fmt(t.transfers.err.notEnough, { label: e.label });
   return { ok: false, message, fieldErrors: { items: message }, itemErrors: { [e.productId]: message } };
@@ -181,7 +192,7 @@ export async function createTransfer(input: unknown): Promise<TransferResult> {
 
   try {
     const created = await withRetry(() =>
-      db.$transaction(async (tx) => {
+      stockTx(async (tx) => {
         // `number` comes from AUTO_INCREMENT (never reused); the reference is derived from it in the
         // same transaction, so the temporary placeholder is never visible outside it.
         const t0 = await tx.stockTransfer.create({
@@ -195,17 +206,20 @@ export async function createTransfer(input: unknown): Promise<TransferResult> {
             createdById: a.userId,
             items: { create: r.lines.map((l) => ({ productId: l.productId, quantity: l.quantity, unitCost: l.unitCost })) },
           },
-          select: { id: true, number: true },
+          select: { id: true, number: true, createdAt: true },
         });
         const tr = await tx.stockTransfer.update({ where: { id: t0.id }, data: { reference: formatReference(t0.number) }, select: { id: true, reference: true } });
         if (d.status === "SENT" || d.status === "COMPLETED") await deductSource(tx, d.fromWarehouseId, r.lines);
         if (d.status === "COMPLETED") await addDestination(tx, d.toWarehouseId, r.lines);
+        // The transfer is dated d.transferDate (possibly in the past): its stock-out must keep the source history >= 0.
+        if (d.status === "SENT" || d.status === "COMPLETED") await assertNonNegativeHistory(tx, r.lines.map((l) => ({ productId: l.productId, warehouseId: d.fromWarehouseId, day: d.transferDate, at: t0.createdAt.getTime() })));
         return tr;
       }),
     );
     revalidate(created.id);
     return { ok: true, message: statusDone(t, d.status, created.reference), id: created.id };
   } catch (e) {
+    if (e instanceof StockHistoryError) return historyFailure(e, t);
     if (e instanceof StockError) return stockFailure(e, t);
     if (isKnown(e, "P2003")) return { ok: false, message: t.transfers.err.refsGone };
     throw e;
@@ -220,7 +234,7 @@ export async function updateTransfer(id: unknown, input: unknown): Promise<Trans
   if ("error" in a) return a.error;
   const tid = idSchema.safeParse(id);
   if (!tid.success) return { ok: false, message: E.notFound };
-  const existing = await db.stockTransfer.findUnique({ where: { id: tid.data }, select: { id: true, status: true, reference: true } });
+  const existing = await db.stockTransfer.findUnique({ where: { id: tid.data }, select: { id: true, status: true, reference: true, createdAt: true } });
   if (!existing) return { ok: false, message: E.notFound };
   if (existing.status !== "PENDING") return { ok: false, message: E.onlyPending };
   const v = parse(input, t);
@@ -231,7 +245,7 @@ export async function updateTransfer(id: unknown, input: unknown): Promise<Trans
 
   try {
     await withRetry(() =>
-      db.$transaction(async (tx) => {
+      stockTx(async (tx) => {
         // Conditional on still being PENDING (a concurrent send/complete/delete wins).
         const u = await tx.stockTransfer.updateMany({
           where: { id: existing.id, status: "PENDING" },
@@ -250,9 +264,11 @@ export async function updateTransfer(id: unknown, input: unknown): Promise<Trans
         });
         if (d.status === "SENT" || d.status === "COMPLETED") await deductSource(tx, d.fromWarehouseId, r.lines);
         if (d.status === "COMPLETED") await addDestination(tx, d.toWarehouseId, r.lines);
+        if (d.status === "SENT" || d.status === "COMPLETED") await assertNonNegativeHistory(tx, r.lines.map((l) => ({ productId: l.productId, warehouseId: d.fromWarehouseId, day: d.transferDate, at: existing.createdAt.getTime() })));
       }),
     );
   } catch (e) {
+    if (e instanceof StockHistoryError) return historyFailure(e, t);
     if (e instanceof StockError) return stockFailure(e, t);
     if (e instanceof StateError) return { ok: false, message: E.onlyPending };
     if (isKnown(e, "P2003")) return { ok: false, message: E.refsGone };
@@ -279,17 +295,20 @@ export async function sendTransfer(id: unknown): Promise<TransferResult> {
   if ("error" in a) return a.error;
   const tid = idSchema.safeParse(id);
   if (!tid.success) return { ok: false, message: E.notFound };
-  const t = await db.stockTransfer.findUnique({ where: { id: tid.data }, select: { id: true, status: true, reference: true, fromWarehouseId: true } });
+  const t = await db.stockTransfer.findUnique({ where: { id: tid.data }, select: { id: true, status: true, reference: true, fromWarehouseId: true, transferDate: true, createdAt: true } });
   if (!t) return { ok: false, message: E.notFound };
   if (t.status !== "PENDING") return { ok: false, message: fmt(E.onlySend, { status: dict.transfers.statusLower[t.status] }) };
 
   try {
-    await db.$transaction(async (tx) => {
+    await stockTx(async (tx) => {
       const u = await tx.stockTransfer.updateMany({ where: { id: t.id, status: "PENDING" }, data: { status: "SENT" } });
       if (u.count !== 1) throw new StateError();
-      await deductSource(tx, t.fromWarehouseId, await loadLines(tx, t.id));
+      const lines = await loadLines(tx, t.id);
+      await deductSource(tx, t.fromWarehouseId, lines);
+      await assertNonNegativeHistory(tx, lines.map((l) => ({ productId: l.productId, warehouseId: t.fromWarehouseId, day: dayOfDateOnly(t.transferDate), at: t.createdAt.getTime() })));
     });
   } catch (e) {
+    if (e instanceof StockHistoryError) return historyFailure(e, dict);
     if (e instanceof StockError) return stockFailure(e, dict);
     if (e instanceof StateError) return { ok: false, message: E.changed };
     throw e;
@@ -308,7 +327,7 @@ export async function completeTransfer(id: unknown): Promise<TransferResult> {
   if (!tid.success) return { ok: false, message: E.notFound };
   const t = await db.stockTransfer.findUnique({
     where: { id: tid.data },
-    select: { id: true, status: true, reference: true, fromWarehouseId: true, toWarehouseId: true },
+    select: { id: true, status: true, reference: true, fromWarehouseId: true, toWarehouseId: true, transferDate: true, createdAt: true },
   });
   if (!t) return { ok: false, message: E.notFound };
   if (t.status === "COMPLETED") return { ok: false, message: E.alreadyCompleted };
@@ -316,15 +335,18 @@ export async function completeTransfer(id: unknown): Promise<TransferResult> {
 
   try {
     await withRetry(() =>
-      db.$transaction(async (tx) => {
+      stockTx(async (tx) => {
         const u = await tx.stockTransfer.updateMany({ where: { id: t.id, status: from }, data: { status: "COMPLETED" } });
         if (u.count !== 1) throw new StateError();
         const lines = await loadLines(tx, t.id);
         if (from === "PENDING") await deductSource(tx, t.fromWarehouseId, lines); // SENT already deducted it
         await addDestination(tx, t.toWarehouseId, lines);
+        // SENT → COMPLETED only ADDS stock (cannot lower any balance); PENDING → COMPLETED also takes the source stock out.
+        if (from === "PENDING") await assertNonNegativeHistory(tx, lines.map((l) => ({ productId: l.productId, warehouseId: t.fromWarehouseId, day: dayOfDateOnly(t.transferDate), at: t.createdAt.getTime() })));
       }),
     );
   } catch (e) {
+    if (e instanceof StockHistoryError) return historyFailure(e, dict);
     if (e instanceof StockError) return stockFailure(e, dict);
     if (e instanceof StateError) return { ok: false, message: E.changed };
     throw e;

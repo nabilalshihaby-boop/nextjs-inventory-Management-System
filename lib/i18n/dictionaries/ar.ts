@@ -23,6 +23,7 @@ import { arTransfers } from "@/lib/i18n/dictionaries/ar-xfer";
 import { arAdjustments } from "@/lib/i18n/dictionaries/ar-adj";
 import { arUsers } from "@/lib/i18n/dictionaries/ar-users";
 import { arImpExp } from "@/lib/i18n/dictionaries/ar-impexp";
+import { arInvReports, arStockGuard } from "@/lib/i18n/dictionaries/ar-invrep";
 export const ar: Dictionary = {
   common: {
     save: "حفظ",
@@ -118,6 +119,13 @@ export const ar: Dictionary = {
     denominations: "فئات النقد",
     customerStatement: "كشف حساب العميل",
     customerStatementReport: "تقرير كشف حساب العميل",
+    inv: "تقارير المخزون",
+    ir1: "رصيد المخزون حسب المستودع",
+    ir2: "حركة المنتج",
+    ir3: "أصناف المخزون المنخفض",
+    stockBalanceReport: "تقرير رصيد المخزون",
+    productMovementReport: "تقرير حركة المنتج",
+    lowStockReport: "تقرير المخزون المنخفض",
   },
   roles: { OWNER: "المالك", ADMIN: "مدير", USER: "مستخدم" },
   shell: {
@@ -627,6 +635,8 @@ export const ar: Dictionary = {
   adjustments: arAdjustments,
   users: arUsers,
   importExport: arImpExp,
+  invReports: arInvReports,
+  stockGuard: arStockGuard,
   langAdmin: {
     title: "اللغات",
     sections: { nav: "لوحة التحكم والتنقل", auth: "تسجيل الدخول والحساب", settings: "الإعدادات والتفضيلات", pos: "نقطة البيع والصندوق", shared: "الواجهة المشتركة والتقارير", sales: "المبيعات", purchases: "المشتريات", finance: "المالية", products: "المنتجات والمخزون", people: "العملاء والموردون", users: "المستخدمون والأدوار", reports: "التقارير" },
