@@ -15,10 +15,13 @@ const actions = catalogActions({
   create: (data) => db.productUnit.create({ data }),
   update: (id, data) => db.productUnit.update({ where: { id }, data }),
   remove: (id) => db.productUnit.delete({ where: { id } }),
-  // Products using this unit (as product, sale or purchase unit) block deletion (FKs are RESTRICT too).
+  // Products using this unit (as base, sale or purchase unit, or as a pack unit) block deletion (FKs are RESTRICT too).
   references: async (id) => {
     const n = await db.product.count({ where: { OR: [{ productUnitId: id }, { saleUnitId: id }, { purchaseUnitId: id }] } });
-    return n;
+    // A unit that any product lists as one of its pack units (conversion rows) can't be deleted either; document
+    // lines keep the unit id/name snapshot, and a used conversion row can never be removed (see lib/product-units.ts).
+    const packs = await db.productUnitConversion.count({ where: { unitId: id, product: { NOT: { OR: [{ productUnitId: id }, { saleUnitId: id }, { purchaseUnitId: id }] } } } });
+    return n + packs;
   },
 });
 

@@ -79,13 +79,20 @@ async function prepare(d: QuotationInput, t: Dictionary): Promise<{ ok: true; da
   const [customer, warehouse, products] = await Promise.all([
     db.customer.findUnique({ where: { id: d.customerId }, select: { id: true } }),
     db.warehouse.findUnique({ where: { id: d.warehouseId }, select: { id: true } }),
-    db.product.findMany({ where: { id: { in: d.items.map((i) => i.productId) } }, select: { id: true, code: true, name: true, saleUnit: { select: { name: true } } } }),
+    db.product.findMany({ where: { id: { in: d.items.map((i) => i.productId) } }, select: { id: true, code: true, name: true, productUnitId: true, productUnit: { select: { name: true } } } }),
   ]);
   if (!customer) return { ok: false, error: { ok: false, message: t.quotations.err.invalidCustomer, fieldErrors: { customerId: t.quotations.err.invalidCustomer } } };
   if (!warehouse) return { ok: false, error: { ok: false, message: t.quotations.err.invalidWarehouse, fieldErrors: { warehouseId: t.quotations.err.invalidWarehouse } } };
   const byId = new Map(products.map((p) => [p.id, p]));
   const missing = d.items.find((i) => !byId.has(i.productId));
   if (missing) return { ok: false, error: { ok: false, message: t.quotations.err.productGone, fieldErrors: { items: t.quotations.err.productGone }, itemErrors: { [missing.productId]: t.quotations.err.itemGone } } };
+
+  // Quotations are Base Unit only: a line may omit unitId or send the product's own base unit id; any other (pack) unit is refused.
+  const packed = d.items.find((i) => i.unitId && i.unitId !== byId.get(i.productId)!.productUnitId);
+  if (packed) {
+    const msg = tr(t, "units.err.notAllowed", { unit: packed.unitId, product: byId.get(packed.productId)!.code });
+    return { ok: false, error: { ok: false, message: msg, fieldErrors: { items: msg }, itemErrors: { [packed.productId]: msg } } };
+  }
 
   const totals = calcQuotation(d.items, { orderTaxRate: d.orderTaxRate, discount: d.discount, shipping: d.shipping });
   const bad = totals.lines.findIndex((l) => l.error);
@@ -105,7 +112,7 @@ async function prepare(d: QuotationInput, t: Dictionary): Promise<{ ok: true; da
       product: { connect: { id: p.id } },
       productCode: p.code,
       productName: p.name,
-      unitName: p.saleUnit.name,
+      unitName: p.productUnit.name,
       quantity: i.quantity,
       unitPrice: i.unitPrice,
       taxType: i.taxType,

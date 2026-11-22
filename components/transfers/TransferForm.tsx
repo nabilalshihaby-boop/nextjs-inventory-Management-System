@@ -10,6 +10,8 @@ import { fmt } from "@/lib/i18n/config";
 import { ConfirmDeleteModal } from "@/components/ui/Modal";
 import { createTransfer, updateTransfer, type TransferResult } from "@/app/(dashboard)/transfers/actions";
 import { formatMoney, formatQuantity } from "@/lib/money";
+import { LineUnitSelect, BaseHint } from "@/components/ui/LineUnit";
+import { baseUnits, defaultLineUnit, findLineUnit, scalePrice, type ProductUnits } from "@/lib/unit-math";
 import {
   fromUnits,
   isQuantity,
@@ -31,7 +33,8 @@ import {
 
 type Currency = { code: string; symbol: string; right: boolean } | null;
 /** A product line in the form; `available` is looked up from the selected source warehouse. */
-type Line = { productId: string; code: string; name: string; unit: string; cost: string; quantity: string };
+/** `cost` is per LINE unit (base cost × factor); `baseCost` is the product cost per base unit (the server recomputes it). */
+type Line = { productId: string; code: string; name: string; unit: string; cost: string; baseCost: string; quantity: string; unitId: string; unitInfo: ProductUnits };
 
 export default function TransferForm({
   warehouses,
@@ -65,7 +68,9 @@ export default function TransferForm({
   const [lines, setLines] = useState<Line[]>(() =>
     (initial?.items ?? []).flatMap((i) => {
       const p = initialLines.find((l) => l.productId === i.productId);
-      return p ? [{ ...p, quantity: i.quantity }] : [];
+      if (!p) return [];
+      const u = findLineUnit(p.unitInfo, i.unitId ?? "");
+      return [{ ...p, baseCost: p.cost, cost: scalePrice(p.cost, u.factor), unitId: u.unitId, quantity: i.quantity }];
     }),
   );
   const [q, setQ] = useState("");
@@ -120,7 +125,8 @@ export default function TransferForm({
       toast(fmt(F.already, { name: s.name }), { id: "transfer", icon: "ℹ️" });
       return;
     }
-    setLines([...lines, { productId: s.productId, code: s.code, name: s.name, unit: s.unit, cost: s.cost, quantity: "1" }]);
+    const du = defaultLineUnit(s.unitInfo, "ANY");
+    setLines([...lines, { productId: s.productId, code: s.code, name: s.name, unit: s.unit, cost: scalePrice(s.cost, du.factor), baseCost: s.cost, quantity: "1", unitId: du.unitId, unitInfo: s.unitInfo }]);
     clearErr("items");
   }
 
@@ -140,12 +146,13 @@ export default function TransferForm({
   const step = (l: Line, dir: 1 | -1) => {
     const cur = isQuantity(l.quantity) ? toUnits(l.quantity, 3) : BigInt(0);
     const max = toUnits(availableOf(l.productId), 3);
-    let next = cur + BigInt(dir) * BigInt(1000);
+    const factor = findLineUnit(l.unitInfo, l.unitId).factor;
+    const next = cur + BigInt(dir) * BigInt(1000);
     if (dir === -1 && next <= BigInt(0)) return; // quantity must stay above 0
-    if (dir === 1 && next > max) {
-      next = max;
-      toast.error(fmt(F.onlyUnits, { qty: formatQuantity(availableOf(l.productId)), unit: l.unit }), { id: "transfer" });
-      if (next === cur) return;
+    // Stock is counted in BASE units: the quantity in the line's unit is converted before comparing.
+    if (dir === 1 && baseUnits(fromUnits(next, 3), factor) > max) {
+      toast.error(fmt(F.onlyUnits, { qty: formatQuantity(availableOf(l.productId)), unit: l.unitInfo.baseUnit }), { id: "transfer" });
+      return;
     }
     setQty(l.productId, formatQuantity(fromUnits(next, 3)).replace(/,/g, ""));
   };
@@ -160,7 +167,7 @@ export default function TransferForm({
     if (!lines.length) n.items = V.addItem;
     for (const l of lines) {
       if (!isQuantity(l.quantity)) ie[l.productId] = V.qtyHint;
-      else if (toUnits(l.quantity, 3) > toUnits(availableOf(l.productId), 3)) ie[l.productId] = fmt(V.onlyAvail, { qty: formatQuantity(availableOf(l.productId)) });
+      else if (baseUnits(l.quantity, findLineUnit(l.unitInfo, l.unitId).factor) > toUnits(availableOf(l.productId), 3)) ie[l.productId] = fmt(V.onlyAvail, { qty: formatQuantity(availableOf(l.productId)) });
     }
     if (Object.keys(ie).length) n.items ??= Object.values(ie)[0];
     setE(n);
@@ -170,7 +177,7 @@ export default function TransferForm({
       return;
     }
     // Only ids, quantities, date, status and note are sent — never cost or stock.
-    const payload = { transferDate: date, fromWarehouseId: from, toWarehouseId: to, status, note, items: lines.map((l) => ({ productId: l.productId, quantity: l.quantity.trim() })) };
+    const payload = { transferDate: date, fromWarehouseId: from, toWarehouseId: to, status, note, items: lines.map((l) => ({ productId: l.productId, unitId: l.unitId, quantity: l.quantity.trim() })) };
     startTransition(async () => {
       let r: TransferResult;
       try {
@@ -194,7 +201,8 @@ export default function TransferForm({
 
   const money = (v: string) => formatMoney(v, currency);
   const total = transferTotal(lines.filter((l) => isQuantity(l.quantity)).map((l) => ({ quantity: l.quantity, unitCost: l.cost })));
-  const totalQty = fromUnits(lines.reduce((a, l) => a + (isQuantity(l.quantity) ? toUnits(l.quantity, 3) : BigInt(0)), BigInt(0)), 3);
+  // Total quantity is counted in BASE units (lines may use different units).
+  const totalQty = fromUnits(lines.reduce((a, l) => a + baseUnits(l.quantity, findLineUnit(l.unitInfo, l.unitId).factor), BigInt(0)), 3);
   const field = (k: TransferField, label: string, required: boolean, child: React.ReactNode, style?: CSSProperties) => (
     <div className={"sp-field" + (e[k] ? " sp-field--error" : "")} style={style}>
       <label className="sp-label" htmlFor={`tr-${k}`}>
@@ -284,7 +292,7 @@ export default function TransferForm({
                           <span className="sp-code"><bdi dir="ltr">{s.code}</bdi></span>
                           {s.name}
                           <span style={{ marginInlineStart: "auto", color: "var(--text-3)", fontWeight: 400 }}>
-                            <bdi dir="ltr">{formatQuantity(s.available)}</bdi> {s.unit}
+                            <bdi dir="ltr">{formatQuantity(s.available)}</bdi> {s.unitInfo.baseUnit}
                           </span>
                         </button>
                       ))
@@ -338,7 +346,7 @@ export default function TransferForm({
                           <td><bdi dir="ltr">{money(l.cost)}</bdi></td>
                           <td>
                             <span className="sp-badge sp-badge--warning">
-                              <bdi dir="ltr">{formatQuantity(availableOf(l.productId))}</bdi> {l.unit}
+                              <bdi dir="ltr">{formatQuantity(availableOf(l.productId))}</bdi> {l.unitInfo.baseUnit}
                             </span>
                           </td>
                           <td>
@@ -359,6 +367,8 @@ export default function TransferForm({
                                 <Icon name="plus" size={18} />
                               </button>
                             </span>
+                            <LineUnitSelect info={l.unitInfo} purpose="ANY" value={l.unitId} compact onChange={(unitId) => setLines((ls) => ls.map((x) => (x.productId === l.productId ? { ...x, unitId, cost: scalePrice(x.baseCost, findLineUnit(x.unitInfo, unitId).factor) } : x)))} />
+                            <BaseHint info={l.unitInfo} unitId={l.unitId} qty={l.quantity} />
                           </td>
                           <td><bdi dir="ltr">{isQuantity(l.quantity) ? money(fromUnits(lineTotalCents(l.quantity, l.cost), 2)) : "—"}</bdi></td>
                           <td className="act">

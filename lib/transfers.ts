@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ProductUnits } from "@/lib/unit-math";
 import { fmt } from "@/lib/i18n/config";
 import { en } from "@/lib/i18n/dictionaries/en";
 import type { Dictionary } from "@/lib/i18n";
@@ -76,6 +77,8 @@ function isValidDate(v: string) {
 export function makeTransferSchema(m: Dictionary["transfers"]["val"] = en.transfers.val) {
   const itemSchema = z.object({
     productId: id(m.chooseProduct),
+    /** The selected product unit (selector only; blank = the base unit). The server resolves factor and base quantity. */
+    unitId: z.string().trim().max(64).optional().default(""),
     quantity: z
       .string({ error: m.qtyRequired })
       .trim()
@@ -126,8 +129,10 @@ export type StockOption = {
   unit: string;
   /** Product.cost (2 dp) — the read-only unit-cost snapshot. */
   cost: string;
-  /** On-hand quantity in that warehouse (3 dp). */
+  /** On-hand quantity in that warehouse (3 dp) — always in BASE units. */
   available: string;
+  /** The product's units (display only; the server resolves factor and base quantity). */
+  unitInfo: ProductUnits;
 };
 
 export type TransferFormValues = {
@@ -136,7 +141,7 @@ export type TransferFormValues = {
   toWarehouseId: string;
   status: TransferStatusValue;
   note: string;
-  items: { productId: string; quantity: string }[];
+  items: { productId: string; quantity: string; unitId?: string }[];
 };
 
 export type TransferRow = {

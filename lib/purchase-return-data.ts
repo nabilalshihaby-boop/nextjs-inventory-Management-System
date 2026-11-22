@@ -20,7 +20,7 @@ export async function getReturnSources(): Promise<ReturnSourcePurchase[]> {
       supplier: { select: { name: true } },
       warehouse: { select: { name: true } },
       currency: { select: { code: true, symbol: true } },
-      items: { orderBy: { id: "asc" }, select: { id: true, productId: true, quantity: true, netUnitCost: true, subtotal: true, taxAmount: true, discountAmount: true, product: { select: { code: true, name: true, purchaseUnit: { select: { name: true } } } } } },
+      items: { orderBy: { id: "asc" }, select: { id: true, productId: true, quantity: true, unitName: true, unitFactor: true, netUnitCost: true, subtotal: true, taxAmount: true, discountAmount: true, product: { select: { code: true, name: true, purchaseUnit: { select: { name: true } }, productUnit: { select: { name: true } } } } } },
     },
   });
   if (!purchases.length) return [];
@@ -58,7 +58,9 @@ export async function getReturnSources(): Promise<ReturnSourcePurchase[]> {
         productId: i.productId,
         code: i.product.code,
         name: i.product.name,
-        unit: i.product.purchaseUnit.name,
+        unit: i.unitName ?? i.product.purchaseUnit.name,
+        factor: i.unitFactor.toFixed(6).replace(/\.?0+$/, ""),
+        baseUnit: i.product.productUnit.name,
         quantity: i.quantity.toFixed(3),
         returned: (returned.get(i.id) ?? new Prisma.Decimal(0)).toFixed(3),
         stock: (onHand.get(`${i.productId}|${p.warehouseId}`) ?? new Prisma.Decimal(0)).toFixed(3),

@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { formatQuantity } from "@/lib/money";
 import { canManageTransfers } from "@/lib/roles";
 import { getTransferFormData, todayIso } from "@/lib/transfer-options";
+import { unitOptionsFor } from "@/lib/product-units";
 import { getDict } from "@/lib/i18n/server";
 import TransferForm from "@/components/transfers/TransferForm";
 
@@ -36,7 +37,7 @@ export default async function EditTransferPage({ params }: PageProps<"/transfers
       note: true,
       items: {
         orderBy: { id: "asc" },
-        select: { quantity: true, product: { select: { id: true, code: true, name: true, cost: true, productUnit: { select: { name: true } } } } },
+        select: { quantity: true, unitId: true, product: { select: { id: true, code: true, name: true, cost: true, productUnit: { select: { name: true } } } } },
       },
     },
   });
@@ -44,6 +45,7 @@ export default async function EditTransferPage({ params }: PageProps<"/transfers
   if (t.status !== "PENDING") redirect(`/transfers/${encodeURIComponent(t.id)}`);
 
   const data = await getTransferFormData();
+  const units = await unitOptionsFor(db, t.items.map((i) => i.product.id));
   return (
     <TransferForm
       {...data}
@@ -56,7 +58,7 @@ export default async function EditTransferPage({ params }: PageProps<"/transfers
         toWarehouseId: t.toWarehouseId,
         status: t.status,
         note: t.note ?? "",
-        items: t.items.map((i) => ({ productId: i.product.id, quantity: formatQuantity(i.quantity.toFixed(3)).replace(/,/g, "") })),
+        items: t.items.map((i) => ({ productId: i.product.id, quantity: formatQuantity(i.quantity.toFixed(3)).replace(/,/g, ""), unitId: i.unitId ?? "" })),
       }}
       // Lines keep showing even if the product's stock has since dropped to 0 (flagged on save).
       initialLines={t.items.map((i) => ({
@@ -65,6 +67,7 @@ export default async function EditTransferPage({ params }: PageProps<"/transfers
         name: i.product.name,
         unit: i.product.productUnit.name,
         cost: i.product.cost.toFixed(2),
+        unitInfo: units.get(i.product.id)!,
       }))}
     />
   );

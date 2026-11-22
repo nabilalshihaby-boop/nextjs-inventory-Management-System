@@ -21,7 +21,7 @@ export async function getSaleReturnSources(): Promise<SaleReturnSource[]> {
       customer: { select: { name: true } },
       warehouse: { select: { name: true } },
       currency: { select: { code: true, symbol: true } },
-      items: { orderBy: { id: "asc" }, select: { id: true, productId: true, productCode: true, productName: true, unitName: true, quantity: true, netUnitPrice: true, subtotal: true, taxAmount: true, discountAmount: true } },
+      items: { orderBy: { id: "asc" }, select: { id: true, productId: true, productCode: true, productName: true, unitName: true, product: { select: { productUnit: { select: { name: true } } } }, quantity: true, netUnitPrice: true, subtotal: true, taxAmount: true, discountAmount: true } },
     },
   });
   if (!sales.length) return [];
@@ -61,6 +61,7 @@ export async function getSaleReturnSources(): Promise<SaleReturnSource[]> {
         code: i.productCode,
         name: i.productName,
         unit: i.unitName,
+        baseUnit: i.product.productUnit.name,
         quantity: i.quantity.toFixed(3),
         returned: (returned.get(i.id) ?? zero).toFixed(3),
         stock: (onHand.get(`${i.productId}|${s.warehouseId}`) ?? zero).toFixed(3),

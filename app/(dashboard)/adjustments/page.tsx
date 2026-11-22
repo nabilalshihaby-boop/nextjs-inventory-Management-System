@@ -32,7 +32,7 @@ export default async function AdjustmentsPage() {
         reference: true,
         adjustmentDate: true,
         warehouse: { select: { name: true } },
-        items: { orderBy: { id: "asc" }, select: { quantity: true, type: true, product: { select: { code: true, name: true, productUnit: { select: { name: true } } } } } },
+        items: { orderBy: { id: "asc" }, select: { quantity: true, type: true, unitName: true, product: { select: { code: true, name: true, productUnit: { select: { name: true } } } } } },
       },
     }),
     getSystemSettings(),
@@ -43,7 +43,7 @@ export default async function AdjustmentsPage() {
     reference: a.reference,
     warehouse: a.warehouse.name,
     date: formatDateOnly(a.adjustmentDate, settings?.dateFormat),
-    lines: a.items.map((i) => ({ product: i.product.name, code: i.product.code, type: i.type, quantity: formatQuantity(i.quantity.toFixed(3)), unit: i.product.productUnit.name })),
+    lines: a.items.map((i) => ({ product: i.product.name, code: i.product.code, type: i.type, quantity: formatQuantity(i.quantity.toFixed(3)), unit: i.unitName ?? i.product.productUnit.name })),
   }));
 
   return <AdjustmentsTable rows={rows} canManage={canManageAdjustments(session.user.role)} />;

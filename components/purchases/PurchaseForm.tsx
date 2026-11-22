@@ -9,6 +9,8 @@ import Modal, { ConfirmDeleteModal } from "@/components/ui/Modal";
 import { createPurchase, type PurchaseResult } from "@/app/(dashboard)/purchases/actions";
 import { formatMoney, formatQuantity } from "@/lib/money";
 import { fromUnits, isQuantity, toUnits } from "@/lib/transfers";
+import { LineUnitSelect, BaseHint } from "@/components/ui/LineUnit";
+import { defaultLineUnit, findLineUnit, scalePrice } from "@/lib/unit-math";
 import { calcOrder, type LineInput } from "@/lib/purchase-calc";
 import { useT } from "@/components/i18n/I18nProvider";
 import { fmt } from "@/lib/i18n/config";
@@ -23,7 +25,7 @@ import { PURCHASE_STATUSES, type PurchaseField, type PurchaseOption, type Purcha
 // preview from the same calculation the server uses; the server recomputes everything on save.
 // Line edits apply to this purchase only — they never change the product's own cost or tax.
 
-type Line = PurchaseProduct & { quantity: string; unitCost: string; taxType: "EXCLUSIVE" | "INCLUSIVE"; taxRate: string; discountType: "FIXED" | "PERCENTAGE"; discountValue: string };
+type Line = PurchaseProduct & { unitId: string; quantity: string; unitCost: string; taxType: "EXCLUSIVE" | "INCLUSIVE"; taxRate: string; discountType: "FIXED" | "PERCENTAGE"; discountValue: string };
 type Currency = { code: string; symbol: string; right: boolean } | null;
 const MONEY_RE = /^\d{1,12}(\.\d{1,2})?$/;
 const PCT_RE = /^\d{1,3}(\.\d{1,2})?$/;
@@ -99,7 +101,8 @@ export default function PurchaseForm({
   function add(p: PurchaseProduct) {
     setQ("");
     if (lines.some((l) => l.productId === p.productId)) return void toast(fmt(F.alreadyInItems, { name: p.name }), { id: "purchase", icon: "ℹ️" });
-    setLines([...lines, { ...p, quantity: "1", unitCost: p.cost, taxType: p.taxType, taxRate: p.taxRate, discountType: "FIXED", discountValue: "0" }]);
+    const du = defaultLineUnit(p.unitInfo, "PURCHASE");
+    setLines([...lines, { ...p, unitId: du.unitId, quantity: "1", unitCost: scalePrice(p.cost, du.factor), taxType: p.taxType, taxRate: p.taxRate, discountType: "FIXED", discountValue: "0" }]);
     setE((x) => ({ ...x, items: "" }));
   }
   const step = (l: Line, dir: 1 | -1) => {
@@ -148,7 +151,7 @@ export default function PurchaseForm({
       discount: discount.trim(),
       shipping: shipping.trim(),
       notes,
-      items: lines.map((l) => ({ productId: l.productId, quantity: l.quantity.trim(), unitCost: l.unitCost.trim(), taxType: l.taxType, taxRate: l.taxRate.trim(), discountType: l.discountType, discountValue: l.discountValue.trim() })),
+      items: lines.map((l) => ({ productId: l.productId, unitId: l.unitId, quantity: l.quantity.trim(), unitCost: l.unitCost.trim(), taxType: l.taxType, taxRate: l.taxRate.trim(), discountType: l.discountType, discountValue: l.discountValue.trim() })),
     };
     startTransition(async () => {
       let r: PurchaseResult;
@@ -328,7 +331,7 @@ export default function PurchaseForm({
                             </td>
                             <td data-col="net">{money(c.netUnitCost)}</td>
                             <td>
-                              <span className="sp-badge sp-badge--warning">{warehouseId ? `${formatQuantity(onHand.get(l.productId) ?? "0.000")} ${l.unit}` : "—"}</span>
+                              <span className="sp-badge sp-badge--warning">{warehouseId ? `${formatQuantity(onHand.get(l.productId) ?? "0.000")} ${l.unitInfo.baseUnit}` : "—"}</span>
                             </td>
                             <td>
                               <span className="sp-qty">
@@ -340,6 +343,8 @@ export default function PurchaseForm({
                                   <Icon name="plus" size={18} />
                                 </button>
                               </span>
+                              <span className="t-caption" style={{ display: "block" }}>{findLineUnit(l.unitInfo, l.unitId).name}</span>
+                              <BaseHint info={l.unitInfo} unitId={l.unitId} qty={l.quantity} />
                             </td>
                             <td data-col="discount">{money(c.discountAmount)}</td>
                             <td data-col="tax">{money(c.taxAmount)}</td>
@@ -431,7 +436,7 @@ export default function PurchaseForm({
                 onClick={() => {
                   const problem = lineProblem(edit);
                   if (problem) return void toast.error(problem, { id: "purchase-item" });
-                  patch(edit.productId, { unitCost: edit.unitCost.trim(), taxType: edit.taxType, taxRate: edit.taxRate.trim(), discountType: edit.discountType, discountValue: edit.discountValue.trim() });
+                  patch(edit.productId, { unitId: edit.unitId, unitCost: edit.unitCost.trim(), taxType: edit.taxType, taxRate: edit.taxRate.trim(), discountType: edit.discountType, discountValue: edit.discountValue.trim() });
                   setEdit(null);
                 }}
               >
@@ -491,10 +496,8 @@ export default function PurchaseForm({
               <label className="sp-label" htmlFor="pi-unit">
                 {F.purchaseUnit}<i>*</i>
               </label>
-              <select id="pi-unit" className="sp-select " value="unit" disabled>
-                <option value="unit">{edit.unit}</option>
-              </select>
-              <span className="sp-hint">{F.unitHint}</span>
+              <LineUnitSelect id="pi-unit" info={edit.unitInfo} purpose="PURCHASE" value={edit.unitId} onChange={(unitId) => setEdit({ ...edit, unitId, unitCost: scalePrice(edit.cost, findLineUnit(edit.unitInfo, unitId).factor) })} />
+              <span className="sp-hint">{T.units.line.unitHint} {T.units.line.priceHint}</span>
             </div>
           </div>
         </Modal>

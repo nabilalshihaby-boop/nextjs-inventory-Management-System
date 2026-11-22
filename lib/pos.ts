@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ProductUnits } from "@/lib/unit-math";
 import { PAYMENT_METHODS, positiveMoneySchema } from "@/lib/cash-bank";
 import type { RegisterOverview } from "@/lib/register";
 import type { CountDenomination } from "@/lib/denominations";
@@ -40,6 +41,8 @@ export const posCheckoutSchema = z
         z
           .object({
             productId: id("Choose a valid product"),
+            /** The selected sale unit (selector only): factor, base quantity and price are resolved on the server. */
+            unitId: z.string().trim().max(64).optional().default(""),
             quantity: z
               .string({ error: "Quantity is required" })
               .trim()
@@ -85,6 +88,8 @@ export type PosProduct = {
   taxType: "EXCLUSIVE" | "INCLUSIVE";
   taxRate: string;
   unit: string;
+  /** The product's units (display only: factor, base quantity and price are resolved on the server). */
+  unitInfo: ProductUnits;
   category: string;
   brand: string;
   image: string | null;

@@ -1,5 +1,5 @@
 import type { Prisma } from "@/app/generated/prisma/client";
-import type { ProductFields } from "@/lib/products";
+import type { ProductFields, UnitInput } from "@/lib/products";
 
 // The ONE place that writes a new product with its opening stock. Used by the Create Product
 // action and by the CSV import so both produce identical records (server-only; call inside a transaction).
@@ -43,10 +43,18 @@ export async function createProductRecord(
   stock: NewStock | null,
   userId: string,
   imagePaths: string[] = [],
+  units: UnitInput[] = [],
 ): Promise<{ id: string }> {
   const p = await tx.product.create({
     data: { ...productFieldData(f), images: { create: imagePaths.map((path, position) => ({ path, position })) } },
     select: { id: true },
+  });
+  // Every product has exactly one BASE unit (factor 1, = productUnitId) plus its optional pack units. Stock is kept in base units.
+  await tx.productUnitConversion.createMany({
+    data: [
+      { productId: p.id, unitId: f.productUnitId, factor: "1", isBase: true, active: true, forSales: true, forPurchases: true },
+      ...units.map((u) => ({ productId: p.id, unitId: u.unitId, factor: u.factor, isBase: false, active: u.active, forSales: u.forSales, forPurchases: u.forPurchases })),
+    ],
   });
   if (stock) {
     // Entries are immutable source records: created here, never updated or deleted.

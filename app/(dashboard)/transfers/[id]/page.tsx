@@ -46,7 +46,7 @@ export default async function TransferDetailsPage({ params }: PageProps<"/transf
       toWarehouse: { select: { name: true } },
       items: {
         orderBy: { id: "asc" },
-        select: { id: true, quantity: true, unitCost: true, product: { select: { code: true, name: true, productUnit: { select: { name: true } } } } },
+        select: { id: true, quantity: true, baseQuantity: true, unitName: true, unitCost: true, product: { select: { code: true, name: true, productUnit: { select: { name: true } } } } },
       },
     },
   });
@@ -59,7 +59,8 @@ export default async function TransferDetailsPage({ params }: PageProps<"/transf
   ]);
   const fmt = settings?.dateFormat;
   const lines = t.items.map((i) => ({ ...i, qty: i.quantity.toFixed(3), cost: i.unitCost.toFixed(2) }));
-  const totalQty = fromUnits(lines.reduce((a, l) => a + toUnits(l.qty, 3), BigInt(0)), 3);
+  // Total quantity is counted in BASE units (lines may use different units).
+  const totalQty = fromUnits(t.items.reduce((a, i) => a + toUnits(i.baseQuantity.toFixed(3), 3), BigInt(0)), 3);
   const total = transferTotal(lines.map((l) => ({ quantity: l.qty, unitCost: l.cost })));
 
   const info: [string, string][] = [
@@ -131,7 +132,7 @@ export default async function TransferDetailsPage({ params }: PageProps<"/transf
                       </td>
                       {canManage && <td><bdi dir="ltr">{formatMoney(l.cost, currency)}</bdi></td>}
                       <td>
-                        <bdi dir="ltr">{formatQuantity(l.qty)}</bdi> {l.product.productUnit.name}
+                        <bdi dir="ltr">{formatQuantity(l.qty)}</bdi> {l.unitName ?? l.product.productUnit.name}
                       </td>
                       {canManage && <td className="num"><bdi dir="ltr">{formatMoney(fromUnits(lineTotalCents(l.qty, l.cost), 2), currency)}</bdi></td>}
                     </tr>

@@ -7,11 +7,16 @@ import { getDefaultCurrency, getSystemSettings } from "@/lib/settings";
 import { paymentStatus } from "@/lib/purchases";
 import { saleDue } from "@/lib/sale-returns";
 import { toUnits } from "@/lib/transfers";
-import { returnBlockedReason, type SaleDraft, type SaleRow, type SaleStatusValue } from "@/lib/sales";
+import { returnBlockedReason, type SaleDraft, type SaleProduct, type SaleRow, type SaleStatusValue } from "@/lib/sales";
+import { unitOptionsFor } from "@/lib/product-units";
 
 /** Same real options as quotations: customers, warehouses, products (price/tax/sale unit), stock, currency. */
-export type SaleFormData = QuotationFormData;
-export const getSaleFormData = getQuotationFormData;
+export type SaleFormData = Omit<QuotationFormData, "products"> & { products: SaleProduct[] };
+export async function getSaleFormData(): Promise<SaleFormData> {
+  const data = await getQuotationFormData();
+  const units = await unitOptionsFor(db, data.products.map((p) => p.productId));
+  return { ...data, products: data.products.map((p) => ({ ...p, unitInfo: units.get(p.productId)! })) };
+}
 
 /** Per sale: Σ returned grand totals, and whether every sold quantity has already been returned. */
 export async function saleReturnState(saleIds: string[]): Promise<Map<string, { returned: string; fullyReturned: boolean }>> {
@@ -43,12 +48,15 @@ export async function getSaleDraft(id: string): Promise<{ status: SaleStatusValu
         id: true, reference: true, status: true, saleDate: true, warehouseId: true, customerId: true, orderTaxRate: true, discount: true, shipping: true, notes: true,
         currency: { select: { code: true, symbol: true } },
         quotation: { select: { reference: true } },
-        items: { orderBy: { id: "asc" }, select: { productId: true, productCode: true, productName: true, unitName: true, quantity: true, unitPrice: true, taxType: true, taxRate: true, discountType: true, discountValue: true } },
+        items: { orderBy: { id: "asc" }, select: { productId: true, productCode: true, productName: true, unitName: true, unitId: true, quantity: true, unitPrice: true, taxType: true, taxRate: true, discountType: true, discountValue: true } },
       },
     }),
     getSystemSettings(),
   ]);
   if (!s) return null;
+  const ids = s.items.map((i) => i.productId);
+  const [units, prices] = await Promise.all([unitOptionsFor(db, ids), db.product.findMany({ where: { id: { in: ids } }, select: { id: true, price: true } })]);
+  const basePrice = new Map(prices.map((p) => [p.id, p.price.toFixed(2)]));
   return {
     status: s.status,
     reference: s.reference,
@@ -69,7 +77,9 @@ export async function getSaleDraft(id: string): Promise<{ status: SaleStatusValu
         code: i.productCode,
         name: i.productName,
         unit: i.unitName,
-        price: i.unitPrice.toFixed(2),
+        unitInfo: units.get(i.productId)!,
+        unitId: i.unitId ?? (units.get(i.productId)!.units.find((u) => u.name === i.unitName && Number(u.factor) === 1)?.unitId ?? units.get(i.productId)!.baseUnitId),
+        price: basePrice.get(i.productId) ?? i.unitPrice.toFixed(2),
         unitPrice: i.unitPrice.toFixed(2),
         taxType: i.taxType,
         taxRate: i.taxRate.toFixed(2),

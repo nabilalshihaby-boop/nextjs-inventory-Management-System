@@ -24,6 +24,7 @@ import { arAdjustments } from "@/lib/i18n/dictionaries/ar-adj";
 import { arUsers } from "@/lib/i18n/dictionaries/ar-users";
 import { arImpExp } from "@/lib/i18n/dictionaries/ar-impexp";
 import { arInvReports, arStockGuard } from "@/lib/i18n/dictionaries/ar-invrep";
+import { arUnits } from "@/lib/i18n/dictionaries/ar-units";
 export const ar: Dictionary = {
   common: {
     save: "حفظ",
@@ -637,6 +638,7 @@ export const ar: Dictionary = {
   importExport: arImpExp,
   invReports: arInvReports,
   stockGuard: arStockGuard,
+  units: arUnits,
   langAdmin: {
     title: "اللغات",
     sections: { nav: "لوحة التحكم والتنقل", auth: "تسجيل الدخول والحساب", settings: "الإعدادات والتفضيلات", pos: "نقطة البيع والصندوق", shared: "الواجهة المشتركة والتقارير", sales: "المبيعات", purchases: "المشتريات", finance: "المالية", products: "المنتجات والمخزون", people: "العملاء والموردون", users: "المستخدمون والأدوار", reports: "التقارير" },

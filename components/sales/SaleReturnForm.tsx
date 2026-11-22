@@ -233,7 +233,7 @@ export default function SaleReturnForm({ sources, today, initialSale }: { source
                               <td>{money(l.netUnitPrice)}</td>
                               <td>
                                 <span className="sp-badge sp-badge--warning" data-testid="stock" title={F.stockTitle}>
-                                  {formatQuantity(l.stock)} {l.unit}
+                                  {formatQuantity(l.stock)} {l.baseUnit}
                                 </span>
                               </td>
                               <td>

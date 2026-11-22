@@ -128,17 +128,43 @@ model Brand {
 /// Product units managed on /products/units. `name` is unique (case-insensitive column collation).
 /// Products will reference units; deletion is refused while they do.
 model ProductUnit {
-  id                 String    @id @default(cuid())
-  name               String    @unique @db.VarChar(120)
+  id                 String                  @id @default(cuid())
+  name               String                  @unique @db.VarChar(120)
   /// Relative path under /uploads/units (local-development storage), or null.
-  image              String?   @db.VarChar(255)
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-  productsAsUnit     Product[] @relation("ProductUnit")
-  productsAsSale     Product[] @relation("SaleUnit")
-  productsAsPurchase Product[] @relation("PurchaseUnit")
+  image              String?                 @db.VarChar(255)
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+  productsAsUnit     Product[]               @relation("ProductUnit")
+  productsAsSale     Product[]               @relation("SaleUnit")
+  productsAsPurchase Product[]               @relation("PurchaseUnit")
+  conversions        ProductUnitConversion[]
 
   @@map("product_units")
+}
+
+/// Per-product unit conversion. The Unit master (ProductUnit) is only a reusable LABEL (Piece, Box, Carton, Kg…);
+/// the factor belongs to the product because one carton can be a different quantity for every product.
+/// Exactly one row per product is the BASE unit (isBase, factor 1, = Product.productUnitId). Stock is always
+/// stored and protected in base units. A row that any document line or stock movement has used is immutable
+/// except for deactivation (see lib/product-units.ts). A future barcode can identify product + this row.
+model ProductUnitConversion {
+  id           String      @id @default(cuid())
+  productId    String
+  product      Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  unitId       String
+  unit         ProductUnit @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  /// Base-unit quantity of ONE of this unit (DECIMAL(16,6), strictly positive; the base row is exactly 1).
+  factor       Decimal     @db.Decimal(16, 6)
+  isBase       Boolean     @default(false)
+  active       Boolean     @default(true)
+  forSales     Boolean     @default(true)
+  forPurchases Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@unique([productId, unitId])
+  @@index([unitId])
+  @@map("product_unit_conversions")
 }
 
 /// Suppliers (master data) managed on /suppliers. `name` is unique (case-insensitive collation).
@@ -215,34 +241,35 @@ enum StockEntrySource {
 /// Products managed on /products. Money uses DECIMAL(14,2) and quantities DECIMAL(14,3) — never
 /// floating point. All master-data relations are RESTRICT so referenced records can't be deleted.
 model Product {
-  id                  String                @id @default(cuid())
-  name                String                @db.VarChar(191)
+  id                  String                  @id @default(cuid())
+  name                String                  @db.VarChar(191)
   /// Normalized (trimmed, uppercase) and unique.
-  code                String                @unique @db.VarChar(64)
+  code                String                  @unique @db.VarChar(64)
   categoryId          String
-  category            ProductCategory       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  category            ProductCategory         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   brandId             String
-  brand               Brand                 @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  brand               Brand                   @relation(fields: [brandId], references: [id], onDelete: Restrict)
   barcodeSymbology    BarcodeSymbology
-  cost                Decimal               @db.Decimal(14, 2)
-  price               Decimal               @db.Decimal(14, 2)
+  cost                Decimal                 @db.Decimal(14, 2)
+  price               Decimal                 @db.Decimal(14, 2)
   productUnitId       String
-  productUnit         ProductUnit           @relation("ProductUnit", fields: [productUnitId], references: [id], onDelete: Restrict)
+  productUnit         ProductUnit             @relation("ProductUnit", fields: [productUnitId], references: [id], onDelete: Restrict)
   saleUnitId          String
-  saleUnit            ProductUnit           @relation("SaleUnit", fields: [saleUnitId], references: [id], onDelete: Restrict)
+  saleUnit            ProductUnit             @relation("SaleUnit", fields: [saleUnitId], references: [id], onDelete: Restrict)
   purchaseUnitId      String
-  purchaseUnit        ProductUnit           @relation("PurchaseUnit", fields: [purchaseUnitId], references: [id], onDelete: Restrict)
-  stockAlert          Decimal               @default(0) @db.Decimal(14, 3)
+  purchaseUnit        ProductUnit             @relation("PurchaseUnit", fields: [purchaseUnitId], references: [id], onDelete: Restrict)
+  stockAlert          Decimal                 @default(0) @db.Decimal(14, 3)
   /// Percentage 0–100.
-  orderTax            Decimal               @default(0) @db.Decimal(5, 2)
-  taxType             TaxType               @default(EXCLUSIVE)
-  quantityLimitation  Decimal?              @db.Decimal(14, 3)
-  notes               String?               @db.Text
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
+  orderTax            Decimal                 @default(0) @db.Decimal(5, 2)
+  taxType             TaxType                 @default(EXCLUSIVE)
+  quantityLimitation  Decimal?                @db.Decimal(14, 3)
+  notes               String?                 @db.Text
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
   images              ProductImage[]
   stocks              ProductStock[]
   stockEntries        ProductStockEntry[]
+  unitConversions     ProductUnitConversion[]
   transferItems       StockTransferItem[]
   adjustmentItems     StockAdjustmentItem[]
   purchaseItems       PurchaseItem[]
@@ -350,13 +377,18 @@ model StockTransfer {
 
 /// One product line of a transfer. `unitCost` is a snapshot of Product.cost when the line was saved.
 model StockTransferItem {
-  id         String        @id @default(cuid())
-  transferId String
-  transfer   StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
-  productId  String
-  product    Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
-  quantity   Decimal       @db.Decimal(14, 3)
-  unitCost   Decimal       @db.Decimal(14, 2)
+  id           String        @id @default(cuid())
+  transferId   String
+  transfer     StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantity     Decimal       @db.Decimal(14, 3)
+  /// Unit snapshot of this line (NULL unitId = legacy line, factor 1); baseQuantity is the stock effect.
+  unitId       String?       @db.VarChar(191)
+  unitName     String?       @db.VarChar(64)
+  unitFactor   Decimal       @default(1) @db.Decimal(16, 6)
+  baseQuantity Decimal       @db.Decimal(14, 3)
+  unitCost     Decimal       @db.Decimal(14, 2)
 
   @@unique([transferId, productId])
   @@index([productId])
@@ -397,6 +429,11 @@ model StockAdjustmentItem {
   productId    String
   product      Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
   quantity     Decimal         @db.Decimal(14, 3)
+  /// Unit snapshot of this line (NULL unitId = legacy line, factor 1); baseQuantity is the stock effect.
+  unitId       String?         @db.VarChar(191)
+  unitName     String?         @db.VarChar(64)
+  unitFactor   Decimal         @default(1) @db.Decimal(16, 6)
+  baseQuantity Decimal         @db.Decimal(14, 3)
   type         AdjustmentType
 
   @@unique([adjustmentId, productId])
@@ -524,6 +561,11 @@ model PurchaseItem {
   productId      String
   product        Product              @relation(fields: [productId], references: [id], onDelete: Restrict)
   quantity       Decimal              @db.Decimal(14, 3)
+  /// Unit snapshot of this line (NULL unitId = legacy line, factor 1); baseQuantity is the stock effect.
+  unitId         String?              @db.VarChar(191)
+  unitName       String?              @db.VarChar(64)
+  unitFactor     Decimal              @default(1) @db.Decimal(16, 6)
+  baseQuantity   Decimal              @db.Decimal(14, 3)
   /// Unit cost entered for this purchase (defaults to Product.cost).
   unitCost       Decimal              @db.Decimal(14, 2)
   taxType        TaxType
@@ -597,6 +639,11 @@ model PurchaseReturnItem {
   productId      String
   product        Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
   quantity       Decimal        @db.Decimal(14, 3)
+  /// Unit snapshot of this line (NULL unitId = legacy line, factor 1); baseQuantity is the stock effect.
+  unitId         String?        @db.VarChar(191)
+  unitName       String?        @db.VarChar(64)
+  unitFactor     Decimal        @default(1) @db.Decimal(16, 6)
+  baseQuantity   Decimal        @db.Decimal(14, 3)
   unitCost       Decimal        @db.Decimal(14, 2)
   netUnitCost    Decimal        @db.Decimal(14, 2)
   taxType        TaxType
@@ -976,6 +1023,11 @@ model SaleItem {
   productName    String           @db.VarChar(191)
   unitName       String           @db.VarChar(64)
   quantity       Decimal          @db.Decimal(14, 3)
+  /// Unit snapshot of this line: the unit used (NULL = legacy line, factor 1), the base-unit quantity of ONE such
+  /// unit at the time, and the quantity in BASE units — the only number stock effects and history use.
+  unitId         String?          @db.VarChar(191)
+  unitFactor     Decimal          @default(1) @db.Decimal(16, 6)
+  baseQuantity   Decimal          @db.Decimal(14, 3)
   unitPrice      Decimal          @db.Decimal(14, 2)
   taxType        TaxType
   taxRate        Decimal          @db.Decimal(5, 2)
@@ -1049,6 +1101,11 @@ model SaleReturnItem {
   productName    String       @db.VarChar(191)
   unitName       String       @db.VarChar(64)
   quantity       Decimal      @db.Decimal(14, 3)
+  /// Unit snapshot of this line: the unit used (NULL = legacy line, factor 1), the base-unit quantity of ONE such
+  /// unit at the time, and the quantity in BASE units — the only number stock effects and history use.
+  unitId         String?      @db.VarChar(191)
+  unitFactor     Decimal      @default(1) @db.Decimal(16, 6)
+  baseQuantity   Decimal      @db.Decimal(14, 3)
   unitPrice      Decimal      @db.Decimal(14, 2)
   netUnitPrice   Decimal      @db.Decimal(14, 2)
   taxType        TaxType
@@ -1168,6 +1225,8 @@ model PosHeldOrderItem {
   productCode String       @db.VarChar(64)
   productName String       @db.VarChar(191)
   quantity    Decimal      @db.Decimal(14, 3)
+  /// The selected sale unit (NULL = the product default); validated again at checkout.
+  unitId      String?      @db.VarChar(191)
   /// The unit price shown when it was held — informational; checkout always uses the live price.
   unitPrice   Decimal      @db.Decimal(14, 2)
 

@@ -15,6 +15,8 @@ import { canUsePos } from "@/lib/roles";
 import { calcSale, formatSaleReference } from "@/lib/sales";
 import { SaleError, deductStock } from "@/lib/sale-stock";
 import { StockHistoryError } from "@/lib/stock-history-guard";
+import { lineSnapshot, loadUnitSets, resolveLine, type ResolvedUnit } from "@/lib/product-units";
+import { scalePrice } from "@/lib/unit-math";
 import { getDefaultCurrency } from "@/lib/settings";
 import { fromUnits, toUnits } from "@/lib/transfers";
 
@@ -83,7 +85,7 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
         const [customer, warehouse, products] = await Promise.all([
           tx.customer.findUnique({ where: { id: d.customerId }, select: { id: true, name: true } }),
           tx.warehouse.findUnique({ where: { id: d.warehouseId }, select: { id: true } }),
-          tx.product.findMany({ where: { id: { in: d.items.map((i) => i.productId) } }, select: { id: true, code: true, name: true, price: true, taxType: true, orderTax: true, saleUnit: { select: { name: true } } } }),
+          tx.product.findMany({ where: { id: { in: d.items.map((i) => i.productId) } }, select: { id: true, code: true, name: true, price: true, taxType: true, orderTax: true } }),
         ]);
         if (!customer) return reject("posTx.checkout.chooseCustomer", {}, "customerId");
         if (d.walkIn) {
@@ -95,10 +97,21 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
         const byId = new Map(products.map((p) => [p.id, p]));
         if (d.items.some((i) => !byId.has(i.productId))) return reject("posTx.checkout.productGone", {}, "items");
 
+        // Units: each line's unit must be an active SALE conversion of THIS product (blank = the product's default sale unit).
+        // The unit price is the stored base price × the stored factor — nothing about unit, factor or price comes from the browser.
+        const sets = await loadUnitSets(tx, d.items.map((i) => i.productId));
+        const lineUnit = new Map<string, ResolvedUnit>();
+        for (const i of d.items) {
+          const p = byId.get(i.productId)!;
+          const r = resolveLine(sets.get(i.productId), i.unitId, "SALE", i.quantity, `${p.code} ${p.name}`);
+          if (!r.ok) return reject(r.f.key, r.f.vars, "items");
+          lineUnit.set(i.productId, r.r);
+        }
+
         // Authoritative totals from the STORED product values (same exact calculation as Sales).
         const lines = d.items.map((i) => {
           const p = byId.get(i.productId)!;
-          return { quantity: i.quantity, unitPrice: p.price.toFixed(2), taxType: p.taxType, taxRate: p.orderTax.toFixed(2), discountType: "FIXED" as const, discountValue: "0.00" };
+          return { quantity: i.quantity, unitPrice: scalePrice(p.price.toFixed(2), lineUnit.get(i.productId)!.factor), taxType: p.taxType, taxRate: p.orderTax.toFixed(2), discountType: "FIXED" as const, discountValue: "0.00" };
         });
         const totals = calcSale(lines, { orderTaxRate: "0.00", discount: "0.00", shipping: "0.00" });
         const bad = totals.lines.find((l) => l.error);
@@ -137,8 +150,8 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
                   product: { connect: { id: p.id } },
                   productCode: p.code,
                   productName: p.name,
-                  unitName: p.saleUnit.name,
                   quantity: i.quantity,
+                  ...lineSnapshot(lineUnit.get(i.productId)!),
                   unitPrice: lines[n].unitPrice,
                   taxType: lines[n].taxType,
                   taxRate: lines[n].taxRate,
@@ -165,7 +178,7 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
         }
 
         // 2. Stock — conditional, once, all-or-nothing.
-        await deductStock(tx, warehouse.id, d.items.map((i) => ({ productId: i.productId, quantity: i.quantity, productCode: byId.get(i.productId)!.code, productName: byId.get(i.productId)!.name })), at);
+        await deductStock(tx, warehouse.id, d.items.map((i) => ({ productId: i.productId, quantity: lineUnit.get(i.productId)!.baseQuantity, productCode: byId.get(i.productId)!.code, productName: byId.get(i.productId)!.name })), at);
 
         // 3. Tender check — the payments must add up to EXACTLY the server-calculated Grand Total
         // (no partial, no change). Every receiving account is locked (id order), ACTIVE and in the sale currency.

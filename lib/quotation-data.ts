@@ -18,14 +18,14 @@ export async function getQuotationFormData(): Promise<QuotationFormData> {
   const [customers, warehouses, products, stock, currency] = await Promise.all([
     db.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.warehouse.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
-    db.product.findMany({ orderBy: { name: "asc" }, select: { id: true, code: true, name: true, price: true, taxType: true, orderTax: true, saleUnit: { select: { name: true } } } }),
+    db.product.findMany({ orderBy: { name: "asc" }, select: { id: true, code: true, name: true, price: true, taxType: true, orderTax: true, productUnit: { select: { name: true } } } }),
     db.productStock.findMany({ select: { productId: true, warehouseId: true, quantity: true } }),
     getDefaultCurrency(),
   ]);
   return {
     customers: customers.map((c) => ({ value: c.id, label: c.name })),
     warehouses: warehouses.map((w) => ({ value: w.id, label: w.name })),
-    products: products.map((p) => ({ productId: p.id, code: p.code, name: p.name, price: p.price.toFixed(2), taxType: p.taxType, taxRate: p.orderTax.toFixed(2), unit: p.saleUnit.name })),
+    products: products.map((p) => ({ productId: p.id, code: p.code, name: p.name, price: p.price.toFixed(2), taxType: p.taxType, taxRate: p.orderTax.toFixed(2), unit: p.productUnit.name })),
     stock: stock.map((s) => ({ productId: s.productId, warehouseId: s.warehouseId, quantity: s.quantity.toFixed(3) })),
     currency: currency ? { code: currency.code, symbol: currency.symbol, right: currency.right } : null,
   };

@@ -11,6 +11,7 @@ import { canManagePurchaseReturns } from "@/lib/roles";
 import { calcReturn } from "@/lib/purchase-return-calc";
 import { formatPurchaseReturnReference, makePurchaseReturnSchema, type PurchaseReturnField } from "@/lib/purchase-returns";
 import { getDict } from "@/lib/i18n/server";
+import { toBaseQuantity } from "@/lib/unit-math";
 import { LocalizedError, errorMessage, tr, type Vars } from "@/lib/i18n/messages";
 import type { Dictionary } from "@/lib/i18n";
 import { StockHistoryError, assertNonNegativeHistory } from "@/lib/stock-history-guard";
@@ -83,7 +84,7 @@ export async function createPurchaseReturn(input: unknown): Promise<PurchaseRetu
               subtotal: true, orderTaxAmount: true, discount: true, grandTotal: true, paidAmount: true,
               currency: { select: { symbol: true } },
               warehouse: { select: { name: true } },
-              items: { select: { id: true, productId: true, quantity: true, unitCost: true, netUnitCost: true, taxType: true, taxRate: true, discountType: true, discountValue: true, discountAmount: true, taxAmount: true, subtotal: true, product: { select: { code: true, name: true } } } },
+              items: { select: { id: true, productId: true, quantity: true, baseQuantity: true, unitId: true, unitName: true, unitFactor: true, unitCost: true, netUnitCost: true, taxType: true, taxRate: true, discountType: true, discountValue: true, discountAmount: true, taxAmount: true, subtotal: true, product: { select: { code: true, name: true } } } },
             },
           });
           if (p.status !== "RECEIVED") fail("purchaseReturns.err.notReceived", { ref: p.reference }, "purchaseId");
@@ -91,10 +92,11 @@ export async function createPurchaseReturn(input: unknown): Promise<PurchaseRetu
 
           // 2. Everything already returned from this purchase.
           const [priorByLine, priorSub] = await Promise.all([
-            tx.purchaseReturnItem.groupBy({ by: ["purchaseItemId"], where: { purchaseReturn: { purchaseId: p.id } }, _sum: { quantity: true } }),
+            tx.purchaseReturnItem.groupBy({ by: ["purchaseItemId"], where: { purchaseReturn: { purchaseId: p.id } }, _sum: { quantity: true, baseQuantity: true } }),
             tx.purchaseReturn.aggregate({ where: { purchaseId: p.id }, _sum: { subtotal: true, grandTotal: true } }),
           ]);
           const returnedOf = new Map(priorByLine.map((r) => [r.purchaseItemId, r._sum.quantity ?? new Prisma.Decimal(0)]));
+          const returnedBaseOf = new Map(priorByLine.map((r) => [r.purchaseItemId, r._sum.baseQuantity ?? new Prisma.Decimal(0)]));
           const byId = new Map(p.items.map((i) => [i.id, i]));
 
           // 3. Lines: must belong to this purchase and stay within the returnable quantity.
@@ -105,7 +107,15 @@ export async function createPurchaseReturn(input: unknown): Promise<PurchaseRetu
             if (new Prisma.Decimal(it.quantity).gt(returnable)) {
               fail("purchaseReturns.err.exceeds", { returnable: formatQuantity(returnable.toFixed(3)), code: pi.product.code, name: pi.product.name, bought: formatQuantity(pi.quantity.toFixed(3)), returned: formatQuantity(returned.toFixed(3)) }, "items", pi.id);
             }
-            return { pi, quantity: it.quantity, returned: returned.toFixed(3) };
+            // A return uses the ORIGINAL line's unit and factor; the base quantity is converted exactly and may never exceed
+            // what is still returnable measured in BASE units either.
+            const b = toBaseQuantity(it.quantity, pi.unitFactor.toFixed(6));
+            const baseQty = b.ok ? b.value : fail("units.err.baseDecimals", { product: `${pi.product.code} ${pi.product.name}`, unit: pi.unitName ?? "", qty: it.quantity, factor: pi.unitFactor.toFixed(6) }, "items", pi.id);
+            const returnableBase = new Prisma.Decimal(pi.baseQuantity).minus(returnedBaseOf.get(pi.id) ?? new Prisma.Decimal(0));
+            if (new Prisma.Decimal(baseQty).gt(returnableBase)) {
+              fail("purchaseReturns.err.exceeds", { returnable: formatQuantity(returnable.toFixed(3)), code: pi.product.code, name: pi.product.name, bought: formatQuantity(pi.quantity.toFixed(3)), returned: formatQuantity(returned.toFixed(3)) }, "items", pi.id);
+            }
+            return { pi, quantity: it.quantity, base: baseQty, returned: returned.toFixed(3) };
           });
 
           // 4. Server-side amounts from the original snapshot.
@@ -125,10 +135,10 @@ export async function createPurchaseReturn(input: unknown): Promise<PurchaseRetu
 
           // 5. Deduct stock — conditional, never below zero (stable lock order by product).
           for (const l of [...lines].sort((x, y) => x.pi.productId.localeCompare(y.pi.productId))) {
-            const r = await tx.productStock.updateMany({ where: { productId: l.pi.productId, warehouseId: p.warehouseId, quantity: { gte: l.quantity } }, data: { quantity: { decrement: l.quantity } } });
+            const r = await tx.productStock.updateMany({ where: { productId: l.pi.productId, warehouseId: p.warehouseId, quantity: { gte: l.base } }, data: { quantity: { decrement: l.base } } });
             if (r.count !== 1) {
               const s = await tx.productStock.findUnique({ where: { productId_warehouseId: { productId: l.pi.productId, warehouseId: p.warehouseId } }, select: { quantity: true } });
-              fail("purchaseReturns.err.noStock", { code: l.pi.product.code, name: l.pi.product.name, warehouse: p.warehouse.name, qty: formatQuantity(new Prisma.Decimal(l.quantity).toFixed(3)), available: formatQuantity((s?.quantity ?? new Prisma.Decimal(0)).toFixed(3)) }, "items", l.pi.id);
+              fail("purchaseReturns.err.noStock", { code: l.pi.product.code, name: l.pi.product.name, warehouse: p.warehouse.name, qty: formatQuantity(new Prisma.Decimal(l.base).toFixed(3)), available: formatQuantity((s?.quantity ?? new Prisma.Decimal(0)).toFixed(3)) }, "items", l.pi.id);
             }
           }
 
@@ -153,6 +163,10 @@ export async function createPurchaseReturn(input: unknown): Promise<PurchaseRetu
                   purchaseItemId: l.pi.id,
                   productId: l.pi.productId,
                   quantity: l.quantity,
+                  unitId: l.pi.unitId,
+                  unitName: l.pi.unitName,
+                  unitFactor: l.pi.unitFactor,
+                  baseQuantity: l.base,
                   unitCost: l.pi.unitCost,
                   netUnitCost: l.pi.netUnitCost,
                   taxType: l.pi.taxType,

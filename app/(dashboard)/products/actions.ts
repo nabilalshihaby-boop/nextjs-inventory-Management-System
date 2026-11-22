@@ -9,7 +9,9 @@ import { canManageProducts } from "@/lib/roles";
 import { getDefaultCurrency } from "@/lib/settings";
 import { deleteImage, saveImage, validateImage, type ValidImage } from "@/lib/image-upload";
 import { createProductRecord, productFieldData } from "@/lib/product-create";
-import { MAX_PRODUCT_IMAGES, makeProductSchemas, type ProductField, type ProductFields } from "@/lib/products";
+import { MAX_PRODUCT_IMAGES, checkUnitConfig, makeProductSchemas, makeUnitsSchema, type ProductField, type ProductFields, type UnitInput } from "@/lib/products";
+import { conversionUsed, productHasActivity } from "@/lib/product-units";
+import { trimFactor } from "@/lib/unit-math";
 import { getDict } from "@/lib/i18n/server";
 import { fmt } from "@/lib/i18n/config";
 import type { Dictionary } from "@/lib/i18n";
@@ -32,6 +34,16 @@ const str = (fd: FormData, k: string) => {
   return typeof v === "string" ? v : "";
 };
 const fail = (fieldErrors: Errors, t: Dictionary): ProductResult => ({ ok: false, message: Object.values(fieldErrors)[0] ?? t.common.checkForm, fieldErrors });
+/** A unit rule broken inside the update transaction (rolls everything back). */
+class UnitRuleError extends Error {
+  constructor(
+    readonly field: ProductField,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 const isUniqueViolation = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
 
 /** OWNER/ADMIN only — re-checked in every mutation; the role never comes from the client. */
@@ -65,9 +77,26 @@ function parseFields(fd: FormData, errors: Errors, schema: ReturnType<typeof mak
   return null;
 }
 
+/** The pack units sent by the form (JSON in the "units" field): shape-checked here, rules checked by checkUnitConfig. */
+function parseUnits(fd: FormData, errors: Errors, t: Dictionary): UnitInput[] | null {
+  const raw = str(fd, "units");
+  if (!raw) return [];
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    errors.units ??= t.units.val.unitRequired;
+    return null;
+  }
+  const parsed = makeUnitsSchema(t.units.val).safeParse(json);
+  if (parsed.success) return parsed.data;
+  errors.units ??= parsed.error.issues[0]?.message ?? t.units.val.unitRequired;
+  return null;
+}
+
 /** Every related record must exist in MySQL (ids from the client only select, never trusted). */
-async function checkRelations(f: ProductFields, errors: Errors, E: Dictionary["products"]["err"]) {
-  const unitIds = [...new Set([f.productUnitId, f.saleUnitId, f.purchaseUnitId])];
+async function checkRelations(f: ProductFields, errors: Errors, E: Dictionary["products"]["err"], extraUnitIds: string[] = []) {
+  const unitIds = [...new Set([f.productUnitId, f.saleUnitId, f.purchaseUnitId, ...extraUnitIds])];
   const [category, brand, units] = await Promise.all([
     db.productCategory.findUnique({ where: { id: f.categoryId }, select: { id: true } }),
     db.brand.findUnique({ where: { id: f.brandId }, select: { id: true } }),
@@ -79,6 +108,7 @@ async function checkRelations(f: ProductFields, errors: Errors, E: Dictionary["p
   if (!found.has(f.productUnitId)) errors.productUnitId ??= E.validProductUnit;
   if (!found.has(f.saleUnitId)) errors.saleUnitId ??= E.validSaleUnit;
   if (!found.has(f.purchaseUnitId)) errors.purchaseUnitId ??= E.validPurchaseUnit;
+  if (extraUnitIds.some((id) => !found.has(id))) errors.units ??= E.validUnit;
 }
 
 /** New image files from FormData, validated by content. */
@@ -115,7 +145,12 @@ export async function createProduct(formData: FormData): Promise<ProductResult> 
   });
   if (!stock.success) for (const i of stock.error.issues) errors[i.path[0] as ProductField] ??= i.message;
 
-  if (f) await checkRelations(f, errors, E);
+  const units = parseUnits(formData, errors, t);
+  if (f && units) {
+    const names = new Map((await db.productUnit.findMany({ where: { id: { in: [f.productUnitId, f.saleUnitId, f.purchaseUnitId, ...units.map((u) => u.unitId)] } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
+    Object.assign(errors, checkUnitConfig(f.productUnitId, f.saleUnitId, f.purchaseUnitId, units, (id) => names.get(id) ?? "", t.units.val));
+  }
+  if (f) await checkRelations(f, errors, E, (units ?? []).map((u) => u.unitId));
   if (stock.success) {
     const [warehouse, supplier] = await Promise.all([
       db.warehouse.findUnique({ where: { id: stock.data.warehouseId }, select: { id: true } }),
@@ -133,7 +168,7 @@ export async function createProduct(formData: FormData): Promise<ProductResult> 
   const paths: string[] = [];
   try {
     for (const img of images) paths.push(await saveImage(FOLDER, img));
-    const product = await db.$transaction((tx) => createProductRecord(tx, f, { ...stock.data, source: "PRODUCT_FORM" }, a.userId, paths));
+    const product = await db.$transaction((tx) => createProductRecord(tx, f, { ...stock.data, source: "PRODUCT_FORM" }, a.userId, paths, units ?? []));
     revalidatePath("/products");
     return { ok: true, message: t.products.ok.created, id: product.id };
   } catch (e) {
@@ -159,13 +194,24 @@ export async function updateProduct(id: unknown, formData: FormData): Promise<Pr
   if (!pid.success) return { ok: false, message: E.notFound };
   if (!(await getDefaultCurrency())) return { ok: false, message: E.noCurrency, fieldErrors: { currency: E.noCurrency } };
 
-  const existing = await db.product.findUnique({ where: { id: pid.data }, select: { id: true, images: { select: { id: true, path: true } } } });
+  const existing = await db.product.findUnique({
+    where: { id: pid.data },
+    select: { id: true, productUnitId: true, images: { select: { id: true, path: true } }, unitConversions: { select: { unitId: true, factor: true, isBase: true, active: true, forSales: true, forPurchases: true } } },
+  });
   if (!existing) return { ok: false, message: E.notFound };
 
   const errors: Errors = {};
   const f = parseFields(formData, errors, S.productFieldsSchema);
+  // Pack units: when the form sends them they replace the current set (subject to the safety rules below);
+  // a request without them leaves the conversions untouched.
+  const unitsProvided = formData.has("units");
+  const sent = unitsProvided ? parseUnits(formData, errors, t) : null;
+  const current: UnitInput[] = existing.unitConversions.filter((c) => !c.isBase).map((c) => ({ unitId: c.unitId, factor: trimFactor(c.factor.toFixed(6)), active: c.active, forSales: c.forSales, forPurchases: c.forPurchases }));
+  const rows = sent ?? current;
   if (f) {
-    await checkRelations(f, errors, E);
+    const names = new Map((await db.productUnit.findMany({ where: { id: { in: [f.productUnitId, f.saleUnitId, f.purchaseUnitId, ...rows.map((u) => u.unitId)] } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
+    if (sent || !unitsProvided) Object.assign(errors, checkUnitConfig(f.productUnitId, f.saleUnitId, f.purchaseUnitId, rows, (id) => names.get(id) ?? "", t.units.val));
+    await checkRelations(f, errors, E, rows.map((u) => u.unitId));
     if (await db.product.findFirst({ where: { code: f.code, NOT: { id: existing.id } }, select: { id: true } })) errors.code ??= E.duplicate;
   }
   // Images to keep: only ids that really belong to this product.
@@ -180,7 +226,38 @@ export async function updateProduct(id: unknown, formData: FormData): Promise<Pr
   try {
     for (const img of images) paths.push(await saveImage(FOLDER, img));
     await db.$transaction(async (tx) => {
+      // ---- unit safety (re-read inside the transaction) ----
+      const V = t.units.val;
+      const nameOf = async (id: string) => (await tx.productUnit.findUnique({ where: { id }, select: { name: true } }))?.name ?? "";
+      const baseChanged = f.productUnitId !== existing.productUnitId;
+      if (baseChanged && (await productHasActivity(tx, existing.id))) throw new UnitRuleError("productUnitId", V.baseChange);
+      if (!baseChanged && unitsProvided) {
+        const have = await tx.productUnitConversion.findMany({ where: { productId: existing.id, isBase: false }, select: { unitId: true, factor: true } });
+        for (const h of have) {
+          const sub = rows.find((r) => r.unitId === h.unitId);
+          const factor = trimFactor(h.factor.toFixed(6));
+          if (!sub && (await conversionUsed(tx, existing.id, h.unitId, factor))) throw new UnitRuleError("units", fmt(V.removeUsed, { unit: await nameOf(h.unitId) }));
+          if (sub && trimFactor(sub.factor) !== factor && (await conversionUsed(tx, existing.id, h.unitId, factor))) throw new UnitRuleError("units", fmt(V.factorChange, { unit: await nameOf(h.unitId) }));
+        }
+      }
       await tx.product.update({ where: { id: existing.id }, data: productFieldData(f) });
+      if (baseChanged) {
+        // Allowed only for a product nothing refers to: rebuild its conversions around the new base unit.
+        await tx.productUnitConversion.deleteMany({ where: { productId: existing.id } });
+        await tx.productUnitConversion.createMany({
+          data: [{ productId: existing.id, unitId: f.productUnitId, factor: "1", isBase: true, active: true, forSales: true, forPurchases: true }, ...rows.map((u) => ({ productId: existing.id, unitId: u.unitId, factor: u.factor, isBase: false, active: u.active, forSales: u.forSales, forPurchases: u.forPurchases }))],
+        });
+      } else if (unitsProvided) {
+        const have = await tx.productUnitConversion.findMany({ where: { productId: existing.id, isBase: false }, select: { id: true, unitId: true } });
+        for (const h of have) {
+          const sub = rows.find((r) => r.unitId === h.unitId);
+          if (!sub) await tx.productUnitConversion.delete({ where: { id: h.id } });
+          else await tx.productUnitConversion.update({ where: { id: h.id }, data: { factor: sub.factor, active: sub.active, forSales: sub.forSales, forPurchases: sub.forPurchases } });
+        }
+        const haveIds = new Set(have.map((h) => h.unitId));
+        const fresh = rows.filter((r) => !haveIds.has(r.unitId));
+        if (fresh.length) await tx.productUnitConversion.createMany({ data: fresh.map((u) => ({ productId: existing.id, unitId: u.unitId, factor: u.factor, isBase: false, active: u.active, forSales: u.forSales, forPurchases: u.forPurchases })) });
+      }
       if (removed.length) await tx.productImage.deleteMany({ where: { id: { in: removed.map((r) => r.id) }, productId: existing.id } });
       await Promise.all(keep.map((k, position) => tx.productImage.update({ where: { id: k.id }, data: { position } })));
       if (paths.length) {
@@ -189,6 +266,7 @@ export async function updateProduct(id: unknown, formData: FormData): Promise<Pr
     });
   } catch (e) {
     for (const p of paths) await deleteImage(FOLDER, p);
+    if (e instanceof UnitRuleError) return fail({ [e.field]: e.message } as Errors, t);
     if (isUniqueViolation(e)) return fail({ code: E.duplicate }, t);
     throw e;
   }

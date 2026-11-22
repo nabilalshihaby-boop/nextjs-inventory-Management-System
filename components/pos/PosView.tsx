@@ -14,6 +14,8 @@ import { formatMoney } from "@/lib/money";
 import { calcSale } from "@/lib/sales";
 import { fromUnits, toUnits } from "@/lib/transfers";
 import { MAX_TENDERS, type PosData, type PosProduct } from "@/lib/pos";
+import { LineUnitSelect } from "@/components/ui/LineUnit";
+import { defaultLineUnit, findLineUnit, maxWholeUnits, scalePrice, type ProductUnits } from "@/lib/unit-math";
 import { fmt } from "@/lib/i18n/config";
 import { useT } from "@/components/i18n/I18nProvider";
 import type { HeldOrderSummary } from "@/lib/pos-held";
@@ -29,7 +31,11 @@ import type { RegisterMovementType, RegisterOverview } from "@/lib/register";
 // split tender). Every number here is a PREVIEW — posCheckout re-reads prices, tax, stock, account
 // and totals on the server and only receives ids, quantities, method, account, notes and the key.
 
-type CartLine = { product: PosProduct; qty: number; missing?: boolean };
+/** `unitId` is the line's sale unit; its factor decides the unit price and how many BASE units the line takes from stock. */
+type CartLine = { product: PosProduct; qty: number; unitId: string; missing?: boolean };
+const NO_UNITS: ProductUnits = { baseUnit: "", baseUnitId: "", saleUnitId: "", purchaseUnitId: "", units: [] };
+const factorOf = (l: CartLine) => (l.missing || !l.product.unitInfo.units.length ? "1" : findLineUnit(l.product.unitInfo, l.unitId).factor);
+const priceOf = (l: CartLine) => (l.missing ? "0.00" : scalePrice(l.product.price, factorOf(l)));
 type Method = (typeof PAYMENT_METHODS)[number];
 /** One payment row of the (possibly split) checkout. A single row always pays the full Grand Total. */
 type Tender = { key: string; method: Method; account: string; amount: string };
@@ -109,7 +115,7 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
   const list = data.products.filter((p) => (!needle || `${p.code} ${p.name}`.toLowerCase().includes(needle)) && (cat === "all" || p.category === cat) && (brand === "all" || p.brand === brand));
 
   const totals = useMemo(
-    () => calcSale(cart.map((l) => ({ quantity: String(l.qty), unitPrice: l.product.price, taxType: l.product.taxType, taxRate: l.product.taxRate, discountType: "FIXED" as const, discountValue: "0.00" })), { orderTaxRate: "0.00", discount: "0.00", shipping: "0.00" }),
+    () => calcSale(cart.map((l) => ({ quantity: String(l.qty), unitPrice: priceOf(l), taxType: l.product.taxType, taxRate: l.product.taxRate, discountType: "FIXED" as const, discountValue: "0.00" })), { orderTaxRate: "0.00", discount: "0.00", shipping: "0.00" }),
     [cart],
   );
   const qtyTotal = cart.reduce((a, l) => a + l.qty, 0);
@@ -164,11 +170,14 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
     if (stock <= 0) return toast.error(fmt(P.outOfStock, { name: p.name }), { id: "pos" });
     setCart((c) => {
       const f = c.find((l) => l.product.id === p.id);
-      if (f) return c.map((l) => (l.product.id === p.id ? { ...l, qty: Math.min(Math.floor(stock) || 1, l.qty + 1) } : l));
-      return [...c, { product: p, qty: 1 }];
+      // Stock is counted in BASE units: the most whole units of the line's unit that fit is stock ÷ factor.
+      const max = (l: CartLine) => maxWholeUnits(String(stock), factorOf(l)) || 1;
+      if (f) return c.map((l) => (l.product.id === p.id ? { ...l, qty: Math.min(max(l), l.qty + 1) } : l));
+      return [...c, { product: p, qty: 1, unitId: defaultLineUnit(p.unitInfo, "SALE").unitId }];
     });
   }
-  const step = (id: string, n: number) => setCart((c) => c.map((l) => (l.product.id === id ? { ...l, qty: Math.max(1, Math.min(Math.floor(stockOf.get(id) ?? 1) || 1, l.qty + n)) } : l)));
+  const step = (id: string, n: number) => setCart((c) => c.map((l) => (l.product.id === id ? { ...l, qty: Math.max(1, Math.min(maxWholeUnits(String(stockOf.get(id) ?? 1), factorOf(l)) || 1, l.qty + n)) } : l)));
+  const setUnit = (id: string, unitId: string) => setCart((c) => c.map((l) => (l.product.id === id ? (() => { const nl = { ...l, unitId }; return { ...nl, qty: Math.max(1, Math.min(nl.qty, maxWholeUnits(String(stockOf.get(id) ?? 1), factorOf(nl)) || 1)) }; })() : l)));
   const remove = (id: string) => setCart((c) => c.filter((l) => l.product.id !== id));
   const reset = () => {
     setCart([]);
@@ -181,7 +190,7 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
     const key = holdKeyRef.current ?? (holdKeyRef.current = crypto.randomUUID());
     startTransition(async () => {
       try {
-        const r = await holdPosOrder({ holdKey: key, heldOrderId: heldId, customerId: customer, warehouseId: warehouse, tenders: draftTenders(), notes, items: cart.map((l) => ({ productId: l.product.id, quantity: String(l.qty) })) });
+        const r = await holdPosOrder({ holdKey: key, heldOrderId: heldId, customerId: customer, warehouseId: warehouse, tenders: draftTenders(), notes, items: cart.map((l) => ({ productId: l.product.id, unitId: l.unitId, quantity: String(l.qty) })) });
         if (!r.ok) return void toast.error(r.message, { id: "pos" });
         holdKeyRef.current = null;
         toast.success(fmt(P.orderHeld, { ref: r.reference }), { id: "pos" });
@@ -210,9 +219,9 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
         const extra: string[] = [];
         const lines: CartLine[] = o.lines.map((l) => {
           const p = byId.get(l.productId);
-          if (p && !l.missing) return { product: p, qty: Number(l.quantity) };
+          if (p && !l.missing) return { product: p, qty: Number(l.quantity), unitId: findLineUnit(p.unitInfo, l.unitId).unitId };
           if (!l.missing) extra.push(`${l.code} ${l.name} isn't in this screen yet — refresh the POS.`);
-          return { product: { id: l.productId, code: l.code, name: l.name, price: "0.00", taxType: "EXCLUSIVE", taxRate: "0.00", unit: "", category: "", brand: "", image: null }, qty: Number(l.quantity), missing: true };
+          return { product: { id: l.productId, code: l.code, name: l.name, price: "0.00", taxType: "EXCLUSIVE", taxRate: "0.00", unit: "", unitInfo: NO_UNITS, category: "", brand: "", image: null }, qty: Number(l.quantity), unitId: "", missing: true };
         });
         setCart(lines);
         setCustomer(o.customerId);
@@ -377,7 +386,7 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
     const key = keyRef.current ?? (keyRef.current = crypto.randomUUID());
     startTransition(async () => {
       try {
-        const r = await posCheckout({ checkoutKey: key, customerId: customer, warehouseId: warehouse, tenders: tenders.map((t, i) => ({ paymentMethod: t.method, cashBankAccountId: t.account, amount: amountOf(t, i) })), notes, heldOrderId: heldId, walkIn: isWalkIn, items: cart.map((l) => ({ productId: l.product.id, quantity: String(l.qty) })) });
+        const r = await posCheckout({ checkoutKey: key, customerId: customer, warehouseId: warehouse, tenders: tenders.map((t, i) => ({ paymentMethod: t.method, cashBankAccountId: t.account, amount: amountOf(t, i) })), notes, heldOrderId: heldId, walkIn: isWalkIn, items: cart.map((l) => ({ productId: l.product.id, unitId: l.unitId, quantity: String(l.qty) })) });
         if (!r.ok) {
           setErr(r.message);
           toast.error(r.message, { id: "pos" });
@@ -589,6 +598,7 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
                     <td>
                       <div style={{ font: "600 15px/20px var(--font-body)", maxWidth: 190, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.product.name}</div>
                       <span className="sp-badge sp-badge--info">{l.product.code}</span>
+                      {!l.missing && <LineUnitSelect info={l.product.unitInfo} purpose="SALE" value={l.unitId} compact onChange={(unitId) => setUnit(l.product.id, unitId)} />}
                     </td>
                     <td>
                       <span className="pos-step">
@@ -601,7 +611,7 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
                         </button>
                       </span>
                     </td>
-                    <td>{l.missing ? P.unavailable : m(l.product.price)}</td>
+                    <td>{l.missing ? P.unavailable : m(priceOf(l))}</td>
                     <td>{m(totals.lines[n]?.subtotal ?? "0.00")}</td>
                     <td>
                       <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={fmt(P.removeItem, { name: l.product.name })} style={{ color: "var(--danger-500)" }} onClick={() => remove(l.product.id)}>
@@ -692,8 +702,8 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
               const stock = stockOf.get(p.id) ?? 0;
               return (
                 <button key={p.id} type="button" className="pos-card" data-code={p.code} aria-pressed={cart.some((l) => l.product.id === p.id)} disabled={!!warehouse && stock <= 0} onClick={() => add(p)}>
-                  <span className="pos-tag" style={{ left: 0, background: "var(--tone-blue)", borderRadius: "6px 0 6px 0" }}>{m(p.price)}</span>
-                  <span className="pos-tag" style={{ right: 0, background: "var(--tone-cyan)", borderRadius: "0 6px 0 6px" }}>{warehouse ? `${stock} ${p.unit}` : "—"}</span>
+                  <span className="pos-tag" style={{ left: 0, background: "var(--tone-blue)", borderRadius: "6px 0 6px 0" }}>{m(scalePrice(p.price, defaultLineUnit(p.unitInfo, "SALE").factor))}</span>
+                  <span className="pos-tag" style={{ right: 0, background: "var(--tone-cyan)", borderRadius: "0 6px 0 6px" }}>{warehouse ? `${stock} ${p.unitInfo.baseUnit}` : "—"}</span>
                   {p.image ? (
                     // eslint-disable-next-line @next/next/no-img-element -- runtime upload under /uploads
                     <img src={p.image} alt="" className="pos-img" />

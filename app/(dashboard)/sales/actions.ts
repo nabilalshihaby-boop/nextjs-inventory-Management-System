@@ -13,6 +13,7 @@ import { errorMessage, tr } from "@/lib/i18n/messages";
 import type { Dictionary } from "@/lib/i18n";
 import { SaleError, deductStock } from "@/lib/sale-stock";
 import { StockHistoryError } from "@/lib/stock-history-guard";
+import { lineSnapshot, loadUnitSets, resolveLine, type ResolvedUnit } from "@/lib/product-units";
 import { getDefaultCurrency } from "@/lib/settings";
 import { toUnits } from "@/lib/transfers";
 import { calcSale, formatSaleReference, makeSaleSchema, type SaleField, type SaleInput } from "@/lib/sales";
@@ -73,13 +74,28 @@ async function prepare(d: SaleInput, t: Dictionary): Promise<{ ok: true; lines: 
   const [customer, warehouse, products] = await Promise.all([
     db.customer.findUnique({ where: { id: d.customerId }, select: { id: true } }),
     db.warehouse.findUnique({ where: { id: d.warehouseId }, select: { id: true } }),
-    db.product.findMany({ where: { id: { in: d.items.map((i) => i.productId) } }, select: { id: true, code: true, name: true, saleUnit: { select: { name: true } } } }),
+    db.product.findMany({ where: { id: { in: d.items.map((i) => i.productId) } }, select: { id: true, code: true, name: true } }),
   ]);
   if (!customer) return { ok: false, error: { ok: false, message: t.sales.err.invalidCustomer, fieldErrors: { customerId: t.sales.err.invalidCustomer } } };
   if (!warehouse) return { ok: false, error: { ok: false, message: t.sales.err.invalidWarehouse, fieldErrors: { warehouseId: t.sales.err.invalidWarehouse } } };
   const byId = new Map(products.map((p) => [p.id, p]));
   const missing = d.items.find((i) => !byId.has(i.productId));
   if (missing) return { ok: false, error: { ok: false, message: t.sales.err.productGone, fieldErrors: { items: t.sales.err.productGone }, itemErrors: { [missing.productId]: t.sales.err.itemGone } } };
+
+  // Units: every line's unit must be an active SALE conversion of THIS product; factor and base quantity come from MySQL.
+  const sets = await loadUnitSets(db, d.items.map((i) => i.productId));
+  const lineUnit = new Map<string, ResolvedUnit>();
+  const unitErrors: Record<string, string> = {};
+  for (const i of d.items) {
+    const pr = byId.get(i.productId)!;
+    const r = resolveLine(sets.get(i.productId), i.unitId, "SALE", i.quantity, `${pr.code} ${pr.name}`);
+    if (r.ok) lineUnit.set(i.productId, r.r);
+    else unitErrors[i.productId] = tr(t, r.f.key, r.f.vars);
+  }
+  if (Object.keys(unitErrors).length) {
+    const m = Object.values(unitErrors)[0];
+    return { ok: false, error: { ok: false, message: m, fieldErrors: { items: m }, itemErrors: unitErrors } };
+  }
 
   const totals = calcSale(d.items, { orderTaxRate: d.orderTaxRate, discount: d.discount, shipping: d.shipping });
   const bad = totals.lines.findIndex((l) => l.error);
@@ -99,8 +115,8 @@ async function prepare(d: SaleInput, t: Dictionary): Promise<{ ok: true; lines: 
       product: { connect: { id: p.id } },
       productCode: p.code,
       productName: p.name,
-      unitName: p.saleUnit.name,
       quantity: i.quantity,
+      ...lineSnapshot(lineUnit.get(i.productId)!),
       unitPrice: i.unitPrice,
       taxType: i.taxType,
       taxRate: i.taxRate,
@@ -112,7 +128,7 @@ async function prepare(d: SaleInput, t: Dictionary): Promise<{ ok: true; lines: 
       subtotal: totals.lines[n].subtotal,
     };
   });
-  const stock = d.items.map((i) => ({ productId: i.productId, quantity: i.quantity, productCode: byId.get(i.productId)!.code, productName: byId.get(i.productId)!.name }));
+  const stock = d.items.map((i) => ({ productId: i.productId, quantity: lineUnit.get(i.productId)!.baseQuantity, productCode: byId.get(i.productId)!.code, productName: byId.get(i.productId)!.name }));
   return { ok: true, lines, stock, totals };
 }
 
@@ -263,7 +279,8 @@ export async function completeSale(id: unknown): Promise<SaleResult> {
         const s = await lockSale(tx, sid.data);
         if (!s) throw new SaleError("sales.err.notFound");
         if (s.status !== "PENDING") throw new SaleError("sales.err.alreadyCompleted", { ref: s.reference });
-        const items = await tx.saleItem.findMany({ where: { saleId: s.id }, select: { productId: true, quantity: true, productCode: true, productName: true } });
+        const stored = await tx.saleItem.findMany({ where: { saleId: s.id }, select: { productId: true, baseQuantity: true, productCode: true, productName: true } });
+        const items = stored.map((i) => ({ productId: i.productId, quantity: i.baseQuantity, productCode: i.productCode, productName: i.productName }));
         await tx.sale.update({ where: { id: s.id }, data: { status: "COMPLETED", completedAt: at, completedById: a.userId } });
         await deductStock(tx, s.warehouseId, items, at);
         return s;
@@ -339,6 +356,8 @@ export async function convertQuotationToSale(quotationId: unknown): Promise<Sale
               productName: i.productName,
               unitName: i.unitName,
               quantity: i.quantity,
+              unitFactor: "1",
+              baseQuantity: i.quantity, // quotation lines are in the product's own unit, factor 1
               unitPrice: i.unitPrice,
               taxType: i.taxType,
               taxRate: i.taxRate,

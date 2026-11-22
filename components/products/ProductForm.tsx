@@ -5,6 +5,8 @@ import { Fragment, useEffect, useRef, useState, useTransition, type CSSPropertie
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Icon from "@/components/layout/Icon";
+import ProductUnitsSection from "@/components/products/ProductUnitsSection";
+import { isValidFactor } from "@/lib/unit-math";
 import { useT } from "@/components/i18n/I18nProvider";
 import { fmt } from "@/lib/i18n/config";
 import { createProduct, updateProduct, type ProductResult } from "@/app/(dashboard)/products/actions";
@@ -15,6 +17,8 @@ import {
   type ProductField,
   type ProductFormValues,
   type ProductImageRow,
+  type UnitInput,
+  checkUnitConfig,
 } from "@/lib/products";
 
 // Port of design/Create Product.html: PageHeader (+ Back), FormCard with a 2fr / 1fr layout —
@@ -40,6 +44,9 @@ export default function ProductForm({
   initial,
   images = [],
   openingStock = null,
+  unitRows = [],
+  usedUnits = {},
+  baseLocked = false,
 }: {
   options: Options;
   currency: Currency;
@@ -48,6 +55,11 @@ export default function ProductForm({
   initial?: ProductFormValues;
   images?: ProductImageRow[];
   openingStock?: { warehouse: string; supplier: string | null; quantity: string; status: string } | null;
+  /** The product's pack units (everything except the base row) and which of them documents already used. */
+  unitRows?: UnitInput[];
+  usedUnits?: Record<string, boolean>;
+  /** True when stock or documents refer to the product: its base unit can't change. */
+  baseLocked?: boolean;
 }) {
   const router = useRouter();
   const T = useT();
@@ -62,6 +74,7 @@ export default function ProductForm({
   const [f, setF] = useState<ProductFormValues>(initial ?? EMPTY);
   const [e, setE] = useState<Partial<Record<ProductField, string>>>({});
   const [kept, setKept] = useState<ProductImageRow[]>(images);
+  const [packs, setPacks] = useState<UnitInput[]>(unitRows);
   const [added, setAdded] = useState<{ file: File; url: string }[]>([]);
   const [pending, startTransition] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -70,6 +83,9 @@ export default function ProductForm({
 
   // Creating needs every prerequisite; editing needs the default currency (prices are in it).
   const blocked = !currency || (!editing && missing.length > 0);
+  /** Default sale/purchase unit choices: the base unit plus every ACTIVE pack unit enabled for that use. */
+  const defaultOptions = (purpose: "forSales" | "forPurchases"): Option[] =>
+    options.units.filter((o) => o.value === f.productUnitId || packs.some((p) => p.unitId === o.value && p.active && p[purpose]));
   const set = (k: keyof ProductFormValues) => (ev: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setF({ ...f, [k]: ev.target.value });
     setE({ ...e, [k]: "" });
@@ -107,6 +123,15 @@ export default function ProductForm({
     ];
     const n: Partial<Record<ProductField, string>> = {};
     for (const [k, msg] of required) if (!f[k].trim()) n[k] = msg;
+    // Pack units: real unit, valid factor, no duplicates, a purpose, and valid defaults (the server checks all of it again).
+    for (const r of packs) {
+      if (!r.unitId) n.units ??= T.units.val.unitRequired;
+      else if (!isValidFactor(r.factor)) n.units ??= T.units.val.factorInvalid;
+    }
+    if (!n.units && !n.productUnitId && f.productUnitId) {
+      const names = (id: string) => options.units.find((o) => o.value === id)?.label ?? "";
+      Object.assign(n, checkUnitConfig(f.productUnitId, f.saleUnitId, f.purchaseUnitId, packs.map((p) => ({ ...p, factor: p.factor.trim() })), names, T.units.val));
+    }
     setE(n);
     if (Object.keys(n).length) {
       toast.error(Object.values(n)[0]!, { id: "product" });
@@ -114,6 +139,7 @@ export default function ProductForm({
     }
     const fd = new FormData();
     for (const [k, v] of Object.entries(f)) if (!editing || !["warehouseId", "supplierId", "quantity", "status"].includes(k)) fd.set(k, v);
+    fd.set("units", JSON.stringify(packs.map((p) => ({ unitId: p.unitId, factor: p.factor.trim(), active: p.active, forSales: p.forSales, forPurchases: p.forPurchases }))));
     for (const k of kept) fd.append("keepImageIds", k.id);
     for (const a of added) fd.append("images", a.file);
     startTransition(async () => {
@@ -263,8 +289,13 @@ export default function ProductForm({
                           name="productUnitId"
                           className={"sp-select " + (f.productUnitId ? "" : "sp-select--placeholder")}
                           value={f.productUnitId}
-                          onChange={set("productUnitId")}
-                          disabled={options.units.length === 0}
+                          onChange={(ev) => {
+                            const v = ev.target.value;
+                            // A simple product only needs its base unit: the default sale/purchase units follow it until chosen otherwise.
+                            setF({ ...f, productUnitId: v, saleUnitId: f.saleUnitId || v, purchaseUnitId: f.purchaseUnitId || v });
+                            setE({ ...e, productUnitId: "" });
+                          }}
+                          disabled={options.units.length === 0 || baseLocked}
                           aria-invalid={!!e.productUnitId || undefined}
                         >
                           <option value="" disabled>
@@ -282,10 +313,12 @@ export default function ProductForm({
                       </Link>
                     </div>
                     {options.units.length === 0 ? <span className="sp-hint">{createLink("/products/units", F.missingUnits)}</span> : err("productUnitId")}
+                    {baseLocked && <span className="sp-hint" data-testid="base-locked">{T.units.form.baseLocked}</span>}
                   </>
                 ))}
-                {select("saleUnitId", LB.saleUnit, F.saleUnitPh, options.units)}
-                {select("purchaseUnitId", LB.purchaseUnit, F.purchaseUnitPh, options.units)}
+                {select("saleUnitId", T.units.form.defaultSale, F.saleUnitPh, defaultOptions("forSales"))}
+                {select("purchaseUnitId", T.units.form.defaultPurchase, F.purchaseUnitPh, defaultOptions("forPurchases"))}
+                <ProductUnitsSection baseId={f.productUnitId} options={options.units} rows={packs} used={usedUnits} onChange={(r) => { setPacks(r); setE({ ...e, units: "" }); }} error={e.units} />
                 {input("stockAlert", LB.stockAlert, "0", false, undefined, "decimal")}
                 {input("orderTax", LB.orderTax, "0", false, "%", "decimal")}
                 {select("taxType", F.taxType, F.taxTypePh, taxOptions)}

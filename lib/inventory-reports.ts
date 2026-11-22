@@ -264,27 +264,27 @@ export async function loadMovements(client: Prisma.TransactionClient, productId:
     client.productStockEntry.findMany({ where: { productId, status: "RECEIVED", ...wf }, select: { id: true, warehouseId: true, quantity: true, source: true, createdAt: true } }),
     client.purchaseItem.findMany({
       where: { productId, purchase: { status: "RECEIVED", ...wf } },
-      select: { quantity: true, purchase: { select: { id: true, reference: true, warehouseId: true, receivedAt: true, createdAt: true, purchaseDate: true, notes: true } } },
+      select: { baseQuantity: true, purchase: { select: { id: true, reference: true, warehouseId: true, receivedAt: true, createdAt: true, purchaseDate: true, notes: true } } },
     }),
     client.purchaseReturnItem.findMany({
       where: { productId, purchaseReturn: { ...wf } },
-      select: { quantity: true, purchaseReturn: { select: { id: true, reference: true, warehouseId: true, returnDate: true, createdAt: true, notes: true } } },
+      select: { baseQuantity: true, purchaseReturn: { select: { id: true, reference: true, warehouseId: true, returnDate: true, createdAt: true, notes: true } } },
     }),
     client.saleItem.findMany({
       where: { productId, sale: { status: "COMPLETED", ...wf } },
-      select: { quantity: true, sale: { select: { id: true, reference: true, warehouseId: true, completedAt: true, saleDate: true, createdAt: true, posCheckoutKey: true, notes: true } } },
+      select: { baseQuantity: true, sale: { select: { id: true, reference: true, warehouseId: true, completedAt: true, saleDate: true, createdAt: true, posCheckoutKey: true, notes: true } } },
     }),
     client.saleReturnItem.findMany({
       where: { productId, saleReturn: { ...wf } },
-      select: { quantity: true, saleReturn: { select: { id: true, reference: true, warehouseId: true, returnDate: true, createdAt: true, notes: true } } },
+      select: { baseQuantity: true, saleReturn: { select: { id: true, reference: true, warehouseId: true, returnDate: true, createdAt: true, notes: true } } },
     }),
     client.stockTransferItem.findMany({
       where: { productId, transfer: { status: { in: ["SENT", "COMPLETED"] }, ...(warehouseId ? { OR: [{ fromWarehouseId: warehouseId }, { toWarehouseId: warehouseId }] } : {}) } },
-      select: { quantity: true, transfer: { select: { id: true, reference: true, status: true, fromWarehouseId: true, toWarehouseId: true, transferDate: true, createdAt: true, note: true } } },
+      select: { baseQuantity: true, transfer: { select: { id: true, reference: true, status: true, fromWarehouseId: true, toWarehouseId: true, transferDate: true, createdAt: true, note: true } } },
     }),
     client.stockAdjustmentItem.findMany({
       where: { productId, adjustment: { ...wf } },
-      select: { quantity: true, type: true, adjustment: { select: { id: true, reference: true, warehouseId: true, adjustmentDate: true, createdAt: true } } },
+      select: { baseQuantity: true, type: true, adjustment: { select: { id: true, reference: true, warehouseId: true, adjustmentDate: true, createdAt: true } } },
     }),
     client.warehouse.findMany({ select: { id: true, name: true } }),
   ]);
@@ -300,32 +300,32 @@ export async function loadMovements(client: Prisma.TransactionClient, productId:
   for (const i of purchaseItems) {
     const pu = i.purchase;
     const when = pu.receivedAt ?? pu.createdAt; // the moment the stock actually arrived
-    push({ day: dayOfTimestamp(when), at: when.getTime(), ref: pu.reference, link: `/purchases/${pu.id}`, kind: "PURCHASE", warehouseId: pu.warehouseId, qty: i.quantity, notes: pu.notes ?? "" });
+    push({ day: dayOfTimestamp(when), at: when.getTime(), ref: pu.reference, link: `/purchases/${pu.id}`, kind: "PURCHASE", warehouseId: pu.warehouseId, qty: i.baseQuantity, notes: pu.notes ?? "" });
   }
   for (const i of purchaseReturnItems) {
     const r = i.purchaseReturn;
-    push({ day: dayOfDateOnly(r.returnDate), at: r.createdAt.getTime(), ref: r.reference, link: `/purchases/returns/${r.id}`, kind: "PURCHASE_RETURN", warehouseId: r.warehouseId, qty: i.quantity.negated(), notes: r.notes ?? "" });
+    push({ day: dayOfDateOnly(r.returnDate), at: r.createdAt.getTime(), ref: r.reference, link: `/purchases/returns/${r.id}`, kind: "PURCHASE_RETURN", warehouseId: r.warehouseId, qty: i.baseQuantity.negated(), notes: r.notes ?? "" });
   }
   for (const i of saleItems) {
     const s = i.sale;
     // Completion moment when stored; otherwise the sale's own business date.
     const day = s.completedAt ? dayOfTimestamp(s.completedAt) : dayOfDateOnly(s.saleDate);
-    push({ day, at: (s.completedAt ?? s.createdAt).getTime(), ref: s.reference, link: `/sales/${s.id}`, kind: s.posCheckoutKey ? "POS_SALE" : "SALE", warehouseId: s.warehouseId, qty: i.quantity.negated(), notes: s.notes ?? "" });
+    push({ day, at: (s.completedAt ?? s.createdAt).getTime(), ref: s.reference, link: `/sales/${s.id}`, kind: s.posCheckoutKey ? "POS_SALE" : "SALE", warehouseId: s.warehouseId, qty: i.baseQuantity.negated(), notes: s.notes ?? "" });
   }
   for (const i of saleReturnItems) {
     const r = i.saleReturn;
-    push({ day: dayOfDateOnly(r.returnDate), at: r.createdAt.getTime(), ref: r.reference, link: `/sales/returns/${r.id}`, kind: "SALE_RETURN", warehouseId: r.warehouseId, qty: i.quantity, notes: r.notes ?? "" });
+    push({ day: dayOfDateOnly(r.returnDate), at: r.createdAt.getTime(), ref: r.reference, link: `/sales/returns/${r.id}`, kind: "SALE_RETURN", warehouseId: r.warehouseId, qty: i.baseQuantity, notes: r.notes ?? "" });
   }
   for (const i of transferItems) {
     const t = i.transfer;
     const base = { day: dayOfDateOnly(t.transferDate), at: t.createdAt.getTime(), ref: t.reference, link: `/transfers/${t.id}`, notes: t.note ?? "" };
     // SENT and COMPLETED took the stock out of the source; only COMPLETED put it into the destination.
-    if (!warehouseId || t.fromWarehouseId === warehouseId) push({ ...base, kind: "TRANSFER_OUT", warehouseId: t.fromWarehouseId, qty: i.quantity.negated(), counterpart: wname.get(t.toWarehouseId) ?? null, ord: 0 });
-    if (t.status === "COMPLETED" && (!warehouseId || t.toWarehouseId === warehouseId)) push({ ...base, kind: "TRANSFER_IN", warehouseId: t.toWarehouseId, qty: i.quantity, counterpart: wname.get(t.fromWarehouseId) ?? null, ord: 1 });
+    if (!warehouseId || t.fromWarehouseId === warehouseId) push({ ...base, kind: "TRANSFER_OUT", warehouseId: t.fromWarehouseId, qty: i.baseQuantity.negated(), counterpart: wname.get(t.toWarehouseId) ?? null, ord: 0 });
+    if (t.status === "COMPLETED" && (!warehouseId || t.toWarehouseId === warehouseId)) push({ ...base, kind: "TRANSFER_IN", warehouseId: t.toWarehouseId, qty: i.baseQuantity, counterpart: wname.get(t.fromWarehouseId) ?? null, ord: 1 });
   }
   for (const i of adjustmentItems) {
     const a = i.adjustment;
-    push({ day: dayOfDateOnly(a.adjustmentDate), at: a.createdAt.getTime(), ref: a.reference, link: `/adjustments/${a.id}/edit`, kind: i.type === "ADDITION" ? "ADJ_ADD" : "ADJ_SUB", warehouseId: a.warehouseId, qty: i.type === "ADDITION" ? i.quantity : i.quantity.negated() });
+    push({ day: dayOfDateOnly(a.adjustmentDate), at: a.createdAt.getTime(), ref: a.reference, link: `/adjustments/${a.id}/edit`, kind: i.type === "ADDITION" ? "ADJ_ADD" : "ADJ_SUB", warehouseId: a.warehouseId, qty: i.type === "ADDITION" ? i.baseQuantity : i.baseQuantity.negated() });
   }
 
   return ev;

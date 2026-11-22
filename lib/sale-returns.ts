@@ -70,7 +70,8 @@ export type SaleReturnSourceLine = {
   productId: string;
   code: string;
   name: string;
-  unit: string;
+  unit: string; // the ORIGINAL line's unit (a return uses it)
+  baseUnit: string; // stock is counted in this unit
   quantity: string; // originally sold (3 dp)
   returned: string; // already returned (3 dp)
   stock: string; // current stock in the sale warehouse (3 dp) — reference only

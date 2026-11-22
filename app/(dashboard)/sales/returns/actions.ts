@@ -11,6 +11,7 @@ import { getSystemSettings } from "@/lib/settings";
 import { calcReturn } from "@/lib/purchase-return-calc";
 import { formatSaleReturnReference, makeSaleReturnSchema, type SaleReturnField } from "@/lib/sale-returns";
 import { getDict } from "@/lib/i18n/server";
+import { toBaseQuantity } from "@/lib/unit-math";
 import { LocalizedError, errorMessage, tr, type Vars } from "@/lib/i18n/messages";
 import type { Dictionary } from "@/lib/i18n";
 
@@ -81,7 +82,7 @@ export async function createSaleReturn(input: unknown): Promise<SaleReturnResult
               id: true, reference: true, status: true, saleDate: true, customerId: true, warehouseId: true, currencyId: true,
               subtotal: true, orderTaxAmount: true, discount: true, grandTotal: true, paidAmount: true,
               currency: { select: { symbol: true } },
-              items: { select: { id: true, productId: true, productCode: true, productName: true, unitName: true, quantity: true, unitPrice: true, netUnitPrice: true, taxType: true, taxRate: true, discountType: true, discountValue: true, discountAmount: true, taxAmount: true, subtotal: true } },
+              items: { select: { id: true, productId: true, productCode: true, productName: true, unitName: true, unitId: true, unitFactor: true, baseQuantity: true, quantity: true, unitPrice: true, netUnitPrice: true, taxType: true, taxRate: true, discountType: true, discountValue: true, discountAmount: true, taxAmount: true, subtotal: true } },
             },
           });
           if (s.status !== "COMPLETED") fail("salesReturns.err.notCompleted", { ref: s.reference }, "saleId");
@@ -89,10 +90,11 @@ export async function createSaleReturn(input: unknown): Promise<SaleReturnResult
 
           // 2. Everything already returned from this sale.
           const [priorByLine, prior] = await Promise.all([
-            tx.saleReturnItem.groupBy({ by: ["saleItemId"], where: { saleReturn: { saleId: s.id } }, _sum: { quantity: true } }),
+            tx.saleReturnItem.groupBy({ by: ["saleItemId"], where: { saleReturn: { saleId: s.id } }, _sum: { quantity: true, baseQuantity: true } }),
             tx.saleReturn.aggregate({ where: { saleId: s.id }, _sum: { subtotal: true, grandTotal: true } }),
           ]);
           const returnedOf = new Map(priorByLine.map((r) => [r.saleItemId, r._sum.quantity ?? new Prisma.Decimal(0)]));
+          const returnedBaseOf = new Map(priorByLine.map((r) => [r.saleItemId, r._sum.baseQuantity ?? new Prisma.Decimal(0)]));
           const byId = new Map(s.items.map((i) => [i.id, i]));
 
           // 3. Lines: must belong to this sale and stay within the returnable quantity.
@@ -103,7 +105,14 @@ export async function createSaleReturn(input: unknown): Promise<SaleReturnResult
             if (new Prisma.Decimal(it.quantity).gt(returnable)) {
               fail("salesReturns.err.exceeds", { returnable: formatQuantity(returnable.toFixed(3)), code: si.productCode, name: si.productName, sold: formatQuantity(si.quantity.toFixed(3)), returned: formatQuantity(returned.toFixed(3)) }, "items", si.id);
             }
-            return { si, quantity: it.quantity, returned: returned.toFixed(3) };
+            // A return uses the ORIGINAL line's unit and factor; it may never exceed what is still returnable in BASE units either.
+            const b = toBaseQuantity(it.quantity, si.unitFactor.toFixed(6));
+            const baseQty = b.ok ? b.value : fail("units.err.baseDecimals", { product: `${si.productCode} ${si.productName}`, unit: si.unitName, qty: it.quantity, factor: si.unitFactor.toFixed(6) }, "items", si.id);
+            const returnableBase = new Prisma.Decimal(si.baseQuantity).minus(returnedBaseOf.get(si.id) ?? new Prisma.Decimal(0));
+            if (new Prisma.Decimal(baseQty).gt(returnableBase)) {
+              fail("salesReturns.err.exceeds", { returnable: formatQuantity(returnable.toFixed(3)), code: si.productCode, name: si.productName, sold: formatQuantity(si.quantity.toFixed(3)), returned: formatQuantity(returned.toFixed(3)) }, "items", si.id);
+            }
+            return { si, quantity: it.quantity, base: baseQty, returned: returned.toFixed(3) };
           });
 
           // 4. Server-side amounts from the sale's stored snapshot.
@@ -124,8 +133,8 @@ export async function createSaleReturn(input: unknown): Promise<SaleReturnResult
           for (const l of [...lines].sort((x, y) => x.si.productId.localeCompare(y.si.productId))) {
             await tx.productStock.upsert({
               where: { productId_warehouseId: { productId: l.si.productId, warehouseId: s.warehouseId } },
-              create: { productId: l.si.productId, warehouseId: s.warehouseId, quantity: l.quantity },
-              update: { quantity: { increment: l.quantity } },
+              create: { productId: l.si.productId, warehouseId: s.warehouseId, quantity: l.base },
+              update: { quantity: { increment: l.base } },
             });
           }
 
@@ -152,6 +161,9 @@ export async function createSaleReturn(input: unknown): Promise<SaleReturnResult
                   productCode: l.si.productCode,
                   productName: l.si.productName,
                   unitName: l.si.unitName,
+                  unitId: l.si.unitId,
+                  unitFactor: l.si.unitFactor,
+                  baseQuantity: l.base,
                   quantity: l.quantity,
                   unitPrice: l.si.unitPrice,
                   netUnitPrice: l.si.netUnitPrice,

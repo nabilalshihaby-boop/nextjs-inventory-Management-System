@@ -61,6 +61,8 @@ export function makeItemSchema(m: ValMsgs = en.sales.val) {
   return z
     .object({
       productId: id(m.chooseProduct),
+      /** The selected product unit (selector only; the server resolves factor and base quantity). Blank = default sale unit. */
+      unitId: z.string().trim().max(64).optional().default(""),
       quantity: z
         .string({ error: m.qtyRequired })
         .trim()

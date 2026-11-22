@@ -11,8 +11,9 @@ import { formatQuantity } from "@/lib/money";
 import { fromUnits } from "@/lib/transfers";
 import { formatAdjustmentReference, makeAdjustmentSchema, signedUnits, type AdjustmentField, type AdjustmentInput, type AdjustmentTypeValue } from "@/lib/adjustments";
 import { getDict } from "@/lib/i18n/server";
-import { errorMessage } from "@/lib/i18n/messages";
+import { errorMessage, tr } from "@/lib/i18n/messages";
 import { StockHistoryError, assertNonNegativeHistory } from "@/lib/stock-history-guard";
+import { lineSnapshot, loadUnitSets, resolveLine, type ResolvedUnit } from "@/lib/product-units";
 import { dayOfDateOnly } from "@/lib/inventory-reports";
 import { fmt } from "@/lib/i18n/config";
 import type { Dictionary } from "@/lib/i18n";
@@ -70,7 +71,7 @@ function parse(input: unknown, t: Dictionary): { ok: true; data: AdjustmentInput
 }
 
 /** Warehouse and every product must exist in MySQL. Returns product labels for messages. */
-async function resolve(d: AdjustmentInput, t: Dictionary): Promise<{ ok: true; labels: Map<string, string> } | { ok: false; error: AdjustmentResult }> {
+async function resolve(d: AdjustmentInput, t: Dictionary): Promise<{ ok: true; labels: Map<string, string>; units: Map<string, ResolvedUnit> } | { ok: false; error: AdjustmentResult }> {
   const [warehouse, products] = await Promise.all([
     db.warehouse.findUnique({ where: { id: d.warehouseId }, select: { id: true } }),
     db.product.findMany({ where: { id: { in: d.items.map((i) => i.productId) } }, select: { id: true, code: true, name: true } }),
@@ -80,15 +81,28 @@ async function resolve(d: AdjustmentInput, t: Dictionary): Promise<{ ok: true; l
   if (!warehouse) fieldErrors.warehouseId = t.adjustments.err.validWarehouse;
   const labels = new Map(products.map((p) => [p.id, `${p.code} ${p.name}`]));
   for (const i of d.items) if (!labels.has(i.productId)) itemErrors[i.productId] = t.adjustments.err.productGone;
+  // Units: an active conversion of THIS product (blank = the base unit); stock moves by the exact BASE quantity.
+  const sets = await loadUnitSets(db, d.items.map((i) => i.productId));
+  const units = new Map<string, ResolvedUnit>();
+  for (const i of d.items) {
+    if (!labels.has(i.productId)) continue;
+    const ru = resolveLine(sets.get(i.productId), i.unitId, "ANY", i.quantity, labels.get(i.productId)!);
+    if (ru.ok) units.set(i.productId, ru.r);
+    else itemErrors[i.productId] = tr(t, ru.f.key, ru.f.vars);
+  }
   if (Object.keys(itemErrors).length) fieldErrors.items ??= Object.values(itemErrors)[0];
   if (Object.keys(fieldErrors).length) return { ok: false, error: { ok: false, message: Object.values(fieldErrors)[0]!, fieldErrors, itemErrors } };
-  return { ok: true, labels };
+  return { ok: true, labels, units };
 }
 
 /** READ COMMITTED: the chronological history guard must read what the previous writer of the same stock rows committed. */
 const stockTx = <T,>(fn: (tx: Tx) => Promise<T>) => db.$transaction(fn, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 15_000 });
 
 type Line = { productId: string; quantity: string; type: AdjustmentTypeValue };
+/** Lines whose quantity is the BASE quantity (what stock changes by). */
+const baseLines = (items: { productId: string; type: AdjustmentTypeValue }[], units: Map<string, ResolvedUnit>): Line[] => items.map((i) => ({ productId: i.productId, quantity: units.get(i.productId)!.baseQuantity, type: i.type }));
+const itemData = (i: { productId: string; quantity: string; type: AdjustmentTypeValue }, units: Map<string, ResolvedUnit>) => ({ productId: i.productId, quantity: i.quantity, type: i.type, ...lineSnapshot(units.get(i.productId)!) });
+
 type Deltas = Map<string, { productId: string; warehouseId: string; units: bigint }>;
 
 function addEffect(m: Deltas, warehouseId: string, lines: Line[], sign: 1 | -1) {
@@ -142,9 +156,9 @@ async function lockOriginal(tx: Tx, id: string) {
   if (!locked.length) throw new GoneError();
   const a = await tx.stockAdjustment.findUniqueOrThrow({
     where: { id },
-    select: { id: true, reference: true, warehouseId: true, adjustmentDate: true, createdAt: true, items: { select: { productId: true, quantity: true, type: true, product: { select: { code: true, name: true } } } } },
+    select: { id: true, reference: true, warehouseId: true, adjustmentDate: true, createdAt: true, items: { select: { productId: true, baseQuantity: true, type: true, product: { select: { code: true, name: true } } } } },
   });
-  const lines: Line[] = a.items.map((i) => ({ productId: i.productId, quantity: i.quantity.toFixed(3), type: i.type }));
+  const lines: Line[] = a.items.map((i) => ({ productId: i.productId, quantity: i.baseQuantity.toFixed(3), type: i.type }));
   const labels = new Map(a.items.map((i) => [i.productId, `${i.product.code} ${i.product.name}`]));
   return { ...a, lines, labels };
 }
@@ -187,13 +201,13 @@ export async function createAdjustment(input: unknown): Promise<AdjustmentResult
             warehouseId: d.warehouseId,
             adjustmentDate: dateOf(d.adjustmentDate),
             createdById: a.userId,
-            items: { create: d.items.map((i) => ({ productId: i.productId, quantity: i.quantity, type: i.type })) },
+            items: { create: d.items.map((i) => itemData(i, r.units)) },
           },
           select: { id: true, number: true, createdAt: true },
         });
         const ad = await tx.stockAdjustment.update({ where: { id: t0.id }, data: { reference: formatAdjustmentReference(t0.number) }, select: { id: true, reference: true } });
         const deltas: Deltas = new Map();
-        addEffect(deltas, d.warehouseId, d.items, 1);
+        addEffect(deltas, d.warehouseId, baseLines(d.items, r.units), 1);
         await applyDeltas(tx, deltas, r.labels, t.adjustments.err.aProduct);
         // A back-dated SUBTRACTION must keep every later balance >= 0 (additions can only raise balances).
         await assertNonNegativeHistory(tx, d.items.filter((i) => i.type === "SUBTRACTION").map((i) => ({ productId: i.productId, warehouseId: d.warehouseId, day: d.adjustmentDate, at: t0.createdAt.getTime() })));
@@ -230,10 +244,10 @@ export async function updateAdjustment(id: unknown, input: unknown): Promise<Adj
         const orig = await lockOriginal(tx, aid.data);
         const deltas: Deltas = new Map();
         addEffect(deltas, orig.warehouseId, orig.lines, -1); // reverse the original effect
-        addEffect(deltas, d.warehouseId, d.items, 1); // apply the new one
+        addEffect(deltas, d.warehouseId, baseLines(d.items, r.units), 1); // apply the new one
         await tx.stockAdjustment.update({ where: { id: orig.id }, data: { warehouseId: d.warehouseId, adjustmentDate: dateOf(d.adjustmentDate) } });
         await tx.stockAdjustmentItem.deleteMany({ where: { adjustmentId: orig.id } });
-        await tx.stockAdjustmentItem.createMany({ data: d.items.map((i) => ({ adjustmentId: orig.id, productId: i.productId, quantity: i.quantity, type: i.type })) });
+        await tx.stockAdjustmentItem.createMany({ data: d.items.map((i) => ({ adjustmentId: orig.id, ...itemData(i, r.units) })) });
         await applyDeltas(tx, deltas, new Map([...orig.labels, ...r.labels]), t.adjustments.err.aProduct);
         // Editing removes the old movements and adds the new ones: re-check every touched product + warehouse from the earliest of the old and new positions.
         const at = orig.createdAt.getTime();

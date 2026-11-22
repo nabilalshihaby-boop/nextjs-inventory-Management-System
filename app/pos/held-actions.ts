@@ -6,6 +6,8 @@ import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
 import { holdOrderSchema, heldIdSchema, type HeldOrderSummary, type ResumedOrder } from "@/lib/pos-held";
 import { getHeldOrders } from "@/lib/pos-held-data";
+import { loadUnitSets, pickUnit } from "@/lib/product-units";
+import { scalePrice } from "@/lib/unit-math";
 import { getDict } from "@/lib/i18n/server";
 import { tr } from "@/lib/i18n/messages";
 import type { Dictionary } from "@/lib/i18n";
@@ -55,6 +57,8 @@ export async function holdPosOrder(input: unknown): Promise<HoldResult> {
   const merged = new Map<string, bigint>();
   for (const i of d.items) merged.set(i.productId, (merged.get(i.productId) ?? BigInt(0)) + toUnits(i.quantity, 3));
   for (const q of merged.values()) if (q > toUnits("99999999999.999", 3)) return { ok: false, message: t.posTx.held.qtyLarge };
+  const wantedUnit = new Map<string, string>();
+  for (const i of d.items) wantedUnit.set(i.productId, i.unitId);
 
   const accountIds = [...new Set(d.tenders.map((t) => t.cashBankAccountId).filter(Boolean))];
   const [products, customer, warehouse, accountRows] = await Promise.all([
@@ -69,10 +73,16 @@ export async function holdPosOrder(input: unknown): Promise<HoldResult> {
   if (!warehouse) return { ok: false, message: t.posTx.held.warehouseGone };
   if (accountRows.length !== accountIds.length) return { ok: false, message: t.posTx.held.accountGone };
 
-  const itemRows = [...merged.entries()].map(([productId, q]) => {
+  // The saved unit must be an active SALE unit of the product (blank = default); the saved price is base price × factor.
+  const sets = await loadUnitSets(db, [...merged.keys()]);
+  const itemRows: { productId: string; productCode: string; productName: string; quantity: string; unitId: string | null; unitPrice: string }[] = [];
+  for (const [productId, q] of merged) {
     const p = byId.get(productId)!;
-    return { productId, productCode: p.code, productName: p.name, quantity: fromUnits(q, 3), unitPrice: p.price };
-  });
+    const set = sets.get(productId);
+    const u = set ? pickUnit(set, wantedUnit.get(productId), "SALE") : null;
+    if (!u) return { ok: false, message: tr(t, "units.err.notAllowed", { product: `${p.code} ${p.name}`, unit: "" }) };
+    itemRows.push({ productId, productCode: p.code, productName: p.name, quantity: fromUnits(q, 3), unitId: wantedUnit.get(productId) ? u.unitId : null, unitPrice: scalePrice(p.price.toFixed(2), u.factor) });
+  }
   const fields = { customerId: d.customerId || null, warehouseId: d.warehouseId || null, cashBankAccountId: null, paymentMethod: null, notes: d.notes || null };
   const tenderRows = d.tenders.map((t, position) => ({ position, paymentMethod: t.paymentMethod || null, cashBankAccountId: t.cashBankAccountId || null, amount: t.amount === "" ? null : t.amount }));
 
@@ -144,7 +154,7 @@ export async function resumeHeldOrder(id: unknown): Promise<ResumeResult> {
     return { ...t, cashBankAccountId: "" };
   });
   const live = new Set(products.map((p) => p.id));
-  const lines = o.items.map((i) => ({ productId: i.productId, code: i.productCode, name: i.productName, quantity: i.quantity.toFixed(3).replace(/\.?0+$/, ""), missing: !live.has(i.productId) }));
+  const lines = o.items.map((i) => ({ productId: i.productId, code: i.productCode, name: i.productName, quantity: i.quantity.toFixed(3).replace(/\.?0+$/, ""), unitId: i.unitId ?? "", missing: !live.has(i.productId) }));
   for (const l of lines) if (l.missing) problems.push(tr(D, "posTx.held.resumeLine", { code: l.code, name: l.name }));
   return { ok: true, order: { id: o.id, reference: o.reference, customerId: customer ? (o.customerId ?? "") : "", warehouseId: warehouse ? (o.warehouseId ?? "") : "", tenders, notes: o.notes ?? "", lines, problems } };
 }

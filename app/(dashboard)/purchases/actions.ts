@@ -12,6 +12,7 @@ import { toUnits } from "@/lib/transfers";
 import { calcOrder } from "@/lib/purchase-calc";
 import { formatPurchaseReference, makePurchaseSchema, type PurchaseField, type PurchaseInput } from "@/lib/purchases";
 import { getDict } from "@/lib/i18n/server";
+import { lineSnapshot, loadUnitSets, resolveLine, type ResolvedUnit } from "@/lib/product-units";
 import { tr } from "@/lib/i18n/messages";
 import type { Dictionary } from "@/lib/i18n";
 
@@ -99,13 +100,29 @@ export async function createPurchase(input: unknown): Promise<PurchaseResult> {
   const [supplier, warehouse, products] = await Promise.all([
     db.supplier.findUnique({ where: { id: d.supplierId }, select: { id: true } }),
     db.warehouse.findUnique({ where: { id: d.warehouseId }, select: { id: true } }),
-    db.product.findMany({ where: { id: { in: d.items.map((i) => i.productId) } }, select: { id: true } }),
+    db.product.findMany({ where: { id: { in: d.items.map((i) => i.productId) } }, select: { id: true, code: true, name: true } }),
   ]);
   if (!supplier) return { ok: false, message: t.purchases.err.invalidSupplier, fieldErrors: { supplierId: t.purchases.err.invalidSupplier } };
   if (!warehouse) return { ok: false, message: t.purchases.err.invalidWarehouse, fieldErrors: { warehouseId: t.purchases.err.invalidWarehouse } };
   const known = new Set(products.map((p) => p.id));
   const missing = d.items.find((i) => !known.has(i.productId));
   if (missing) return { ok: false, message: t.purchases.err.productGone, fieldErrors: { items: t.purchases.err.productGone }, itemErrors: { [missing.productId]: t.purchases.err.itemGone } };
+
+  // Units: every line's unit must be an active PURCHASE conversion of THIS product; the factor and the base quantity
+  // come from MySQL, never from the browser. Stock is added in base units.
+  const sets = await loadUnitSets(db, d.items.map((i) => i.productId));
+  const lineUnit = new Map<string, ResolvedUnit>();
+  const unitErrors: Record<string, string> = {};
+  for (const i of d.items) {
+    const pr = products.find((x) => x.id === i.productId)!;
+    const r = resolveLine(sets.get(i.productId), i.unitId, "PURCHASE", i.quantity, `${pr.code} ${pr.name}`);
+    if (r.ok) lineUnit.set(i.productId, r.r);
+    else unitErrors[i.productId] = tr(t, r.f.key, r.f.vars);
+  }
+  if (Object.keys(unitErrors).length) {
+    const m = Object.values(unitErrors)[0];
+    return { ok: false, message: m, fieldErrors: { items: m }, itemErrors: unitErrors };
+  }
 
   // Authoritative totals (server-side).
   const calc = calcOrder(d.items, { orderTaxRate: d.orderTaxRate, discount: d.discount, shipping: d.shipping });
@@ -146,6 +163,7 @@ export async function createPurchase(input: unknown): Promise<PurchaseResult> {
               create: d.items.map((i, n) => ({
                 productId: i.productId,
                 quantity: i.quantity,
+                ...lineSnapshot(lineUnit.get(i.productId)!),
                 unitCost: i.unitCost,
                 taxType: i.taxType,
                 taxRate: i.taxRate,
@@ -162,7 +180,7 @@ export async function createPurchase(input: unknown): Promise<PurchaseResult> {
         });
         const reference = formatPurchaseReference(p0.number);
         await tx.purchase.update({ where: { id: p0.id }, data: { reference } });
-        if (d.status === "RECEIVED") await addStock(tx, d.warehouseId, d.items);
+        if (d.status === "RECEIVED") await addStock(tx, d.warehouseId, d.items.map((i) => ({ productId: i.productId, quantity: lineUnit.get(i.productId)!.baseQuantity })));
         return { id: p0.id, reference };
       }),
     );
@@ -189,8 +207,8 @@ export async function markPurchaseReceived(id: unknown): Promise<PurchaseResult>
     db.$transaction(async (tx) => {
       const u = await tx.purchase.updateMany({ where: { id: p.id, status: { in: ["PENDING", "ORDERED"] } }, data: { status: "RECEIVED", receivedAt: new Date(), receivedById: a.userId } });
       if (u.count !== 1) return false; // someone else received it first — no stock added twice
-      const row = await tx.purchase.findUniqueOrThrow({ where: { id: p.id }, select: { warehouseId: true, items: { select: { productId: true, quantity: true } } } });
-      await addStock(tx, row.warehouseId, row.items);
+      const row = await tx.purchase.findUniqueOrThrow({ where: { id: p.id }, select: { warehouseId: true, items: { select: { productId: true, baseQuantity: true } } } });
+      await addStock(tx, row.warehouseId, row.items.map((i) => ({ productId: i.productId, quantity: i.baseQuantity })));
       return true;
     }),
   );

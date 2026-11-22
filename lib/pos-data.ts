@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { getDefaultCurrency, getSystemSettings } from "@/lib/settings";
 import { canManageSystemSettings } from "@/lib/roles";
 import { getRegisterOverview } from "@/lib/register-data";
+import { unitOptionsFor } from "@/lib/product-units";
 import type { PosData } from "@/lib/pos";
 
 export async function getPosData(userName: string, role: string | undefined, userId: string): Promise<PosData> {
@@ -22,10 +23,12 @@ export async function getPosData(userName: string, role: string | undefined, use
     db.productCategory.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
     db.brand.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
   ]);
+  const units = await unitOptionsFor(db, products.map((p) => p.id));
   return {
     customers,
     warehouses,
     products: products.map((p) => ({
+      unitInfo: units.get(p.id)!,
       id: p.id,
       code: p.code,
       name: p.name,

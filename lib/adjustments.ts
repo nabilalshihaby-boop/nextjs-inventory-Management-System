@@ -3,6 +3,7 @@ import { fmt } from "@/lib/i18n/config";
 import { en } from "@/lib/i18n/dictionaries/en";
 import type { Dictionary } from "@/lib/i18n";
 import { toUnits } from "@/lib/transfers";
+import type { ProductUnits } from "@/lib/unit-math";
 
 // Shared Stock Adjustment rules (client + server). Quantities are 3-dp decimal strings; arithmetic
 // uses scaled BigInt (see lib/transfers.ts) — never floating point.
@@ -37,6 +38,8 @@ export function makeAdjustmentSchema(m: Dictionary["adjustments"]["val"] = en.ad
         .array(
           z.object({
             productId: id(m.chooseProduct),
+            /** The selected product unit (selector only; blank = the base unit). The server resolves factor and base quantity. */
+            unitId: z.string().trim().max(64).optional().default(""),
             quantity: z
               .string({ error: m.qtyRequired })
               .trim()
@@ -70,13 +73,14 @@ export const signedUnits = (quantity: string, type: AdjustmentTypeValue) => (typ
 
 // ---- View-model types ---------------------------------------------------------------------------
 
-export type ProductPick = { productId: string; code: string; name: string; unit: string };
+export type ProductPick = { productId: string; code: string; name: string; unit: string; unitInfo: ProductUnits };
 export type StockLevel = { productId: string; warehouseId: string; quantity: string };
 
 export type AdjustmentFormValues = {
   warehouseId: string;
   adjustmentDate: string;
-  items: { productId: string; quantity: string; type: AdjustmentTypeValue }[];
+  /** unitId = the line's unit; baseQuantity = what the saved line moved stock by (edit form only). */
+  items: { productId: string; quantity: string; type: AdjustmentTypeValue; unitId?: string; baseQuantity?: string }[];
 };
 
 export type AdjustmentRow = {

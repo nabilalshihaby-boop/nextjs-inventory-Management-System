@@ -27,7 +27,7 @@ export default async function EditAdjustmentPage({ params }: PageProps<"/adjustm
   const { id } = await params;
   const a = await db.stockAdjustment.findUnique({
     where: { id },
-    select: { id: true, reference: true, warehouseId: true, adjustmentDate: true, items: { orderBy: { id: "asc" }, select: { productId: true, quantity: true, type: true } } },
+    select: { id: true, reference: true, warehouseId: true, adjustmentDate: true, items: { orderBy: { id: "asc" }, select: { productId: true, quantity: true, type: true, unitId: true, baseQuantity: true } } },
   });
   if (!a) notFound();
 
@@ -40,7 +40,7 @@ export default async function EditAdjustmentPage({ params }: PageProps<"/adjustm
       initial={{
         warehouseId: a.warehouseId,
         adjustmentDate: a.adjustmentDate.toISOString().slice(0, 10),
-        items: a.items.map((i) => ({ productId: i.productId, quantity: formatQuantity(i.quantity.toFixed(3)).replace(/,/g, ""), type: i.type })),
+        items: a.items.map((i) => ({ productId: i.productId, quantity: formatQuantity(i.quantity.toFixed(3)).replace(/,/g, ""), type: i.type, unitId: i.unitId ?? "", baseQuantity: i.baseQuantity.toFixed(3) })),
       }}
     />
   );

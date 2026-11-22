@@ -10,8 +10,10 @@ import { canManageTransfers } from "@/lib/roles";
 import { formatQuantity } from "@/lib/money";
 import { formatReference, makeTransferSchema, type TransferField, type TransferInput } from "@/lib/transfers";
 import { getDict } from "@/lib/i18n/server";
-import { errorMessage } from "@/lib/i18n/messages";
+import { errorMessage, tr } from "@/lib/i18n/messages";
 import { StockHistoryError, assertNonNegativeHistory } from "@/lib/stock-history-guard";
+import { loadUnitSets, resolveLine } from "@/lib/product-units";
+import { scalePrice } from "@/lib/unit-math";
 import { dayOfDateOnly } from "@/lib/inventory-reports";
 import { fmt } from "@/lib/i18n/config";
 import type { Dictionary } from "@/lib/i18n";
@@ -85,7 +87,9 @@ function parse(input: unknown, t: Dictionary): { ok: true; data: TransferInput }
   return { ok: false, error: { ok: false, message: Object.values(fieldErrors)[0] ?? t.common.checkForm, fieldErrors, itemErrors } };
 }
 
-type Line = { productId: string; quantity: string; unitCost: string; label: string };
+/** `quantity`/`unitCost` are in the line's unit; `base` is the quantity in BASE units — the only number stock moves by. */
+type Line = { productId: string; quantity: string; unitCost: string; label: string; base: string; unitId: string | null; unitName: string | null; unitFactor: string };
+const lineData = (l: Line) => ({ productId: l.productId, quantity: l.quantity, unitCost: l.unitCost, unitId: l.unitId, unitName: l.unitName, unitFactor: l.unitFactor, baseQuantity: l.base });
 
 /**
  * Checks the payload against MySQL: both warehouses exist and products exist and have enough
@@ -107,6 +111,7 @@ async function resolve(data: TransferInput, t: Dictionary): Promise<{ ok: true; 
 
   const byId = new Map(products.map((p) => [p.id, p]));
   const onHand = new Map(stocks.map((s) => [s.productId, s.quantity]));
+  const sets = await loadUnitSets(db, productIds);
   const lines: Line[] = [];
   for (const item of data.items) {
     const p = byId.get(item.productId);
@@ -114,11 +119,17 @@ async function resolve(data: TransferInput, t: Dictionary): Promise<{ ok: true; 
       itemErrors[item.productId] = t.transfers.err.productGone;
       continue;
     }
+    // Unit: an active conversion of THIS product (blank = the base unit); stock is checked and moved in BASE units.
+    const ru = resolveLine(sets.get(p.id), item.unitId, "ANY", item.quantity, `${p.code} ${p.name}`);
+    if (!ru.ok) {
+      itemErrors[p.id] = tr(t, ru.f.key, ru.f.vars);
+      continue;
+    }
     const available = onHand.get(p.id) ?? new Prisma.Decimal(0);
-    if (new Prisma.Decimal(item.quantity).gt(available)) {
+    if (new Prisma.Decimal(ru.r.baseQuantity).gt(available)) {
       itemErrors[p.id] = fmt(t.transfers.err.onlyAvailable, { qty: formatQuantity(available.toFixed(3)) });
     }
-    lines.push({ productId: p.id, quantity: item.quantity, unitCost: p.cost.toFixed(2), label: `${p.code} ${p.name}` });
+    lines.push({ productId: p.id, quantity: item.quantity, unitCost: scalePrice(p.cost.toFixed(2), ru.r.factor), label: `${p.code} ${p.name}`, base: ru.r.baseQuantity, unitId: ru.r.unitId, unitName: ru.r.unitName, unitFactor: ru.r.factor });
   }
   if (Object.keys(itemErrors).length) fieldErrors.items ??= Object.values(itemErrors)[0];
   if (Object.keys(fieldErrors).length) {
@@ -132,8 +143,8 @@ async function deductSource(tx: Tx, warehouseId: string, lines: Line[]) {
   // A stable lock order (by product id) avoids deadlocks between concurrent transfers.
   for (const l of [...lines].sort((a, b) => a.productId.localeCompare(b.productId))) {
     const r = await tx.productStock.updateMany({
-      where: { productId: l.productId, warehouseId, quantity: { gte: l.quantity } },
-      data: { quantity: { decrement: l.quantity } },
+      where: { productId: l.productId, warehouseId, quantity: { gte: l.base } },
+      data: { quantity: { decrement: l.base } },
     });
     if (r.count !== 1) throw new StockError(l.productId, l.label);
   }
@@ -143,8 +154,8 @@ async function addDestination(tx: Tx, warehouseId: string, lines: Line[]) {
   for (const l of [...lines].sort((a, b) => a.productId.localeCompare(b.productId))) {
     await tx.productStock.upsert({
       where: { productId_warehouseId: { productId: l.productId, warehouseId } },
-      create: { productId: l.productId, warehouseId, quantity: l.quantity },
-      update: { quantity: { increment: l.quantity } },
+      create: { productId: l.productId, warehouseId, quantity: l.base },
+      update: { quantity: { increment: l.base } },
     });
   }
 }
@@ -204,7 +215,7 @@ export async function createTransfer(input: unknown): Promise<TransferResult> {
             status: d.status,
             note: d.note || null,
             createdById: a.userId,
-            items: { create: r.lines.map((l) => ({ productId: l.productId, quantity: l.quantity, unitCost: l.unitCost })) },
+            items: { create: r.lines.map(lineData) },
           },
           select: { id: true, number: true, createdAt: true },
         });
@@ -260,7 +271,7 @@ export async function updateTransfer(id: unknown, input: unknown): Promise<Trans
         if (u.count !== 1) throw new StateError();
         await tx.stockTransferItem.deleteMany({ where: { transferId: existing.id } });
         await tx.stockTransferItem.createMany({
-          data: r.lines.map((l) => ({ transferId: existing.id, productId: l.productId, quantity: l.quantity, unitCost: l.unitCost })),
+          data: r.lines.map((l) => ({ transferId: existing.id, ...lineData(l) })),
         });
         if (d.status === "SENT" || d.status === "COMPLETED") await deductSource(tx, d.fromWarehouseId, r.lines);
         if (d.status === "COMPLETED") await addDestination(tx, d.toWarehouseId, r.lines);
@@ -282,9 +293,9 @@ export async function updateTransfer(id: unknown, input: unknown): Promise<Trans
 async function loadLines(tx: Tx, transferId: string): Promise<Line[]> {
   const items = await tx.stockTransferItem.findMany({
     where: { transferId },
-    select: { productId: true, quantity: true, unitCost: true, product: { select: { code: true, name: true } } },
+    select: { productId: true, quantity: true, baseQuantity: true, unitId: true, unitName: true, unitFactor: true, unitCost: true, product: { select: { code: true, name: true } } },
   });
-  return items.map((i) => ({ productId: i.productId, quantity: i.quantity.toFixed(3), unitCost: i.unitCost.toFixed(2), label: `${i.product.code} ${i.product.name}` }));
+  return items.map((i) => ({ productId: i.productId, quantity: i.quantity.toFixed(3), unitCost: i.unitCost.toFixed(2), label: `${i.product.code} ${i.product.name}`, base: i.baseQuantity.toFixed(3), unitId: i.unitId, unitName: i.unitName, unitFactor: i.unitFactor.toFixed(6) }));
 }
 
 /** PENDING → SENT: deduct the source warehouse once. */

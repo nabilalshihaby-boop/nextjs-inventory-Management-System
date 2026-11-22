@@ -2,6 +2,7 @@ import { z } from "zod";
 import { fmt } from "@/lib/i18n/config";
 import { en } from "@/lib/i18n/dictionaries/en";
 import type { Dictionary } from "@/lib/i18n";
+import { isValidFactor } from "@/lib/unit-math";
 
 // Shared Product rules. Decimal values stay strings end-to-end (validated here, stored as Prisma
 // Decimal) — never parsed into floating point.
@@ -85,7 +86,7 @@ export const { productFieldsSchema, openingStockSchema } = makeProductSchemas();
 
 export type ProductFields = z.infer<typeof productFieldsSchema>;
 export type OpeningStock = z.infer<typeof openingStockSchema>;
-export type ProductField = keyof ProductFields | keyof OpeningStock | "images" | "currency";
+export type ProductField = keyof ProductFields | keyof OpeningStock | "images" | "currency" | "units";
 
 /** Form values (plain strings). */
 export type ProductFormValues = Record<keyof ProductFields | keyof OpeningStock, string>;
@@ -106,3 +107,54 @@ export type ProductRow = {
   image: string | null;
   createdOn: string;
 };
+
+// ---------------------------------------------------------------------------------------------
+// Product unit conversions (see lib/product-units.ts). The base unit is Product.productUnitId (factor 1, fixed);
+// `units` lists the OTHER units with a product-specific factor. Defaults must be active units enabled for that use.
+// ---------------------------------------------------------------------------------------------
+export const MAX_PRODUCT_UNITS = 20;
+export type UnitInput = { unitId: string; factor: string; active: boolean; forSales: boolean; forPurchases: boolean };
+
+export function makeUnitsSchema(m: Dictionary["units"]["val"] = en.units.val) {
+  return z
+    .array(
+      z
+        .object({
+          unitId: z.string({ error: m.unitRequired }).trim().min(1, m.unitRequired).max(64, m.unitGone),
+          factor: z.string({ error: m.factorInvalid }).trim().refine((v) => isValidFactor(v), m.factorInvalid),
+          active: z.boolean(),
+          forSales: z.boolean(),
+          forPurchases: z.boolean(),
+        })
+        .strict(),
+      { error: m.unitRequired },
+    )
+    .max(MAX_PRODUCT_UNITS, fmt(m.tooMany, { max: MAX_PRODUCT_UNITS }));
+}
+
+/**
+ * Cross-field rules of a unit configuration. `names` maps unit id → display name (for messages).
+ * Returns per-field messages (empty object = valid).
+ */
+export function checkUnitConfig(
+  base: string,
+  saleId: string,
+  purchaseId: string,
+  rows: UnitInput[],
+  names: (id: string) => string,
+  m: Dictionary["units"]["val"],
+): Partial<Record<"productUnitId" | "saleUnitId" | "purchaseUnitId" | "units", string>> {
+  const out: Partial<Record<"productUnitId" | "saleUnitId" | "purchaseUnitId" | "units", string>> = {};
+  if (!base) return { productUnitId: m.baseRequired };
+  const seen = new Set<string>([base]);
+  for (const r of rows) {
+    if (r.unitId === base) return { units: m.duplicate };
+    if (seen.has(r.unitId)) return { units: m.duplicate };
+    seen.add(r.unitId);
+    if (r.active && !r.forSales && !r.forPurchases) return { units: m.purpose };
+  }
+  const ok = (id: string, purpose: "forSales" | "forPurchases") => id === base || rows.some((r) => r.unitId === id && r.active && r[purpose]);
+  if (!ok(saleId, "forSales")) out.saleUnitId = rows.some((r) => r.unitId === saleId && !r.active) ? fmt(m.inactiveDefault, { unit: names(saleId) }) : m.defaultInvalid;
+  if (!ok(purchaseId, "forPurchases")) out.purchaseUnitId = rows.some((r) => r.unitId === purchaseId && !r.active) ? fmt(m.inactiveDefault, { unit: names(purchaseId) }) : m.defaultInvalid;
+  return out;
+}

@@ -38,6 +38,8 @@ export const holdOrderSchema = z
         z
           .object({
             productId: id("Choose a valid product"),
+            /** The selected sale unit (selector only; validated against the product again at hold and at checkout). */
+            unitId: z.string().trim().max(64).optional().default(""),
             quantity: z
               .string({ error: "Quantity is required" })
               .trim()
@@ -58,7 +60,7 @@ export const unlockSchema = z.object({ password: z.string().min(1, "Enter your p
 
 // ---- view models ----
 export type HeldOrderSummary = { id: string; reference: string; createdOn: string; lines: number; quantity: string; customerName: string | null; total: string };
-export type ResumedLine = { productId: string; code: string; name: string; quantity: string; missing: boolean };
+export type ResumedLine = { productId: string; code: string; name: string; quantity: string; unitId: string; missing: boolean };
 export type ResumedOrder = {
   id: string;
   reference: string;

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ProductUnits } from "@/lib/unit-math";
 import { makeTxDate } from "@/lib/cash-bank";
 import { fmt } from "@/lib/i18n/config";
 import { en } from "@/lib/i18n/dictionaries/en";
@@ -66,7 +67,8 @@ export type SaleInput = z.infer<typeof saleInputSchema>;
 export type SaleField = "saleDate" | "warehouseId" | "customerId" | "status" | "orderTaxRate" | "discount" | "shipping" | "notes" | "items";
 
 // ---- view models (form options are shared with quotations) ----
-export type SaleProduct = QuotationProduct;
+/** A product choice for the sale form: price/tax/stock like quotations, plus its units (the line unit + factor decide the price). */
+export type SaleProduct = QuotationProduct & { unitInfo: ProductUnits };
 export type SaleStockLevel = QuotationStockLevel;
 export type SaleOption = QuotationOption;
 export type SaleCurrency = QuotationCurrency;
@@ -82,7 +84,7 @@ export type SaleDraft = {
   notes: string;
   currency: SaleCurrency;
   quotationRef: string | null;
-  lines: (SaleProduct & { quantity: string; unitPrice: string; discountType: "FIXED" | "PERCENTAGE"; discountValue: string })[];
+  lines: (SaleProduct & { unitId: string; quantity: string; unitPrice: string; discountType: "FIXED" | "PERCENTAGE"; discountValue: string })[];
 };
 export type SaleRow = {
   id: string;

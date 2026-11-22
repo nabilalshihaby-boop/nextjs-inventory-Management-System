@@ -12,6 +12,7 @@ import { fromUnits, isQuantity, toUnits } from "@/lib/transfers";
 import { calcReturn } from "@/lib/purchase-return-calc";
 import type { PurchaseReturnField, ReturnSourceLine, ReturnSourcePurchase } from "@/lib/purchase-returns";
 import { useT } from "@/components/i18n/I18nProvider";
+import { baseUnits } from "@/lib/unit-math";
 import { fmt } from "@/lib/i18n/config";
 
 // Port of design/Create Purchase Return.html: PageHeader (+ Back), FormCard with Date / Warehouse /
@@ -67,8 +68,13 @@ export default function PurchaseReturnForm({ sources, today, initialPurchase }: 
   const step = (l: ReturnSourceLine, dir: 1 | -1) => {
     const cur = isQuantity(q(l.purchaseItemId)) ? toUnits(q(l.purchaseItemId), 3) : BigInt(0);
     let next = cur + BigInt(dir) * BigInt(1000);
-    const max = toUnits(returnable(l), 3) < toUnits(l.stock, 3) ? toUnits(returnable(l), 3) : toUnits(l.stock, 3);
+    const max = toUnits(returnable(l), 3);
     if (next < BigInt(0)) next = BigInt(0);
+    // Stock is counted in BASE units: the quantity in the line's unit is converted before comparing with it.
+    if (next > BigInt(0) && baseUnits(fromUnits(next, 3), l.factor) > toUnits(l.stock, 3)) {
+      toast.error(fmt(F.onlyStock, { max: formatQuantity(l.stock), warehouse: src?.warehouse ?? "" }), { id: "return" });
+      return;
+    }
     if (next > max) {
       next = max;
       toast.error(fmt(F.atMost, { max: formatQuantity(fromUnits(max, 3)), unit: l.unit }), { id: "return" });
@@ -81,7 +87,7 @@ export default function PurchaseReturnForm({ sources, today, initialPurchase }: 
     if (v === "" || v === "0") return "";
     if (!/^\d{1,11}(\.\d{1,3})?$/.test(v)) return F.qtyDecimals;
     if (toUnits(v, 3) > toUnits(returnable(l), 3)) return fmt(F.onlyCan, { max: formatQuantity(returnable(l)) });
-    if (toUnits(v, 3) > toUnits(l.stock, 3)) return fmt(F.onlyStock, { max: formatQuantity(l.stock), warehouse: src?.warehouse ?? "" });
+    if (baseUnits(v, l.factor) > toUnits(l.stock, 3)) return fmt(F.onlyStock, { max: formatQuantity(l.stock), warehouse: src?.warehouse ?? "" });
     return "";
   }
 
@@ -233,7 +239,7 @@ export default function PurchaseReturnForm({ sources, today, initialPurchase }: 
                               <td>{money(l.netUnitCost)}</td>
                               <td>
                                 <span className="sp-badge sp-badge--warning" data-testid="stock">
-                                  {formatQuantity(l.stock)} {l.unit}
+                                  {formatQuantity(l.stock)} {l.baseUnit}
                                 </span>
                               </td>
                               <td>

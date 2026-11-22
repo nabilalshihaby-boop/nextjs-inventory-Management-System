@@ -13,6 +13,8 @@ import { type QuotationLineInput } from "@/lib/quotations";
 import { useT } from "@/components/i18n/I18nProvider";
 import { fmt } from "@/lib/i18n/config";
 import { tr } from "@/lib/i18n/messages";
+import { LineUnitSelect, BaseHint } from "@/components/ui/LineUnit";
+import { baseUnits, defaultLineUnit, findLineUnit, scalePrice } from "@/lib/unit-math";
 import { SALE_STATUSES, calcSale, type SaleCurrency, type SaleDraft, type SaleField, type SaleOption, type SaleProduct, type SaleStatusValue, type SaleStockLevel } from "@/lib/sales";
 
 // Port of design/Create Sale.html: PageHeader (+ Back), FormCard with Date / Warehouse / Customer,
@@ -25,7 +27,7 @@ import { SALE_STATUSES, calcSale, type SaleCurrency, type SaleDraft, type SaleFi
 // server re-checks it inside the transaction (Completed deducts it, Pending doesn't). Payment Status
 // is always Unpaid here: customer payments aren't built yet.
 
-type Line = SaleProduct & { quantity: string; unitPrice: string; discountType: "FIXED" | "PERCENTAGE"; discountValue: string };
+type Line = SaleProduct & { unitId: string; quantity: string; unitPrice: string; discountType: "FIXED" | "PERCENTAGE"; discountValue: string };
 const MONEY_RE = /^\d{1,12}(\.\d{1,2})?$/;
 const PCT_RE = /^\d{1,3}(\.\d{1,2})?$/;
 const okMoney = (v: string) => MONEY_RE.test(v.trim());
@@ -106,7 +108,8 @@ export default function SaleForm({
   function add(p: SaleProduct) {
     setQ("");
     if (lines.some((l) => l.productId === p.productId)) return void toast(fmt(F.alreadyInItems, { name: p.name }), { id: "sale", icon: "ℹ️" });
-    setLines([...lines, { ...p, quantity: "1", unitPrice: p.price, discountType: "FIXED", discountValue: "0" }]);
+    const du = defaultLineUnit(p.unitInfo, "SALE");
+    setLines([...lines, { ...p, unitId: du.unitId, quantity: "1", unitPrice: scalePrice(p.price, du.factor), discountType: "FIXED", discountValue: "0" }]);
     setE((x) => ({ ...x, items: "" }));
   }
   const step = (l: Line, dir: 1 | -1) => {
@@ -141,7 +144,8 @@ export default function SaleForm({
       for (const l of lines) {
         if (ie[l.productId] || !isQuantity(l.quantity)) continue;
         const have = onHand.get(l.productId) ?? "0.000";
-        if (toUnits(l.quantity, 3) > toUnits(have, 3)) ie[l.productId] = fmt(F.onlyInStock, { qty: formatQuantity(have), unit: l.unit });
+        // Stock is counted in BASE units: the line's quantity is converted with the unit's factor first.
+        if (baseUnits(l.quantity, findLineUnit(l.unitInfo, l.unitId).factor) > toUnits(have, 3)) ie[l.productId] = fmt(F.onlyInStock, { qty: formatQuantity(have), unit: l.unitInfo.baseUnit });
       }
     }
     if (Object.keys(ie).length) n.items ??= Object.values(ie)[0];
@@ -162,7 +166,7 @@ export default function SaleForm({
       discount: discount.trim(),
       shipping: shipping.trim(),
       notes,
-      items: lines.map((l) => ({ productId: l.productId, quantity: l.quantity.trim(), unitPrice: l.unitPrice.trim(), taxType: l.taxType, taxRate: l.taxRate.trim(), discountType: l.discountType, discountValue: l.discountValue.trim() })),
+      items: lines.map((l) => ({ productId: l.productId, unitId: l.unitId, quantity: l.quantity.trim(), unitPrice: l.unitPrice.trim(), taxType: l.taxType, taxRate: l.taxRate.trim(), discountType: l.discountType, discountValue: l.discountValue.trim() })),
     };
     startTransition(async () => {
       let r: SaleResult;
@@ -343,7 +347,7 @@ export default function SaleForm({
                             <td data-col="net">{money(c.netUnitCost)}</td>
                             <td>
                               <span className="sp-badge sp-badge--warning" title={F.stockTitle}>
-                                {warehouseId ? `${formatQuantity(onHand.get(l.productId) ?? "0.000")} ${l.unit}` : "—"}
+                                {warehouseId ? `${formatQuantity(onHand.get(l.productId) ?? "0.000")} ${l.unitInfo.baseUnit}` : "—"}
                               </span>
                             </td>
                             <td>
@@ -356,6 +360,8 @@ export default function SaleForm({
                                   <Icon name="plus" size={18} />
                                 </button>
                               </span>
+                              <span className="t-caption" style={{ display: "block" }}>{findLineUnit(l.unitInfo, l.unitId).name}</span>
+                              <BaseHint info={l.unitInfo} unitId={l.unitId} qty={l.quantity} />
                             </td>
                             <td data-col="discount">{money(c.discountAmount)}</td>
                             <td data-col="tax">{money(c.taxAmount)}</td>
@@ -458,7 +464,7 @@ export default function SaleForm({
                 onClick={() => {
                   const problem = lineProblem(edit);
                   if (problem) return void toast.error(problem, { id: "sale-item" });
-                  patch(edit.productId, { unitPrice: edit.unitPrice.trim(), taxType: edit.taxType, taxRate: edit.taxRate.trim(), discountType: edit.discountType, discountValue: edit.discountValue.trim() });
+                  patch(edit.productId, { unitId: edit.unitId, unitPrice: edit.unitPrice.trim(), taxType: edit.taxType, taxRate: edit.taxRate.trim(), discountType: edit.discountType, discountValue: edit.discountValue.trim() });
                   setEdit(null);
                 }}
               >
@@ -518,10 +524,8 @@ export default function SaleForm({
               <label className="sp-label" htmlFor="si-unit">
                 {F.saleUnit}<i>*</i>
               </label>
-              <select id="si-unit" className="sp-select " value="unit" disabled>
-                <option value="unit">{edit.unit}</option>
-              </select>
-              <span className="sp-hint">{F.unitHint}</span>
+              <LineUnitSelect id="si-unit" info={edit.unitInfo} purpose="SALE" value={edit.unitId} onChange={(unitId) => setEdit({ ...edit, unitId, unitPrice: scalePrice(edit.price, findLineUnit(edit.unitInfo, unitId).factor) })} />
+              <span className="sp-hint">{T.units.line.unitHint} {T.units.line.priceHint}</span>
             </div>
           </div>
         </Modal>

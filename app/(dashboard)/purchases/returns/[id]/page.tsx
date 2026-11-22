@@ -151,7 +151,7 @@ export default async function PurchaseReturnDetailsPage({ params }: PageProps<"/
                     </td>
                     <td className="num">{m(i.netUnitCost)}</td>
                     <td className="num">
-                      {formatQuantity(i.quantity.toFixed(3))} {i.product.purchaseUnit.name}
+                      {formatQuantity(i.quantity.toFixed(3))} {i.unitName ?? i.product.purchaseUnit.name}
                     </td>
                     <td className="num">{m(i.unitCost)}</td>
                     <td className="num">{m(i.discountAmount)}</td>

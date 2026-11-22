@@ -91,7 +91,7 @@ export default async function PurchaseDetailsPage({ params }: PageProps<"/purcha
           id: i.id,
           product: `${i.product.code} (${i.product.name})`,
           netUnitCost: m(i.netUnitCost),
-          quantity: `${formatQuantity(i.quantity.toFixed(3))} ${i.product.purchaseUnit.name}`,
+          quantity: `${formatQuantity(i.quantity.toFixed(3))} ${i.unitName ?? i.product.purchaseUnit.name}`,
           unitCost: m(i.unitCost),
           discount: m(i.discountAmount),
           tax: `${m(i.taxAmount)}${i.taxRate.isZero() ? "" : ` (${fmt(i.taxType === "EXCLUSIVE" ? D.taxExcl : D.taxIncl, { rate: i.taxRate.toFixed(2) })})`}`,

@@ -5,6 +5,7 @@ import { en } from "@/lib/i18n/dictionaries/en";
 import type { Dictionary } from "@/lib/i18n";
 import { moneyOf, pctOf } from "@/lib/quotations";
 import { toUnits } from "@/lib/transfers";
+import type { ProductUnits } from "@/lib/unit-math";
 
 // Shared Purchase rules (client + server). Decimal values stay strings; totals are always
 // recomputed on the server with lib/purchase-calc.ts (client values are never trusted).
@@ -50,6 +51,8 @@ export function makePurchaseItemSchema(m: PurchaseVal = en.purchases.val) {
   return z
     .object({
       productId: id(m.chooseProduct),
+      /** The selected product unit (a selector only: the server resolves factor and base quantity itself). Blank = default purchase unit. */
+      unitId: z.string().trim().max(64).optional().default(""),
       quantity: z
         .string({ error: m.qtyRequired })
         .trim()
@@ -100,7 +103,7 @@ export type PurchaseInput = z.infer<typeof purchaseInputSchema>;
 export type PurchaseField = "purchaseDate" | "warehouseId" | "supplierId" | "status" | "orderTaxRate" | "discount" | "shipping" | "notes" | "items";
 
 // ---- view models ----
-export type PurchaseProduct = { productId: string; code: string; name: string; cost: string; taxType: "EXCLUSIVE" | "INCLUSIVE"; taxRate: string; unit: string };
+export type PurchaseProduct = { productId: string; code: string; name: string; cost: string; taxType: "EXCLUSIVE" | "INCLUSIVE"; taxRate: string; unit: string; unitInfo: ProductUnits };
 export type PurchaseStockLevel = { productId: string; warehouseId: string; quantity: string };
 export type PurchaseOption = { value: string; label: string };
 export type PurchaseRow = {

@@ -23,6 +23,7 @@ import { enAdjustments } from "@/lib/i18n/dictionaries/en-adj";
 import { enUsers } from "@/lib/i18n/dictionaries/en-users";
 import { enImpExp } from "@/lib/i18n/dictionaries/en-impexp";
 import { enInvReports, enStockGuard } from "@/lib/i18n/dictionaries/en-invrep";
+import { enUnits } from "@/lib/i18n/dictionaries/en-units";
 export const en = {
   common: {
     save: "Save",
@@ -637,6 +638,7 @@ export const en = {
   importExport: enImpExp,
   invReports: enInvReports,
   stockGuard: enStockGuard,
+  units: enUnits,
   langAdmin: {
     title: "Languages",
     sections: { nav: "Dashboard & Navigation", auth: "Authentication & Account", settings: "Settings & Preferences", pos: "POS & Register", shared: "Shared UI & Reports", sales: "Sales", purchases: "Purchases", finance: "Finance", products: "Products & Inventory", people: "Customers & Suppliers", users: "Users & Roles", reports: "Reports" },

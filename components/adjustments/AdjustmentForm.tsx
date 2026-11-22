@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Icon from "@/components/layout/Icon";
 import { useT } from "@/components/i18n/I18nProvider";
+import { LineUnitSelect, BaseHint } from "@/components/ui/LineUnit";
+import { baseUnits, defaultLineUnit, findLineUnit } from "@/lib/unit-math";
 import { fmt } from "@/lib/i18n/config";
 import { ConfirmDeleteModal } from "@/components/ui/Modal";
 import { createAdjustment, updateAdjustment, type AdjustmentResult } from "@/app/(dashboard)/adjustments/actions";
@@ -26,7 +28,7 @@ import {
 // Type / remove) and Save / Cancel. Products come from MySQL; Stock is the current on-hand
 // quantity in the selected warehouse. The server re-validates everything on save.
 
-type Line = ProductPick & { quantity: string; type: AdjustmentTypeValue };
+type Line = ProductPick & { unitId: string; quantity: string; type: AdjustmentTypeValue };
 
 export default function AdjustmentForm({
   warehouses,
@@ -56,7 +58,7 @@ export default function AdjustmentForm({
   const [lines, setLines] = useState<Line[]>(() =>
     (initial?.items ?? []).flatMap((i) => {
       const p = byId.get(i.productId);
-      return p ? [{ ...p, quantity: i.quantity, type: i.type }] : [];
+      return p ? [{ ...p, unitId: findLineUnit(p.unitInfo, i.unitId ?? "").unitId, quantity: i.quantity, type: i.type }] : [];
     }),
   );
   const [q, setQ] = useState("");
@@ -73,7 +75,7 @@ export default function AdjustmentForm({
     let units = toUnits(stockOf(productId), 3);
     if (initial && initial.warehouseId === warehouseId) {
       const orig = initial.items.find((i) => i.productId === productId);
-      if (orig) units -= signedUnits(orig.quantity, orig.type);
+      if (orig) units -= signedUnits(orig.baseQuantity ?? orig.quantity, orig.type); // the saved line moved stock by its BASE quantity
     }
     return units;
   };
@@ -117,7 +119,7 @@ export default function AdjustmentForm({
       toast(fmt(F.already, { name: p.name }), { id: "adjustment", icon: "ℹ️" });
       return;
     }
-    setLines([...lines, { ...p, quantity: "1", type: "ADDITION" }]);
+    setLines([...lines, { ...p, unitId: defaultLineUnit(p.unitInfo, "ANY").unitId, quantity: "1", type: "ADDITION" }]);
     clearErr("items");
   }
 
@@ -136,7 +138,9 @@ export default function AdjustmentForm({
   const lineProblem = (l: Line) => {
     if (!isQuantity(l.quantity)) return V.qtyHint;
     const base = baseOf(l.productId);
-    if (base + signedUnits(l.quantity, l.type) < BigInt(0)) {
+    // Stock is counted in BASE units: the line's quantity is converted with its unit's factor first.
+    const lineBase = fromUnits(baseUnits(l.quantity, findLineUnit(l.unitInfo, l.unitId).factor), 3);
+    if (base + signedUnits(lineBase, l.type) < BigInt(0)) {
       if (base < BigInt(0)) return fmt(T.adjustments.err.alreadyUsed, { qty: formatQuantity(fromUnits(-base, 3)) });
       return fmt(T.adjustments.err.onlySubtract, { qty: formatQuantity(fromUnits(base, 3)) });
     }
@@ -158,7 +162,7 @@ export default function AdjustmentForm({
       return;
     }
     // Only ids, quantities, types and the date are sent — never stock values.
-    const payload = { warehouseId, adjustmentDate: date, items: lines.map((l) => ({ productId: l.productId, quantity: l.quantity.trim(), type: l.type })) };
+    const payload = { warehouseId, adjustmentDate: date, items: lines.map((l) => ({ productId: l.productId, unitId: l.unitId, quantity: l.quantity.trim(), type: l.type })) };
     startTransition(async () => {
       let r: AdjustmentResult;
       try {
@@ -265,7 +269,7 @@ export default function AdjustmentForm({
                           {p.name}
                           {warehouseId && (
                             <span style={{ marginInlineStart: "auto", color: "var(--text-3)", fontWeight: 400 }}>
-                              <bdi dir="ltr">{formatQuantity(stockOf(p.productId))}</bdi> {p.unit}
+                              <bdi dir="ltr">{formatQuantity(stockOf(p.productId))}</bdi> {p.unitInfo.baseUnit}
                             </span>
                           )}
                         </button>
@@ -320,7 +324,7 @@ export default function AdjustmentForm({
                           </td>
                           <td>
                             <span className="sp-badge sp-badge--warning" data-testid="stock">
-                              {warehouseId ? <><bdi dir="ltr">{formatQuantity(stockOf(l.productId))}</bdi> {l.unit}</> : "—"}
+                              {warehouseId ? <><bdi dir="ltr">{formatQuantity(stockOf(l.productId))}</bdi> {l.unitInfo.baseUnit}</> : "—"}
                             </span>
                           </td>
                           <td>
@@ -333,6 +337,8 @@ export default function AdjustmentForm({
                                 <Icon name="plus" size={18} />
                               </button>
                             </span>
+                            <LineUnitSelect info={l.unitInfo} purpose="ANY" value={l.unitId} compact onChange={(unitId) => patch(l.productId, { unitId })} />
+                            <BaseHint info={l.unitInfo} unitId={l.unitId} qty={l.quantity} />
                           </td>
                           <td style={{ width: 260 }}>
                             <select className="sp-select " aria-label={fmt(F.typeAria, { name: l.name })} value={l.type} onChange={(ev) => patch(l.productId, { type: ev.target.value as AdjustmentTypeValue })}>

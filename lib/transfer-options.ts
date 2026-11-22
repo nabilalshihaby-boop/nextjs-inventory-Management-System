@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { getDefaultCurrency } from "@/lib/settings";
+import { unitOptionsFor } from "@/lib/product-units";
 import type { StockOption, WarehouseOption } from "@/lib/transfers";
 
 /**
@@ -25,6 +26,7 @@ export async function getTransferFormData(): Promise<{
     }),
     getDefaultCurrency(),
   ]);
+  const units = await unitOptionsFor(db, [...new Set(stocks.map((s) => s.product.id))]);
   return {
     warehouses: warehouses.map((w) => ({ value: w.id, label: w.name })),
     stock: stocks.map((s) => ({
@@ -35,6 +37,7 @@ export async function getTransferFormData(): Promise<{
       unit: s.product.productUnit.name,
       cost: s.product.cost.toFixed(2),
       available: s.quantity.toFixed(3),
+      unitInfo: units.get(s.product.id)!,
     })),
     currency: currency ? { code: currency.code, symbol: currency.symbol, right: currency.right } : null,
   };

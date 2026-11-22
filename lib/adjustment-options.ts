@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import type { ProductPick, StockLevel } from "@/lib/adjustments";
+import { unitOptionsFor } from "@/lib/product-units";
 import type { WarehouseOption } from "@/lib/transfers";
 
 /**
@@ -13,9 +14,10 @@ export async function getAdjustmentFormData(): Promise<{ warehouses: WarehouseOp
     db.product.findMany({ orderBy: { name: "asc" }, select: { id: true, code: true, name: true, productUnit: { select: { name: true } } } }),
     db.productStock.findMany({ select: { productId: true, warehouseId: true, quantity: true } }),
   ]);
+  const units = await unitOptionsFor(db, products.map((p) => p.id));
   return {
     warehouses: warehouses.map((w) => ({ value: w.id, label: w.name })),
-    products: products.map((p) => ({ productId: p.id, code: p.code, name: p.name, unit: p.productUnit.name })),
+    products: products.map((p) => ({ productId: p.id, code: p.code, name: p.name, unit: p.productUnit.name, unitInfo: units.get(p.id)! })),
     stock: stock.map((s) => ({ productId: s.productId, warehouseId: s.warehouseId, quantity: s.quantity.toFixed(3) })),
   };
 }

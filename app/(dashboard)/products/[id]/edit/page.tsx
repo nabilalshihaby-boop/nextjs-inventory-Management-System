@@ -7,6 +7,8 @@ import { formatQuantity } from "@/lib/money";
 import { canManageProducts } from "@/lib/roles";
 import { getProductFormData } from "@/lib/product-options";
 import { getDict } from "@/lib/i18n/server";
+import { conversionUsed, productHasActivity } from "@/lib/product-units";
+import { trimFactor } from "@/lib/unit-math";
 import ProductForm from "@/components/products/ProductForm";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -28,6 +30,7 @@ export default async function EditProductPage({ params }: PageProps<"/products/[
     where: { id },
     include: {
       images: { orderBy: { position: "asc" }, select: { id: true, path: true } },
+      unitConversions: { where: { isBase: false }, orderBy: { createdAt: "asc" }, select: { unitId: true, factor: true, active: true, forSales: true, forPurchases: true } },
       stockEntries: { orderBy: { createdAt: "asc" }, take: 1, include: { warehouse: { select: { name: true } }, supplier: { select: { name: true } } } },
     },
   });
@@ -35,6 +38,11 @@ export default async function EditProductPage({ params }: PageProps<"/products/[
 
   const data = await getProductFormData();
   const entry = p.stockEntries[0];
+  // Pack units + safety flags: a unit documents used keeps its factor; a product with any activity keeps its base unit.
+  const unitRows = p.unitConversions.map((c) => ({ unitId: c.unitId, factor: trimFactor(c.factor.toFixed(6)), active: c.active, forSales: c.forSales, forPurchases: c.forPurchases }));
+  const usedUnits: Record<string, boolean> = {};
+  for (const r of unitRows) usedUnits[r.unitId] = await conversionUsed(db, p.id, r.unitId, r.factor);
+  const baseLocked = await productHasActivity(db, p.id);
   return (
     <ProductForm
       {...data}
@@ -61,6 +69,9 @@ export default async function EditProductPage({ params }: PageProps<"/products/[
         status: "",
       }}
       images={p.images}
+      unitRows={unitRows}
+      usedUnits={usedUnits}
+      baseLocked={baseLocked}
       openingStock={
         entry
           ? { warehouse: entry.warehouse.name, supplier: entry.supplier?.name ?? null, quantity: formatQuantity(entry.quantity.toFixed(3)), status: entry.status }
