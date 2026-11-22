@@ -9,7 +9,7 @@ import { toBaseQuantity, trimFactor } from "@/lib/unit-math";
 
 type Client = Prisma.TransactionClient;
 
-export type UnitView = { unitId: string; name: string; factor: string; isBase: boolean; active: boolean; forSales: boolean; forPurchases: boolean };
+export type UnitView = { unitId: string; name: string; factor: string; isBase: boolean; active: boolean; forSales: boolean; forPurchases: boolean; barcode?: string | null };
 export type UnitSet = { productId: string; baseUnitId: string; saleUnitId: string; purchaseUnitId: string; units: UnitView[] };
 export type Purpose = "SALE" | "PURCHASE" | "ANY";
 
@@ -28,12 +28,12 @@ export async function loadUnitSets(client: Client, productIds: string[]): Promis
       saleUnitId: true,
       purchaseUnitId: true,
       productUnit: { select: { name: true } },
-      unitConversions: { select: { unitId: true, factor: true, isBase: true, active: true, forSales: true, forPurchases: true, unit: { select: { name: true } } } },
+      unitConversions: { select: { unitId: true, factor: true, isBase: true, active: true, forSales: true, forPurchases: true, barcode: true, unit: { select: { name: true } } } },
     },
   });
   const out = new Map<string, UnitSet>();
   for (const p of products) {
-    let units: UnitView[] = p.unitConversions.map((c) => ({ unitId: c.unitId, name: c.unit.name, factor: trimFactor(c.factor.toFixed(6)), isBase: c.isBase, active: c.active, forSales: c.forSales, forPurchases: c.forPurchases }));
+    let units: UnitView[] = p.unitConversions.map((c) => ({ unitId: c.unitId, name: c.unit.name, factor: trimFactor(c.factor.toFixed(6)), isBase: c.isBase, active: c.active, forSales: c.forSales, forPurchases: c.forPurchases, barcode: c.barcode }));
     if (!units.some((u) => u.unitId === p.productUnitId)) units = [{ unitId: p.productUnitId, name: p.productUnit.name, factor: "1", isBase: true, active: true, forSales: true, forPurchases: true }, ...units];
     out.set(p.id, { productId: p.id, baseUnitId: p.productUnitId, saleUnitId: p.saleUnitId, purchaseUnitId: p.purchaseUnitId, units });
   }
@@ -122,7 +122,7 @@ export async function conversionUsed(client: Client, productId: string, unitId: 
 }
 
 /** Active units per product for the document forms (display data only). */
-export async function unitOptionsFor(client: Client, productIds: string[]): Promise<Map<string, import("@/lib/unit-math").ProductUnits>> {
+export async function unitOptionsFor(client: Client, productIds: string[], withBarcodes = false): Promise<Map<string, import("@/lib/unit-math").ProductUnits>> {
   const sets = await loadUnitSets(client, productIds);
   const base = await client.productUnit.findMany({ where: { id: { in: [...new Set([...sets.values()].map((s) => s.baseUnitId))] } }, select: { id: true, name: true } });
   const baseName = new Map(base.map((b) => [b.id, b.name]));
@@ -133,7 +133,7 @@ export async function unitOptionsFor(client: Client, productIds: string[]): Prom
       baseUnitId: s.baseUnitId,
       saleUnitId: s.saleUnitId,
       purchaseUnitId: s.purchaseUnitId,
-      units: s.units.filter((u) => u.active).map((u) => ({ unitId: u.unitId, name: u.name, factor: u.factor, forSales: u.forSales, forPurchases: u.forPurchases })),
+      units: s.units.filter((u) => u.active).map((u) => ({ unitId: u.unitId, name: u.name, factor: u.factor, forSales: u.forSales, forPurchases: u.forPurchases, ...(withBarcodes ? { barcode: u.barcode ?? null } : {}) })),
     });
   }
   return out;

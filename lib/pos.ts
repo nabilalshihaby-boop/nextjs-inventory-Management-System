@@ -57,13 +57,17 @@ export const posCheckoutSchema = z
   })
   .strict()
   .superRefine((v, ctx) => {
+    // A line is a product UNIT: the same product may appear once per unit (Water x 1 Box + Water x 2 Piece). Two identical
+    // (product, unit) lines are a tampered or buggy cart; blank/explicit spellings of one unit are compared again after the
+    // server resolves each line's unit (see posCheckout).
     const seen = new Set<string>();
     for (const i of v.items) {
-      if (seen.has(i.productId)) {
+      const key = `${i.productId}|${i.unitId}`;
+      if (seen.has(key)) {
         ctx.addIssue({ code: "custom", path: ["items"], message: "posTx.val.dupProduct" });
         return;
       }
-      seen.add(i.productId);
+      seen.add(key);
     }
     // Duplicate account + method rows are ambiguous: rejected (the cashier merges them into one amount).
     const t = new Set<string>();

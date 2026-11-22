@@ -352,3 +352,40 @@ html[dir="rtl"] .pos-step button{font-family:var(--font-body)}
 .tr-row .sp-textarea{min-height:44px}
 .tr-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;flex-wrap:wrap}
 @media (max-width:900px){.tr-grid{grid-template-columns:minmax(0,1fr)}}
+
+/* ===== Print Barcode (design/Print Barcode.html) =====
+   Selection screen + label sheets. Sheets are physical-size pages (A4 or US Letter, geometry in mm via CSS variables); everything inside .bp-labels-wrap is
+   left-to-right even on an Arabic page so the sheet geometry and barcode symbols never mirror. */
+.sp-pb-sw{display:grid;grid-template-columns:minmax(240px,1fr) repeat(3,auto);gap:32px;align-items:end}
+.sp-pb-sw .sp-switch{white-space:nowrap;height:var(--control-h)}
+.sp-pb-sw .sp-label{white-space:nowrap}
+.sp-pb-sw .sp-field{max-width:none}
+@media(max-width:1023px){.sp-pb-sw{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px 24px}.sp-pb-sw .sp-field{grid-column:1/-1}}
+@media(max-width:767px){.sp-pb-sw{grid-template-columns:minmax(0,1fr)}}
+@page bp-labels-a4{size:210mm 297mm;margin:0}
+@page bp-labels-letter{size:215.9mm 279.4mm;margin:0}
+.bp-labels[data-paper="A4"]{page:bp-labels-a4}
+.bp-labels[data-paper="LETTER"]{page:bp-labels-letter}
+.bp-labels-wrap{direction:ltr;overflow-x:auto;background:var(--neutral-100);padding:16px;border:1px solid var(--border);border-radius:var(--radius-md);-webkit-overflow-scrolling:touch}
+.bp-sheet{display:grid;width:var(--sheet-w);height:var(--sheet-h);padding:var(--top) 0 0 var(--left);grid-template-columns:repeat(var(--cols),var(--lw));grid-auto-rows:var(--lh);column-gap:var(--gap);box-sizing:border-box;flex:none;position:relative;overflow:hidden;background:#fff;color:#000;margin:0 auto 16px;box-shadow:var(--shadow-sm);align-content:start}
+.bp-sheet:last-child{margin-bottom:0}
+.bp-lbl{box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:.3mm;overflow:hidden;break-inside:avoid;page-break-inside:avoid;padding:.8mm 1.5mm;border:1px dotted #b8bcc4;font:400 7pt/1.15 var(--font-body);color:#000}
+.bp-lbl *{color:#000}
+.bp-lbl-co{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700}
+.bp-lbl-nm{display:flex;justify-content:center;gap:1.5mm;max-width:100%;min-width:0}
+.bp-lbl-nm .n{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bp-lbl-nm .u{flex:none;white-space:nowrap;font-weight:600}
+.bp-lbl-nm .n+.u::before{content:"· "}
+.bp-lbl-pr{white-space:nowrap}
+.bp-lbl-bars{display:block;flex:none;height:7.6mm;max-width:100%}
+.bp-lbl-code{direction:ltr;unicode-bidi:isolate;font:700 7.5pt/1.1 ui-monospace,Menlo,Consolas,monospace;letter-spacing:.04em;max-width:100%;overflow:hidden;white-space:nowrap}
+/* label text tiers by label height (small < 28 mm, medium < 45 mm, large) */
+.bp-sheet[data-tier="2"] .bp-lbl{font-size:9pt}.bp-sheet[data-tier="2"] .bp-lbl-bars{height:12.7mm}.bp-sheet[data-tier="2"] .bp-lbl-code{font-size:9.5pt}
+.bp-sheet[data-tier="3"] .bp-lbl{font-size:11pt}.bp-sheet[data-tier="3"] .bp-lbl-bars{height:20.3mm}.bp-sheet[data-tier="3"] .bp-lbl-code{font-size:11.5pt}
+@media print{
+  .bp-content:has(.bp-labels)>:not(.bp-labels){display:none!important}
+  .bp-labels-wrap{overflow:visible!important;background:none!important;padding:0!important;border:0!important;border-radius:0!important}
+  .bp-sheet{margin:0!important;box-shadow:none!important;break-after:page;page-break-after:always}
+  .bp-sheet:last-child{break-after:auto;page-break-after:auto}
+  .bp-lbl{border-color:transparent!important}
+}

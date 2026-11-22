@@ -53,35 +53,40 @@ export async function holdPosOrder(input: unknown): Promise<HoldResult> {
   if (!v.success) return { ok: false, message: v.error.issues[0]?.code === "unrecognized_keys" ? t.common.unexpectedFields : (v.error.issues[0]?.message.startsWith("posTx.") ? tr(t, v.error.issues[0].message) : (v.error.issues[0]?.message ?? t.common.checkForm)) };
   const d = v.data;
 
-  // Merge duplicate lines safely (exact thousandths).
-  const merged = new Map<string, bigint>();
-  for (const i of d.items) merged.set(i.productId, (merged.get(i.productId) ?? BigInt(0)) + toUnits(i.quantity, 3));
-  for (const q of merged.values()) if (q > toUnits("99999999999.999", 3)) return { ok: false, message: t.posTx.held.qtyLarge };
-  const wantedUnit = new Map<string, string>();
-  for (const i of d.items) wantedUnit.set(i.productId, i.unitId);
+  const productIds = [...new Set(d.items.map((i) => i.productId))];
 
   const accountIds = [...new Set(d.tenders.map((t) => t.cashBankAccountId).filter(Boolean))];
   const [products, customer, warehouse, accountRows] = await Promise.all([
-    db.product.findMany({ where: { id: { in: [...merged.keys()] } }, select: { id: true, code: true, name: true, price: true } }),
+    db.product.findMany({ where: { id: { in: productIds } }, select: { id: true, code: true, name: true, price: true } }),
     d.customerId ? db.customer.findUnique({ where: { id: d.customerId }, select: { id: true } }) : Promise.resolve(true),
     d.warehouseId ? db.warehouse.findUnique({ where: { id: d.warehouseId }, select: { id: true } }) : Promise.resolve(true),
     accountIds.length ? db.cashBankAccount.findMany({ where: { id: { in: accountIds } }, select: { id: true } }) : Promise.resolve([]),
   ]);
   const byId = new Map(products.map((p) => [p.id, p]));
-  if ([...merged.keys()].some((pid) => !byId.has(pid))) return { ok: false, message: t.posTx.held.productGone };
+  if (productIds.some((pid) => !byId.has(pid))) return { ok: false, message: t.posTx.held.productGone };
   if (!customer) return { ok: false, message: t.posTx.held.customerGone };
   if (!warehouse) return { ok: false, message: t.posTx.held.warehouseGone };
   if (accountRows.length !== accountIds.length) return { ok: false, message: t.posTx.held.accountGone };
 
   // The saved unit must be an active SALE unit of the product (blank = default); the saved price is base price × factor.
-  const sets = await loadUnitSets(db, [...merged.keys()]);
-  const itemRows: { productId: string; productCode: string; productName: string; quantity: string; unitId: string | null; unitPrice: string }[] = [];
-  for (const [productId, q] of merged) {
-    const p = byId.get(productId)!;
-    const set = sets.get(productId);
-    const u = set ? pickUnit(set, wantedUnit.get(productId), "SALE") : null;
+  // A held line is a product UNIT: the same product may be held once per unit. Duplicate lines of one unit (blank = default
+  // unit next to an explicit one, or a repeated line) are merged with exact thousandths, and the RESOLVED unit id is always saved.
+  const sets = await loadUnitSets(db, productIds);
+  const merged = new Map<string, { productId: string; unitId: string; factor: string; q: bigint }>();
+  for (const i of d.items) {
+    const p = byId.get(i.productId)!;
+    const set = sets.get(i.productId);
+    const u = set ? pickUnit(set, i.unitId, "SALE") : null;
     if (!u) return { ok: false, message: tr(t, "units.err.notAllowed", { product: `${p.code} ${p.name}`, unit: "" }) };
-    itemRows.push({ productId, productCode: p.code, productName: p.name, quantity: fromUnits(q, 3), unitId: wantedUnit.get(productId) ? u.unitId : null, unitPrice: scalePrice(p.price.toFixed(2), u.factor) });
+    const k = `${i.productId}|${u.unitId}`;
+    const cur = merged.get(k);
+    merged.set(k, { productId: i.productId, unitId: u.unitId, factor: u.factor, q: (cur?.q ?? BigInt(0)) + toUnits(i.quantity, 3) });
+  }
+  for (const m of merged.values()) if (m.q > toUnits("99999999999.999", 3)) return { ok: false, message: t.posTx.held.qtyLarge };
+  const itemRows: { productId: string; productCode: string; productName: string; quantity: string; unitId: string | null; unitPrice: string }[] = [];
+  for (const m of merged.values()) {
+    const p = byId.get(m.productId)!;
+    itemRows.push({ productId: m.productId, productCode: p.code, productName: p.name, quantity: fromUnits(m.q, 3), unitId: m.unitId, unitPrice: scalePrice(p.price.toFixed(2), m.factor) });
   }
   const fields = { customerId: d.customerId || null, warehouseId: d.warehouseId || null, cashBankAccountId: null, paymentMethod: null, notes: d.notes || null };
   const tenderRows = d.tenders.map((t, position) => ({ position, paymentMethod: t.paymentMethod || null, cashBankAccountId: t.cashBankAccountId || null, amount: t.amount === "" ? null : t.amount }));

@@ -9,7 +9,7 @@ import { useT } from "@/components/i18n/I18nProvider";
 // Print Report is the ONLY place that calls window.print(), and it is enabled once the page has
 // hydrated and its fonts and images have finished loading, so the complete report is printed.
 // Hidden in print (.bp-report-actions in app/styles.css).
-export default function ReportActions({ backHref, backLabel }: { backHref: string; backLabel?: string }) {
+export default function ReportActions({ backHref, backLabel, printLabel }: { backHref: string; backLabel?: string; printLabel?: string }) {
   const t = useT();
   const [ready, setReady] = useState(false);
   useEffect(() => {
@@ -28,7 +28,7 @@ export default function ReportActions({ backHref, backLabel }: { backHref: strin
       </Link>
       <button type="button" className="sp-btn sp-btn--primary" disabled={!ready} aria-busy={!ready} onClick={() => window.print()}>
         <Icon name="printer" size={18} />
-        {t.common.printReport}
+        {printLabel ?? t.common.printReport}
       </button>
     </div>
   );

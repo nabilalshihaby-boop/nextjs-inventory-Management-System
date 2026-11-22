@@ -64,7 +64,7 @@ export function baseUnits(entered: string, factor: string): bigint {
 // ---------------------------------------------------------------------------------------------
 // What a document form needs to know about a product's units (display data; the server re-resolves everything).
 // ---------------------------------------------------------------------------------------------
-export type LineUnit = { unitId: string; name: string; factor: string; forSales: boolean; forPurchases: boolean };
+export type LineUnit = { unitId: string; name: string; factor: string; forSales: boolean; forPurchases: boolean; /** Only sent to the POS (scanner lookup); display data, never trusted by the server. */ barcode?: string | null };
 export type ProductUnits = { baseUnit: string; baseUnitId: string; saleUnitId: string; purchaseUnitId: string; units: LineUnit[] };
 export type UnitPurpose = "SALE" | "PURCHASE" | "ANY";
 

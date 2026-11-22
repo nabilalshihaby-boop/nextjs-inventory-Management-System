@@ -7,6 +7,7 @@ import toast from "react-hot-toast";
 import Icon from "@/components/layout/Icon";
 import ProductUnitsSection from "@/components/products/ProductUnitsSection";
 import { isValidFactor } from "@/lib/unit-math";
+import { MAX_BARCODE_LENGTH, normalizeBarcode } from "@/lib/barcode";
 import { useT } from "@/components/i18n/I18nProvider";
 import { fmt } from "@/lib/i18n/config";
 import { createProduct, updateProduct, type ProductResult } from "@/app/(dashboard)/products/actions";
@@ -45,6 +46,7 @@ export default function ProductForm({
   images = [],
   openingStock = null,
   unitRows = [],
+  baseBarcode: initialBase = "",
   usedUnits = {},
   baseLocked = false,
 }: {
@@ -57,6 +59,8 @@ export default function ProductForm({
   openingStock?: { warehouse: string; supplier: string | null; quantity: string; status: string } | null;
   /** The product's pack units (everything except the base row) and which of them documents already used. */
   unitRows?: UnitInput[];
+  /** The stored Base Unit barcode (edit); blank on create = defaults to the Product Code on the server. */
+  baseBarcode?: string;
   usedUnits?: Record<string, boolean>;
   /** True when stock or documents refer to the product: its base unit can't change. */
   baseLocked?: boolean;
@@ -75,6 +79,7 @@ export default function ProductForm({
   const [e, setE] = useState<Partial<Record<ProductField, string>>>({});
   const [kept, setKept] = useState<ProductImageRow[]>(images);
   const [packs, setPacks] = useState<UnitInput[]>(unitRows);
+  const [baseBarcode, setBaseBarcode] = useState(initialBase);
   const [added, setAdded] = useState<{ file: File; url: string }[]>([]);
   const [pending, startTransition] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -123,6 +128,12 @@ export default function ProductForm({
     ];
     const n: Partial<Record<ProductField, string>> = {};
     for (const [k, msg] of required) if (!f[k].trim()) n[k] = msg;
+    // Barcodes: format only (uniqueness is the server's job).
+    for (const [val, setErrFor] of [[baseBarcode, "baseBarcode"], ...packs.map((p) => [p.barcode ?? "", "units"])] as [string, "baseBarcode" | "units"][]) {
+      if (!val.trim()) continue;
+      const c = normalizeBarcode(val);
+      if (!c.ok) n[setErrFor] ??= c.reason === "tooLong" ? fmt(T.barcode.err.tooLong, { max: MAX_BARCODE_LENGTH }) : T.barcode.err.chars;
+    }
     // Pack units: real unit, valid factor, no duplicates, a purpose, and valid defaults (the server checks all of it again).
     for (const r of packs) {
       if (!r.unitId) n.units ??= T.units.val.unitRequired;
@@ -139,7 +150,8 @@ export default function ProductForm({
     }
     const fd = new FormData();
     for (const [k, v] of Object.entries(f)) if (!editing || !["warehouseId", "supplierId", "quantity", "status"].includes(k)) fd.set(k, v);
-    fd.set("units", JSON.stringify(packs.map((p) => ({ unitId: p.unitId, factor: p.factor.trim(), active: p.active, forSales: p.forSales, forPurchases: p.forPurchases }))));
+    fd.set("units", JSON.stringify(packs.map((p) => ({ unitId: p.unitId, factor: p.factor.trim(), active: p.active, forSales: p.forSales, forPurchases: p.forPurchases, barcode: (p.barcode ?? "").trim() }))));
+    fd.set("baseBarcode", baseBarcode.trim());
     for (const k of kept) fd.append("keepImageIds", k.id);
     for (const a of added) fd.append("images", a.file);
     startTransition(async () => {
@@ -318,7 +330,7 @@ export default function ProductForm({
                 ))}
                 {select("saleUnitId", T.units.form.defaultSale, F.saleUnitPh, defaultOptions("forSales"))}
                 {select("purchaseUnitId", T.units.form.defaultPurchase, F.purchaseUnitPh, defaultOptions("forPurchases"))}
-                <ProductUnitsSection baseId={f.productUnitId} options={options.units} rows={packs} used={usedUnits} onChange={(r) => { setPacks(r); setE({ ...e, units: "" }); }} error={e.units} />
+                <ProductUnitsSection baseId={f.productUnitId} options={options.units} rows={packs} used={usedUnits} onChange={(r) => { setPacks(r); setE({ ...e, units: "" }); }} error={e.units} productCode={f.code} baseBarcode={baseBarcode} onBaseBarcode={(v) => { setBaseBarcode(v); setE({ ...e, baseBarcode: "" }); }} baseBarcodeError={e.baseBarcode} creating={!editing} />
                 {input("stockAlert", LB.stockAlert, "0", false, undefined, "decimal")}
                 {input("orderTax", LB.orderTax, "0", false, "%", "decimal")}
                 {select("taxType", F.taxType, F.taxTypePh, taxOptions)}

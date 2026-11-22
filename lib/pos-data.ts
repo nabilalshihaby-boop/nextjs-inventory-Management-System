@@ -23,7 +23,7 @@ export async function getPosData(userName: string, role: string | undefined, use
     db.productCategory.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
     db.brand.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
   ]);
-  const units = await unitOptionsFor(db, products.map((p) => p.id));
+  const units = await unitOptionsFor(db, products.map((p) => p.id), true); // with barcodes: the POS scanner looks them up
   return {
     customers,
     warehouses,

@@ -70,7 +70,7 @@ export const arPosTx: Dictionary["posTx"] = {
     resumeLine: "{code} {name} لم يعد موجودًا — أزله من السلة.",
   },
   val: {
-    dupProduct: "يمكن أن يظهر كل منتج مرة واحدة فقط",
+    dupProduct: "يمكن أن تظهر كل وحدة منتج مرة واحدة فقط في السلة",
     dupTender: "يمكن أن يظهر كل حساب وطريقة دفع مرة واحدة فقط — ادمج المبالغ",
   },
 };

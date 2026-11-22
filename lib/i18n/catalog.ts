@@ -15,7 +15,7 @@ export const SECTIONS = [
   { id: "sales", label: "Sales", groups: ["sales", "salesReturns", "quotations"] },
   { id: "purchases", label: "Purchases", groups: ["purchases", "purchaseReturns"] },
   { id: "finance", label: "Finance", groups: ["finance", "expenses"] },
-  { id: "products", label: "Products & Inventory", groups: ["products", "catalog", "warehouses", "transfers", "adjustments", "importExport", "stockGuard", "units"] },
+  { id: "products", label: "Products & Inventory", groups: ["products", "catalog", "warehouses", "transfers", "adjustments", "importExport", "stockGuard", "units", "barcode"] },
   { id: "people", label: "Customers & Suppliers", groups: ["custPay", "customers", "stmt", "suppliers", "supplierPay", "supplierStmt"] },
   { id: "reports", label: "Reports", groups: ["stmtReport", "supplierStmtReport", "registerReport", "invReports"] },
 ] as const;

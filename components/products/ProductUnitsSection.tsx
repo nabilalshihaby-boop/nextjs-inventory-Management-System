@@ -5,6 +5,7 @@ import Icon from "@/components/layout/Icon";
 import { useT } from "@/components/i18n/I18nProvider";
 import { fmt } from "@/lib/i18n/config";
 import { isValidFactor, trimFactor } from "@/lib/unit-math";
+import { MAX_BARCODE_LENGTH, barcodeFromProductCode } from "@/lib/barcode";
 import type { Option, UnitInput } from "@/lib/products";
 
 // "Product Units" section of the product form: the fixed base-unit row (factor 1) and the product-specific pack
@@ -17,6 +18,11 @@ export default function ProductUnitsSection({
   used,
   onChange,
   error,
+  productCode,
+  baseBarcode,
+  onBaseBarcode,
+  baseBarcodeError,
+  creating,
 }: {
   baseId: string;
   options: Option[];
@@ -25,6 +31,13 @@ export default function ProductUnitsSection({
   used: Record<string, boolean>;
   onChange: (rows: UnitInput[]) => void;
   error?: string;
+  /** The Product Code typed so far (the Base Unit barcode can be generated from it) and the Base Unit barcode state. */
+  productCode: string;
+  baseBarcode: string;
+  onBaseBarcode: (v: string) => void;
+  baseBarcodeError?: string;
+  /** Creating a product: a blank Base Unit barcode defaults to the Product Code on the server. */
+  creating: boolean;
 }) {
   const T = useT();
   const U = T.units.form;
@@ -32,6 +45,12 @@ export default function ProductUnitsSection({
   const baseName = nameOf(baseId);
   const taken = new Set([baseId, ...rows.map((r) => r.unitId)]);
   const free = options.filter((o) => !taken.has(o.value));
+  const B = T.barcode.form;
+  // "Generate from Product Code" is offered only where it is deterministic: the Base Unit, and only for a valid code.
+  const generated = barcodeFromProductCode(productCode.trim().toUpperCase());
+  const barcodeInput = (value: string, onChange: (v: string) => void, testId: string, placeholder: string, label: string) => (
+    <input className="sp-input " dir="ltr" maxLength={MAX_BARCODE_LENGTH + 20} aria-label={label} placeholder={placeholder} value={value} onChange={(ev) => onChange(ev.target.value)} data-testid={testId} style={{ minWidth: 150 }} />
+  );
   const patch = (i: number, p: Partial<UnitInput>) => onChange(rows.map((r, n) => (n === i ? { ...r, ...p } : r)));
 
   return (
@@ -59,6 +78,7 @@ export default function ProductUnitsSection({
                   <th>{U.colSales}</th>
                   <th>{U.colPurchases}</th>
                   <th>{U.colActive}</th>
+                  <th>{B.colBarcode}</th>
                   <th>{U.colMeaning}</th>
                   <th className="act" aria-label={U.remove} />
                 </tr>
@@ -74,6 +94,26 @@ export default function ProductUnitsSection({
                   <td>✓</td>
                   <td>✓</td>
                   <td>✓</td>
+                  <td>
+                    <div style={{ display: "grid", gap: 4 }}>
+                      {barcodeInput(baseBarcode, onBaseBarcode, "base-barcode", creating ? B.basePh : B.barcodePh, B.baseBarcode)}
+                      {generated ? (
+                        baseBarcode !== generated && (
+                          <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm" onClick={() => onBaseBarcode(generated)} data-testid="barcode-generate" style={{ justifyContent: "flex-start" }}>
+                            <Icon name="rotate-ccw" size={14} />
+                            {B.generate}
+                          </button>
+                        )
+                      ) : (
+                        <span className="t-caption" data-testid="barcode-generate-off">{productCode.trim() ? B.generateInvalid : B.generateNeedsCode}</span>
+                      )}
+                      {baseBarcodeError && (
+                        <span className="sp-error" data-testid="base-barcode-error">
+                          {baseBarcodeError}
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td>
                     <bdi dir="ltr">{fmt(U.meaning, { unit: baseName, factor: "1", base: baseName })}</bdi>
                   </td>
@@ -127,6 +167,7 @@ export default function ProductUnitsSection({
                       <td>
                         <input type="checkbox" aria-label={U.colActive} checked={r.active} onChange={(ev) => patch(i, { active: ev.target.checked })} data-testid="unit-active" />
                       </td>
+                      <td>{barcodeInput(r.barcode ?? "", (v) => patch(i, { barcode: v }), "unit-barcode", B.barcodePh, B.colBarcode)}</td>
                       <td data-testid="unit-meaning">
                         {r.unitId && okFactor ? <bdi dir="ltr">{fmt(U.meaning, { unit: nameOf(r.unitId), factor: trimFactor(r.factor.trim()), base: baseName })}</bdi> : "—"}
                       </td>
@@ -140,6 +181,9 @@ export default function ProductUnitsSection({
                 })}
               </tbody>
             </table>
+          </div>
+          <div style={{ padding: "0 12px" }}>
+            <p className="t-caption" style={{ margin: "10px 0 0" }}>{B.hint}</p>
           </div>
           <div style={{ padding: 12 }}>
             <button type="button" className="sp-btn sp-btn--secondary sp-btn--sm" onClick={() => onChange([...rows, { unitId: "", factor: "", active: true, forSales: true, forPurchases: true }])} disabled={free.length === 0} data-testid="unit-add">

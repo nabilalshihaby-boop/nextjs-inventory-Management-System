@@ -68,7 +68,7 @@ export const enPosTx = {
     resumeLine: "{code} {name} no longer exists — remove it from the cart.",
   },
   val: {
-    dupProduct: "Each product can appear only once",
+    dupProduct: "Each product unit can appear only once in the cart",
     dupTender: "Each account and payment method can appear only once — combine the amounts",
   },
 };

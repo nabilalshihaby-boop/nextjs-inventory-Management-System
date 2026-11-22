@@ -30,7 +30,7 @@ export default async function EditProductPage({ params }: PageProps<"/products/[
     where: { id },
     include: {
       images: { orderBy: { position: "asc" }, select: { id: true, path: true } },
-      unitConversions: { where: { isBase: false }, orderBy: { createdAt: "asc" }, select: { unitId: true, factor: true, active: true, forSales: true, forPurchases: true } },
+      unitConversions: { orderBy: { createdAt: "asc" }, select: { unitId: true, factor: true, active: true, forSales: true, forPurchases: true, isBase: true, barcode: true } },
       stockEntries: { orderBy: { createdAt: "asc" }, take: 1, include: { warehouse: { select: { name: true } }, supplier: { select: { name: true } } } },
     },
   });
@@ -39,7 +39,8 @@ export default async function EditProductPage({ params }: PageProps<"/products/[
   const data = await getProductFormData();
   const entry = p.stockEntries[0];
   // Pack units + safety flags: a unit documents used keeps its factor; a product with any activity keeps its base unit.
-  const unitRows = p.unitConversions.map((c) => ({ unitId: c.unitId, factor: trimFactor(c.factor.toFixed(6)), active: c.active, forSales: c.forSales, forPurchases: c.forPurchases }));
+  const unitRows = p.unitConversions.filter((c) => !c.isBase).map((c) => ({ unitId: c.unitId, factor: trimFactor(c.factor.toFixed(6)), active: c.active, forSales: c.forSales, forPurchases: c.forPurchases, barcode: c.barcode ?? "" }));
+  const baseBarcode = p.unitConversions.find((c) => c.isBase)?.barcode ?? "";
   const usedUnits: Record<string, boolean> = {};
   for (const r of unitRows) usedUnits[r.unitId] = await conversionUsed(db, p.id, r.unitId, r.factor);
   const baseLocked = await productHasActivity(db, p.id);
@@ -70,6 +71,7 @@ export default async function EditProductPage({ params }: PageProps<"/products/[
       }}
       images={p.images}
       unitRows={unitRows}
+      baseBarcode={baseBarcode}
       usedUnits={usedUnits}
       baseLocked={baseLocked}
       openingStock={

@@ -1,5 +1,6 @@
 import type { Prisma } from "@/app/generated/prisma/client";
 import type { ProductFields, UnitInput } from "@/lib/products";
+import { barcodeFromProductCode } from "@/lib/barcode";
 
 // The ONE place that writes a new product with its opening stock. Used by the Create Product
 // action and by the CSV import so both produce identical records (server-only; call inside a transaction).
@@ -44,16 +45,25 @@ export async function createProductRecord(
   userId: string,
   imagePaths: string[] = [],
   units: UnitInput[] = [],
+  /** Base Unit barcode: a normalized string = explicit; null = none; undefined = derive from the Product Code when valid and free. */
+  baseBarcode?: string | null,
 ): Promise<{ id: string }> {
   const p = await tx.product.create({
     data: { ...productFieldData(f), images: { create: imagePaths.map((path, position) => ({ path, position })) } },
     select: { id: true },
   });
   // Every product has exactly one BASE unit (factor 1, = productUnitId) plus its optional pack units. Stock is kept in base units.
+  // The Base Unit barcode defaults to the Product Code, but only when the code is a valid barcode and no other unit already
+  // owns that value; otherwise the unit simply has no barcode yet (it must be set before the unit can be printed or scanned).
+  let base: string | null;
+  if (baseBarcode === undefined) {
+    const derived = barcodeFromProductCode(f.code);
+    base = derived && !(await tx.productUnitConversion.findFirst({ where: { barcode: derived }, select: { id: true } })) ? derived : null;
+  } else base = baseBarcode;
   await tx.productUnitConversion.createMany({
     data: [
-      { productId: p.id, unitId: f.productUnitId, factor: "1", isBase: true, active: true, forSales: true, forPurchases: true },
-      ...units.map((u) => ({ productId: p.id, unitId: u.unitId, factor: u.factor, isBase: false, active: u.active, forSales: u.forSales, forPurchases: u.forPurchases })),
+      { productId: p.id, unitId: f.productUnitId, factor: "1", isBase: true, active: true, forSales: true, forPurchases: true, barcode: base },
+      ...units.map((u) => ({ productId: p.id, unitId: u.unitId, factor: u.factor, isBase: false, active: u.active, forSales: u.forSales, forPurchases: u.forPurchases, barcode: u.barcode ? u.barcode : null })),
     ],
   });
   if (stock) {

@@ -159,6 +159,9 @@ model ProductUnitConversion {
   active       Boolean     @default(true)
   forSales     Boolean     @default(true)
   forPurchases Boolean     @default(true)
+  /// The primary barcode of this PRODUCT UNIT (Code 128, printable ASCII, 1–20 chars, trimmed). Unique across every
+  /// product and unit (case-insensitive); NULL = no barcode yet. Lines never copy it, so changing it can't touch history.
+  barcode      String?     @unique @db.VarChar(20)
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
@@ -1039,7 +1042,8 @@ model SaleItem {
   subtotal       Decimal          @db.Decimal(14, 2)
   returnItems    SaleReturnItem[]
 
-  @@unique([saleId, productId])
+  /// One line per product AND unit (a POS order may hold Water × 1 Box and Water × 2 Piece). Lines without a unit snapshot are legacy.
+  @@unique([saleId, productId, unitId])
   @@index([productId])
   @@map("sale_items")
 }
@@ -1230,7 +1234,7 @@ model PosHeldOrderItem {
   /// The unit price shown when it was held — informational; checkout always uses the live price.
   unitPrice   Decimal      @db.Decimal(14, 2)
 
-  @@unique([heldOrderId, productId])
+  @@unique([heldOrderId, productId, unitId])
   @@map("pos_held_order_items")
 }
 

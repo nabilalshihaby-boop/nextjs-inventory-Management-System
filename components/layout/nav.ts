@@ -35,7 +35,7 @@ export const NAV: NavItem[] = [
       { id: "p3", label: "Brands", href: "/products/brands" },
       { id: "p4", label: "Units", href: "/products/units" },
       { id: "p5", label: "Base Units", href: "/base-units" },
-      { id: "p6", label: "Print Barcode", href: "/print-barcode" },
+      { id: "p6", label: "Print Barcode", href: "/print-barcode", roles: STAFF }, // barcode labels: OWNER/ADMIN
     ],
   },
   { id: "adj", label: "Adjustments", icon: "sliders-horizontal", href: "/adjustments" },
