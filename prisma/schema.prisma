@@ -64,6 +64,7 @@ model Currency {
   saleReturns      SaleReturn[]
   customerPayments CustomerPayment[]
   denominations    CurrencyDenomination[]
+  costBaselines    InventoryCostBaseline[]
 
   @@map("currencies")
 }
@@ -280,6 +281,7 @@ model Product {
   quotationItems      QuotationItem[]
   saleItems           SaleItem[]
   saleReturnItems     SaleReturnItem[]
+  costBaseline        InventoryCostBaseline?
 
   @@index([categoryId])
   @@index([brandId])
@@ -329,6 +331,10 @@ model ProductStockEntry {
   supplierId  String?
   supplier    Supplier?        @relation(fields: [supplierId], references: [id], onDelete: Restrict)
   quantity    Decimal          @db.Decimal(14, 3)
+  /// Cost per BASE unit of this stock when it was recorded (a snapshot of Product.cost at that moment; never updated).
+  /// NULL = entry recorded before cost snapshots existed: its cost is unknown and is NEVER replaced by the product's
+  /// current cost (Profit & Loss reports the affected products as "cost unavailable" instead).
+  unitCost    Decimal?         @db.Decimal(14, 2)
   status      StockEntryStatus
   source      StockEntrySource @default(PRODUCT_FORM)
   /// The user who recorded it (audit; not a foreign key so users can be managed independently).
@@ -494,6 +500,33 @@ model Expense {
   @@index([cashBankAccountId])
   @@index([deletedAt])
   @@map("expenses")
+}
+
+/// Owner-set OPENING INVENTORY COST BASELINE (Profit & Loss setup): the cost per Base Unit of stock that was on hand
+/// before cost snapshots existed. It is a pure valuation record: it never changes stock, and it is not a purchase,
+/// payment, expense, sale, ledger or stock movement. Company-wide per product (Moving Weighted Average is company-wide),
+/// in ONE currency. `effectiveAt` is the server clock at creation: the baseline costs the uncosted units from that
+/// moment forward only, history before it stays "cost unavailable". Immutable: there is no update; it can only be
+/// removed (undone) while no later costed inventory activity exists for the product.
+model InventoryCostBaseline {
+  id          String   @id @default(cuid())
+  productId   String   @unique
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  currencyId  String
+  currency    Currency @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  /// Company-wide on-hand quantity (Base Units) the Owner valued, captured by the server at creation (audit).
+  quantity    Decimal  @db.Decimal(14, 3)
+  /// Cost per Base Unit entered by the Owner (>= 0).
+  unitCost    Decimal  @db.Decimal(14, 2)
+  /// quantity × unitCost, rounded half-up to 2 dp by the server.
+  totalValue  Decimal  @db.Decimal(14, 2)
+  /// Server-controlled cutover moment (never supplied by the browser).
+  effectiveAt DateTime
+  createdById String   @db.VarChar(191)
+  createdAt   DateTime @default(now())
+
+  @@index([currencyId])
+  @@map("inventory_cost_baselines")
 }
 
 enum PurchaseStatus {

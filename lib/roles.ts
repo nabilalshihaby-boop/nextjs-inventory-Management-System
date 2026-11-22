@@ -41,6 +41,16 @@ export function canViewInventoryReports(role: string | undefined): boolean {
   return role === "OWNER" || role === "ADMIN";
 }
 
+/** Profit & Loss: OWNER and ADMIN only; read-only (it exposes costs, margins and expenses). */
+export function canViewProfitLoss(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+/** Opening Inventory Cost Setup (Profit & Loss cutover): OWNER only. ADMIN may view Profit & Loss but cannot set the baseline. */
+export function canSetCostBaseline(role: string | undefined): boolean {
+  return role === "OWNER";
+}
+
 /** Products: every signed-in role may view/search; only OWNER and ADMIN may create or edit. */
 export function canManageProducts(role: string | undefined): boolean {
   return role === "OWNER" || role === "ADMIN";

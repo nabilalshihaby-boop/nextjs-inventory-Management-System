@@ -69,7 +69,8 @@ export async function createProductRecord(
   if (stock) {
     // Entries are immutable source records: created here, never updated or deleted.
     await tx.productStockEntry.create({
-      data: { productId: p.id, warehouseId: stock.warehouseId, quantity: stock.quantity, status: stock.status, source: stock.source, supplierId: stock.supplierId, createdById: userId },
+      // unitCost = this product's cost per base unit AT THIS MOMENT (immutable snapshot, the cost basis Profit & Loss uses).
+      data: { productId: p.id, warehouseId: stock.warehouseId, quantity: stock.quantity, unitCost: f.cost, status: stock.status, source: stock.source, supplierId: stock.supplierId, createdById: userId },
     });
     if (stock.status === "RECEIVED") {
       await tx.productStock.upsert({
