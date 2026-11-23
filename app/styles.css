@@ -278,6 +278,7 @@ svg.sp-icon{background:none;-webkit-mask:none;mask:none}
 .bp-pl .is-info td{color:#4b5563!important}
 .bp-pl-alert{border:2px solid #b45309;background:#fffbeb;border-radius:6px;padding:10px 12px;margin:0 0 14px}
 .bp-keep{break-inside:avoid;page-break-inside:avoid}
+.bp-ag-group{break-inside:avoid;page-break-inside:avoid}
 .cs-fit th,.cs-fit td{white-space:normal;vertical-align:top}
 .bp-pl-alert p{margin:6px 0}
 .bp-pl-alert ul{margin:6px 0 0;padding-inline-start:18px}

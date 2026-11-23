@@ -56,6 +56,11 @@ export function canViewCashFlow(role: string | undefined): boolean {
   return role === "OWNER" || role === "ADMIN";
 }
 
+/** Receivables & Payables Aging report: OWNER and ADMIN only; read-only (it exposes every unpaid customer and supplier balance). */
+export function canViewAging(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
 /** Products: every signed-in role may view/search; only OWNER and ADMIN may create or edit. */
 export function canManageProducts(role: string | undefined): boolean {
   return role === "OWNER" || role === "ADMIN";
