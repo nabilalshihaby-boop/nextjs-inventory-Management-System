@@ -51,6 +51,11 @@ export function canSetCostBaseline(role: string | undefined): boolean {
   return role === "OWNER";
 }
 
+/** Cash Flow report: OWNER and ADMIN only; read-only (it exposes every Cash & Bank movement). */
+export function canViewCashFlow(role: string | undefined): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
 /** Products: every signed-in role may view/search; only OWNER and ADMIN may create or edit. */
 export function canManageProducts(role: string | undefined): boolean {
   return role === "OWNER" || role === "ADMIN";

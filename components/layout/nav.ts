@@ -154,6 +154,7 @@ const EXTRA_TITLES: { href: string; title: string }[] = [
   { href: "/reports/low-stock", title: "Low Stock Report" },
   { href: "/profit-loss/setup", title: "Opening Inventory Cost Setup" },
   { href: "/reports/profit-loss", title: "Profit & Loss Report" },
+  { href: "/reports/cash-flow", title: "Cash Flow Report" },
 ];
 
 /**
@@ -185,6 +186,7 @@ const EXTRA_KEYS: Record<string, string> = {
   "/reports/low-stock": "lowStockReport",
   "/profit-loss/setup": "costSetup",
   "/reports/profit-loss": "profitLossReport",
+  "/reports/cash-flow": "cashFlowReport",
 };
 
 /** Id of the group that owns the active leaf, if any. */

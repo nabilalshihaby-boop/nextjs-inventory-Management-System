@@ -25,6 +25,7 @@ import { enImpExp } from "@/lib/i18n/dictionaries/en-impexp";
 import { enInvReports, enStockGuard } from "@/lib/i18n/dictionaries/en-invrep";
 import { enProfitLoss } from "@/lib/i18n/dictionaries/en-profitloss";
 import { enCostSetup } from "@/lib/i18n/dictionaries/en-costsetup";
+import { enCashFlow } from "@/lib/i18n/dictionaries/en-cashflow";
 import { enUnits } from "@/lib/i18n/dictionaries/en-units";
 import { enBarcode } from "@/lib/i18n/dictionaries/en-barcode";
 export const en = {
@@ -132,6 +133,7 @@ export const en = {
     lowStockReport: "Low Stock Report",
     profitLossReport: "Profit & Loss Report",
     costSetup: "Opening Inventory Cost Setup",
+    cashFlowReport: "Cash Flow Report",
   },
   roles: { OWNER: "Owner", ADMIN: "Administrator", USER: "User" },
   shell: {
@@ -644,6 +646,7 @@ export const en = {
   invReports: enInvReports,
   profitLoss: enProfitLoss,
   costSetup: enCostSetup,
+  cashFlow: enCashFlow,
   stockGuard: enStockGuard,
   units: enUnits,
   barcode: enBarcode,

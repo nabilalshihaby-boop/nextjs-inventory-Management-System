@@ -26,6 +26,7 @@ import { arImpExp } from "@/lib/i18n/dictionaries/ar-impexp";
 import { arInvReports, arStockGuard } from "@/lib/i18n/dictionaries/ar-invrep";
 import { arProfitLoss } from "@/lib/i18n/dictionaries/ar-profitloss";
 import { arCostSetup } from "@/lib/i18n/dictionaries/ar-costsetup";
+import { arCashFlow } from "@/lib/i18n/dictionaries/ar-cashflow";
 import { arUnits } from "@/lib/i18n/dictionaries/ar-units";
 import { arBarcode } from "@/lib/i18n/dictionaries/ar-barcode";
 export const ar: Dictionary = {
@@ -132,6 +133,7 @@ export const ar: Dictionary = {
     lowStockReport: "تقرير المخزون المنخفض",
     profitLossReport: "تقرير الأرباح والخسائر",
     costSetup: "إعداد تكلفة المخزون الافتتاحي",
+    cashFlowReport: "تقرير التدفق النقدي",
   },
   roles: { OWNER: "المالك", ADMIN: "مدير", USER: "مستخدم" },
   shell: {
@@ -644,6 +646,7 @@ export const ar: Dictionary = {
   invReports: arInvReports,
   profitLoss: arProfitLoss,
   costSetup: arCostSetup,
+  cashFlow: arCashFlow,
   stockGuard: arStockGuard,
   units: arUnits,
   barcode: arBarcode,
