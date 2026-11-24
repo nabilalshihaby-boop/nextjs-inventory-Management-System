@@ -76,6 +76,8 @@ export const canManageRoles = adminOnly;
 export const canManageSystemSettings = adminOnly;
 /** Translation Management (Arabic overrides): the translations.manage permission. OWNER and ADMIN have it; a USER only through an assigned role. */
 export const canManageTranslations = needs("translations.manage");
+/** Audit Log viewer (read-only): the audit.view permission. OWNER and ADMIN have it; a USER only through an assigned role (never in a default template). */
+export const canViewAudit = needs("audit.view");
 /** Platform / future Control Panel capabilities (deployment and database connection, licensing, factory reset, backup destinations and
  *  credentials, releases, secrets): OWNER only. No such pages exist yet; the route prefixes are already closed to ADMIN in lib/access.ts. */
 export const canManagePlatform = ownerOnly;

@@ -123,6 +123,7 @@ export const arAccess: Dictionary["access"] = {
     export_use: "تصدير البيانات",
     barcode_print: "طباعة ملصقات الباركود",
     translations_manage: "تعديل الترجمات العربية وإعادة ضبطها (النص الإنجليزي الأصلي للقراءة فقط)",
+    audit_view: "عرض سجل التدقيق (سجل للقراءة فقط للنشاط المسجَّل في النظام)",
   },
   templates: {
     CASHIER: { name: "أمين الصندوق", desc: "يبيع عبر نقطة البيع ويدير الصندوق." },

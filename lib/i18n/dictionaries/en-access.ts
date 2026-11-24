@@ -122,6 +122,7 @@ export const enAccess = {
     export_use: "Export data",
     barcode_print: "Print barcode labels",
     translations_manage: "Edit and reset Arabic translations (English source text stays read-only)",
+    audit_view: "View the Audit Log (read-only record of system activity)",
   },
   templates: {
     CASHIER: { name: "Cashier", desc: "Sells at the POS and manages the register." },

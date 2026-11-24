@@ -110,6 +110,7 @@ export const NAV: NavItem[] = [
   { id: "re", label: "Reports", icon: "chart-column", href: "/reports" },
   { id: "cu", label: "Currencies", icon: "circle-dollar-sign", href: "/currencies", perm: ["finance.view"] },
   { id: "la", label: "Languages", icon: "languages", href: "/settings/languages", roles: STAFF_ADMIN, perm: ["translations.manage"] },
+  { id: "au", label: "Audit Log", icon: "history", href: "/audit-log", roles: STAFF_ADMIN, perm: ["audit.view"] },
   {
     id: "te",
     label: "Templates",

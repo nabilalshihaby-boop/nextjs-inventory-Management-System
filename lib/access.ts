@@ -49,6 +49,7 @@ const DEFINITIONS = [
   ["output", "export.use", true],
   ["output", "barcode.print", false],
   ["system", "translations.manage", false],
+  ["system", "audit.view", false],
 ] as const;
 
 export type PermissionKey = (typeof DEFINITIONS)[number][1];
@@ -178,6 +179,8 @@ const RULES: Rule[] = [
   rule(["/expenses/categories"], ["expenses.categories.manage"]),
   rule(["/expenses"], ["expenses.manage"]),
   rule(["/currencies"], ["finance.view"]),
+  // Audit Log (read-only viewer of recorded system activity): its own permission, never implied by another one.
+  rule(["/audit-log"], ["audit.view"]),
 ];
 
 const normalize = (p: string) => (p.length > 1 ? p.replace(/\/+$/, "") : p) || "/";

@@ -29,6 +29,7 @@ import { arCostSetup } from "@/lib/i18n/dictionaries/ar-costsetup";
 import { arCashFlow } from "@/lib/i18n/dictionaries/ar-cashflow";
 import { arAging } from "@/lib/i18n/dictionaries/ar-aging";
 import { arAccess } from "@/lib/i18n/dictionaries/ar-access";
+import { arAuditLog } from "@/lib/i18n/dictionaries/ar-auditlog";
 import { arUnits } from "@/lib/i18n/dictionaries/ar-units";
 import { arBarcode } from "@/lib/i18n/dictionaries/ar-barcode";
 export const ar: Dictionary = {
@@ -113,6 +114,7 @@ export const ar: Dictionary = {
     re: "التقارير",
     cu: "العملات",
     la: "اللغات",
+    au: "سجل التدقيق",
     te: "القوالب",
     t1: "قوالب البريد الإلكتروني",
     t2: "قوالب الرسائل القصيرة",
@@ -657,6 +659,7 @@ export const ar: Dictionary = {
   cashFlow: arCashFlow,
   aging: arAging,
   access: arAccess,
+  auditLog: arAuditLog,
   stockGuard: arStockGuard,
   units: arUnits,
   barcode: arBarcode,

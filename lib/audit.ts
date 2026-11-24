@@ -1,7 +1,8 @@
 import type { Prisma } from "@/app/generated/prisma/client";
 
 // Immutable audit trail of access-control changes (server-only). The ONLY write path is `recordAudit`, called inside the same transaction
-// as the change it records. There is deliberately no update or delete function — and no UI or Server Action — for audit events.
+// as the change it records. There is deliberately no update or delete function — and no UI or Server Action that changes or removes
+// audit events. The only reader besides the role audit tab is the read-only Audit Log viewer (/audit-log, lib/audit-view.ts).
 // Metadata is limited to safe, non-secret facts (ids, names, permission keys, counts); never passwords, tokens or raw request bodies.
 
 export const AUDIT_EVENT_TYPES = [

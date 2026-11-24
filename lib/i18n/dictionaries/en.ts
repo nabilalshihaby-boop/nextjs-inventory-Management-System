@@ -28,6 +28,7 @@ import { enCostSetup } from "@/lib/i18n/dictionaries/en-costsetup";
 import { enCashFlow } from "@/lib/i18n/dictionaries/en-cashflow";
 import { enAging } from "@/lib/i18n/dictionaries/en-aging";
 import { enAccess } from "@/lib/i18n/dictionaries/en-access";
+import { enAuditLog } from "@/lib/i18n/dictionaries/en-auditlog";
 import { enUnits } from "@/lib/i18n/dictionaries/en-units";
 import { enBarcode } from "@/lib/i18n/dictionaries/en-barcode";
 export const en = {
@@ -112,6 +113,7 @@ export const en = {
     re: "Reports",
     cu: "Currencies",
     la: "Languages",
+    au: "Audit Log",
     te: "Templates",
     t1: "Email Templates",
     t2: "SMS Templates",
@@ -657,6 +659,7 @@ export const en = {
   cashFlow: enCashFlow,
   aging: enAging,
   access: enAccess,
+  auditLog: enAuditLog,
   stockGuard: enStockGuard,
   units: enUnits,
   barcode: enBarcode,

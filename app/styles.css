@@ -221,6 +221,17 @@ svg.sp-icon{background:none;-webkit-mask:none;mask:none}
 .bp-dashboard .sp-stat-value{font-size:26px;line-height:32px;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
 .bp-dashboard .sp-stat-note{overflow-wrap:anywhere}
 .bp-dashboard .sp-dash{margin:24px 0}
+/* Audit Log viewer (/audit-log): a responsive filter grid and a details list that wraps long values instead of overflowing. */
+.bp-audit-filters{padding:24px;margin-bottom:24px}
+.bp-audit-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px 20px}
+.bp-audit-grid .bp-audit-search{grid-column:1/-1}
+.bp-audit-grid .sp-input,.bp-audit-grid .sp-select{min-width:0;width:100%}
+.bp-audit-summary{min-width:220px;overflow-wrap:anywhere}
+.bp-audit-target{margin-top:4px;color:var(--text-2);overflow-wrap:anywhere}
+.bp-audit-details{display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);gap:12px 24px;font:400 14px/20px var(--font-body)}
+.bp-audit-details>*{min-width:0;overflow-wrap:anywhere}
+.bp-audit-ref{white-space:normal;word-break:break-all}
+@media (max-width:560px){.bp-audit-filters{padding:16px}.bp-audit-details{grid-template-columns:minmax(0,1fr);gap:2px 0}.bp-audit-details>b{margin-top:10px;color:var(--text-2);font-weight:600}}
 
 /* Sign In page (app/page.tsx) - copied verbatim from the inline <style> in design/Sign In.html. */
 .si{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);min-height:100vh}
