@@ -1,5 +1,6 @@
 "use server";
 
+import { currentScope, scopeError } from "@/lib/access-scope";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/auth";
@@ -21,7 +22,7 @@ const idSchema = z.string().trim().min(1).max(64);
 async function authorize(t: Dictionary): Promise<WarehouseResult | null> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, message: t.common.sessionExpired };
-  if (!canManageWarehouses(session.user.role)) return { ok: false, message: t.warehouses.err.noPermission };
+  if (!canManageWarehouses(session.user)) return { ok: false, message: t.warehouses.err.noPermission };
   return null;
 }
 
@@ -38,6 +39,8 @@ const toData = (d: WarehouseInput) => ({ ...d, zipCode: d.zipCode === "" ? null 
 const isUniqueViolation = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
 
 export async function createWarehouse(input: unknown): Promise<WarehouseResult> {
+  // A new warehouse can't be inside any scoped user's scope: only unrestricted users (OWNER / ADMIN) may create one.
+  if ((await currentScope()) !== null) return { ok: false, message: (await getDict()).access.scope.denied };
   const t = await getDict();
   const DUPLICATE = t.warehouses.err.duplicate;
   const denied = await authorize(t);
@@ -60,6 +63,10 @@ export async function createWarehouse(input: unknown): Promise<WarehouseResult> 
 }
 
 export async function updateWarehouse(id: unknown, input: unknown): Promise<WarehouseResult> {
+  if (typeof id === "string") {
+    const sm = await scopeError([id.trim()]);
+    if (sm) return { ok: false, message: sm };
+  }
   const t = await getDict();
   const DUPLICATE = t.warehouses.err.duplicate;
   const denied = await authorize(t);
@@ -117,6 +124,10 @@ async function findWarehouseReferences(warehouseId: string, E: Dictionary["wareh
 }
 
 export async function deleteWarehouse(id: unknown): Promise<WarehouseResult> {
+  if (typeof id === "string") {
+    const sm = await scopeError([id.trim()]);
+    if (sm) return { ok: false, message: sm };
+  }
   const t = await getDict();
   const denied = await authorize(t);
   if (denied) return denied;

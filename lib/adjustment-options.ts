@@ -1,3 +1,4 @@
+import { warehouseFilter, warehouseIdFilter } from "@/lib/access-scope";
 import { db } from "@/lib/db";
 import type { ProductPick, StockLevel } from "@/lib/adjustments";
 import { unitOptionsFor } from "@/lib/product-units";
@@ -10,9 +11,9 @@ import type { WarehouseOption } from "@/lib/transfers";
  */
 export async function getAdjustmentFormData(): Promise<{ warehouses: WarehouseOption[]; products: ProductPick[]; stock: StockLevel[] }> {
   const [warehouses, products, stock] = await Promise.all([
-    db.warehouse.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.warehouse.findMany({ where: await warehouseFilter(), orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.product.findMany({ orderBy: { name: "asc" }, select: { id: true, code: true, name: true, productUnit: { select: { name: true } } } }),
-    db.productStock.findMany({ select: { productId: true, warehouseId: true, quantity: true } }),
+    db.productStock.findMany({ where: await warehouseIdFilter(), select: { productId: true, warehouseId: true, quantity: true } }),
   ]);
   const units = await unitOptionsFor(db, products.map((p) => p.id));
   return {

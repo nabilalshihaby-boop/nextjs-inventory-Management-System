@@ -28,7 +28,7 @@ export default async function ProductMovementReportPage({ searchParams }: PagePr
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canViewInventoryReports(session.user.role)) redirect("/dashboard");
+  if (!canViewInventoryReports(session.user)) redirect("/dashboard");
 
   const { dict: T, locale } = await getLocaleInfo();
   const C = T.invReports.common;

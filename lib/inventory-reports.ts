@@ -1,5 +1,6 @@
 import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
+import { currentScope, inScope, warehouseFilter, warehouseIdFilter } from "@/lib/access-scope";
 import { formatQuantity } from "@/lib/money";
 import { isRealIsoDate, type FilterOption } from "@/lib/inventory-report-core";
 
@@ -71,7 +72,7 @@ export const totalsList = (m: Map<string, Dec>) => [...m.entries()].sort((a, b) 
 
 export async function getFilterOptions(): Promise<{ warehouses: FilterOption[]; categories: FilterOption[]; brands: FilterOption[]; products: FilterOption[] }> {
   const [w, c, b, p] = await Promise.all([
-    db.warehouse.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.warehouse.findMany({ where: await warehouseFilter(), orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.productCategory.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.brand.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.product.findMany({ orderBy: { code: "asc" }, select: { id: true, code: true, name: true } }),
@@ -103,7 +104,7 @@ export async function getStockBalance(p: BalanceParams): Promise<BalanceReport |
     p.categoryId ? db.productCategory.findUnique({ where: { id: p.categoryId }, select: { name: true } }) : null,
     p.brandId ? db.brand.findUnique({ where: { id: p.brandId }, select: { name: true } }) : null,
   ]);
-  if (!warehouse || (p.categoryId && !category) || (p.brandId && !brand)) return null;
+  if (!warehouse || !(await inScope([warehouse.id])) || (p.categoryId && !category) || (p.brandId && !brand)) return null;
 
   // Only persisted stock rows of THIS warehouse (never product-level totals, never invented rows).
   const stocks = await db.productStock.findMany({
@@ -148,11 +149,12 @@ export async function getLowStock(p: LowParams): Promise<LowReport | null> {
     p.categoryId ? db.productCategory.findUnique({ where: { id: p.categoryId }, select: { name: true } }) : null,
     p.brandId ? db.brand.findUnique({ where: { id: p.brandId }, select: { name: true } }) : null,
   ]);
-  if ((p.warehouseId && !warehouse) || (p.categoryId && !category) || (p.brandId && !brand)) return null;
+  if ((p.warehouseId && (!warehouse || !(await inScope([p.warehouseId])))) || (p.categoryId && !category) || (p.brandId && !brand)) return null;
 
   // Each persisted product/warehouse location is judged on its own stock; only a usable alert (> 0) counts.
   const stocks = await db.productStock.findMany({
     where: {
+      AND: [await warehouseIdFilter()], // a scoped user only ever sees their own warehouses
       ...(p.warehouseId ? { warehouseId: p.warehouseId } : {}),
       product: { stockAlert: { gt: 0 }, ...(p.categoryId ? { categoryId: p.categoryId } : {}), ...(p.brandId ? { brandId: p.brandId } : {}) },
     },
@@ -336,11 +338,13 @@ export async function getProductMovement(p: MovementParams): Promise<MovementRep
     db.product.findUnique({ where: { id: p.productId }, select: { id: true, code: true, name: true, productUnit: { select: { name: true } } } }),
     p.warehouseId ? db.warehouse.findUnique({ where: { id: p.warehouseId }, select: { id: true, name: true } }) : null,
   ]);
-  if (!product || (p.warehouseId && !filterWh)) return null;
+  if (!product || (p.warehouseId && (!filterWh || !(await inScope([p.warehouseId]))))) return null;
   const productId = product.id;
-  const ev = await loadMovements(db, productId, p.warehouseId || null);
+  const scope = await currentScope();
+  const allEv = await loadMovements(db, productId, p.warehouseId || null);
+  const ev = scope === null ? allEv : allEv.filter((m) => scope.includes(m.warehouseId)); // other warehouses' movements are never shown
   const [stocks, warehouses] = await Promise.all([
-    db.productStock.findMany({ where: { productId, ...(p.warehouseId ? { warehouseId: p.warehouseId } : {}) }, select: { warehouseId: true, quantity: true } }),
+    db.productStock.findMany({ where: { productId, AND: [await warehouseIdFilter()], ...(p.warehouseId ? { warehouseId: p.warehouseId } : {}) }, select: { warehouseId: true, quantity: true } }),
     db.warehouse.findMany({ select: { id: true, name: true } }),
   ]);
   const wname = new Map(warehouses.map((w) => [w.id, w.name]));

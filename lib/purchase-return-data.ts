@@ -1,4 +1,5 @@
 // Server-only loaders for Purchase Returns (OWNER/ADMIN — callers check the role first).
+import { warehouseIdFilter } from "@/lib/access-scope";
 import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
 import { formatDateOnly } from "@/lib/format";
@@ -13,7 +14,7 @@ import type { ReturnSourcePurchase } from "@/lib/purchase-returns";
 export async function getReturnSources(): Promise<ReturnSourcePurchase[]> {
   const settings = await getSystemSettings();
   const purchases = await db.purchase.findMany({
-    where: { status: "RECEIVED" },
+    where: { status: "RECEIVED", ...(await warehouseIdFilter()) },
     orderBy: { number: "desc" },
     select: {
       id: true, reference: true, purchaseDate: true, warehouseId: true, subtotal: true, orderTaxAmount: true, orderTaxRate: true, discount: true, grandTotal: true, paidAmount: true,

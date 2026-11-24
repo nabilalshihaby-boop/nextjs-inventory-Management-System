@@ -1,3 +1,4 @@
+import { warehouseFilter } from "@/lib/access-scope";
 import { db } from "@/lib/db";
 import { getDefaultCurrency } from "@/lib/settings";
 import { unitOptionsFor } from "@/lib/product-units";
@@ -14,7 +15,7 @@ export async function getTransferFormData(): Promise<{
   currency: { code: string; symbol: string; right: boolean } | null;
 }> {
   const [warehouses, stocks, currency] = await Promise.all([
-    db.warehouse.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.warehouse.findMany({ where: await warehouseFilter(), orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.productStock.findMany({
       where: { quantity: { gt: 0 } },
       orderBy: { product: { name: "asc" } },

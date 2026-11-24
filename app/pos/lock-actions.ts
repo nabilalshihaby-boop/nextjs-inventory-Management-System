@@ -24,7 +24,7 @@ async function who(): Promise<{ uid: string } | { error: UnlockResult }> {
   const s = await auth();
   const t = await getDict();
   if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
-  if (!canUsePos(s.user.role)) return { error: { ok: false, message: t.pos.noPermission } };
+  if (!canUsePos(s.user)) return { error: { ok: false, message: t.pos.noPermission } };
   return { uid: s.user.id };
 }
 

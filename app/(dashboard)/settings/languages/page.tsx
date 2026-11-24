@@ -22,7 +22,7 @@ export default async function LanguagesPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageSystemSettings(session.user.role)) redirect("/dashboard");
+  if (!canManageSystemSettings(session.user)) redirect("/dashboard");
 
   const t = await getDict();
   const overrides = await db.translationOverride.findMany({

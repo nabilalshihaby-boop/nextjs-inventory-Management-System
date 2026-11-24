@@ -20,7 +20,7 @@ export default async function UpdateExpensePage({ params }: PageProps<"/expenses
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageExpenses(session.user.role)) redirect("/dashboard");
+  if (!canManageExpenses(session.user)) redirect("/dashboard");
 
   const { id } = await params;
   const e = await db.expense.findFirst({
@@ -32,7 +32,7 @@ export default async function UpdateExpensePage({ params }: PageProps<"/expenses
   return (
     <ExpenseForm
       {...await getExpenseFormData(await getDict())}
-      today={todayLocal()} canOpenSettings={canManageSystemSettings(session.user.role)}
+      today={todayLocal()} canOpenSettings={canManageSystemSettings(session.user)}
       expenseId={e.id}
       reference={e.reference}
       activeTransaction={e.activeTransaction?.reference ?? null}

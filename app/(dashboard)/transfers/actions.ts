@@ -1,5 +1,6 @@
 "use server";
 
+import { recordScopeError, scopeError } from "@/lib/access-scope";
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -62,7 +63,7 @@ class StateError extends Error {}
 async function authorize(t: Dictionary): Promise<{ userId: string } | { error: TransferResult }> {
   const session = await auth();
   if (!session?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
-  if (!canManageTransfers(session.user.role)) return { error: { ok: false, message: t.transfers.err.noPermission } };
+  if (!canManageTransfers(session.user)) return { error: { ok: false, message: t.transfers.err.noPermission } };
   return { userId: session.user.id };
 }
 
@@ -200,6 +201,8 @@ export async function createTransfer(input: unknown): Promise<TransferResult> {
   const r = await resolve(v.data, t);
   if (!r.ok) return r.error;
   const d = v.data;
+  const scopeMsg = await scopeError([d.fromWarehouseId, d.toWarehouseId]);
+  if (scopeMsg) return { ok: false, message: scopeMsg };
 
   try {
     const created = await withRetry(() =>
@@ -245,6 +248,8 @@ export async function updateTransfer(id: unknown, input: unknown): Promise<Trans
   if ("error" in a) return a.error;
   const tid = idSchema.safeParse(id);
   if (!tid.success) return { ok: false, message: E.notFound };
+  const scopeRec = await recordScopeError("transfer", tid.data);
+  if (scopeRec) return { ok: false, message: scopeRec };
   const existing = await db.stockTransfer.findUnique({ where: { id: tid.data }, select: { id: true, status: true, reference: true, createdAt: true } });
   if (!existing) return { ok: false, message: E.notFound };
   if (existing.status !== "PENDING") return { ok: false, message: E.onlyPending };
@@ -253,6 +258,8 @@ export async function updateTransfer(id: unknown, input: unknown): Promise<Trans
   const r = await resolve(v.data, t);
   if (!r.ok) return r.error;
   const d = v.data;
+  const scopeMsg = await scopeError([d.fromWarehouseId, d.toWarehouseId]);
+  if (scopeMsg) return { ok: false, message: scopeMsg };
 
   try {
     await withRetry(() =>
@@ -306,6 +313,8 @@ export async function sendTransfer(id: unknown): Promise<TransferResult> {
   if ("error" in a) return a.error;
   const tid = idSchema.safeParse(id);
   if (!tid.success) return { ok: false, message: E.notFound };
+  const scopeRec = await recordScopeError("transfer", tid.data);
+  if (scopeRec) return { ok: false, message: scopeRec };
   const t = await db.stockTransfer.findUnique({ where: { id: tid.data }, select: { id: true, status: true, reference: true, fromWarehouseId: true, transferDate: true, createdAt: true } });
   if (!t) return { ok: false, message: E.notFound };
   if (t.status !== "PENDING") return { ok: false, message: fmt(E.onlySend, { status: dict.transfers.statusLower[t.status] }) };
@@ -336,6 +345,8 @@ export async function completeTransfer(id: unknown): Promise<TransferResult> {
   if ("error" in a) return a.error;
   const tid = idSchema.safeParse(id);
   if (!tid.success) return { ok: false, message: E.notFound };
+  const scopeRec = await recordScopeError("transfer", tid.data);
+  if (scopeRec) return { ok: false, message: scopeRec };
   const t = await db.stockTransfer.findUnique({
     where: { id: tid.data },
     select: { id: true, status: true, reference: true, fromWarehouseId: true, toWarehouseId: true, transferDate: true, createdAt: true },
@@ -374,6 +385,8 @@ export async function deleteTransfer(id: unknown): Promise<TransferResult> {
   if ("error" in a) return a.error;
   const tid = idSchema.safeParse(id);
   if (!tid.success) return { ok: false, message: E.notFound };
+  const scopeRec = await recordScopeError("transfer", tid.data);
+  if (scopeRec) return { ok: false, message: scopeRec };
   const t = await db.stockTransfer.findUnique({ where: { id: tid.data }, select: { id: true, status: true, reference: true } });
   if (!t) return { ok: false, message: E.notFound };
   if (t.status !== "PENDING") return { ok: false, message: E.noDelete };

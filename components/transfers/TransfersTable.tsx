@@ -18,7 +18,7 @@ import { STATUS_TONE, type TransferRow } from "@/lib/transfers";
 // every role; Edit/Delete only for OWNER/ADMIN on PENDING transfers. Grand Total (cost) is hidden
 // from USER. The design's row checkboxes are omitted (there are no bulk actions).
 
-export default function TransfersTable({ rows, canManage }: { rows: TransferRow[]; canManage: boolean }) {
+export default function TransfersTable({ rows, canManage, showCost }: { rows: TransferRow[]; canManage: boolean; showCost: boolean }) {
   const router = useRouter();
   const T = useT();
   const L = T.transfers.list;
@@ -32,7 +32,7 @@ export default function TransfersTable({ rows, canManage }: { rows: TransferRow[
   const needle = q.trim().toLowerCase();
   const filtered = needle ? rows.filter((r) => [r.reference, r.from, r.to, T.transfers.status[r.status]].join(" ").toLowerCase().includes(needle)) : rows;
   const p = paginate(filtered, page, pageSize);
-  const cols = canManage ? 8 : 7;
+  const cols = showCost ? 8 : 7;
 
   function confirmDelete() {
     const row = del;
@@ -101,7 +101,7 @@ export default function TransfersTable({ rows, canManage }: { rows: TransferRow[
                 <th>{L.colFrom}</th>
                 <th>{L.colTo}</th>
                 <th>{L.colItems}</th>
-                {canManage && <th className="num">{L.colTotal}</th>}
+                {showCost && <th className="num">{L.colTotal}</th>}
                 <th>{L.colStatus}</th>
                 <th>{L.colCreated}</th>
                 <th className="act">{L.colAction}</th>
@@ -116,7 +116,7 @@ export default function TransfersTable({ rows, canManage }: { rows: TransferRow[
                   <td>{r.from}</td>
                   <td>{r.to}</td>
                   <td>{r.items}</td>
-                  {canManage && <td className="num"><bdi dir="ltr">{r.total}</bdi></td>}
+                  {showCost && <td className="num"><bdi dir="ltr">{r.total}</bdi></td>}
                   <td>
                     <span className={`sp-badge sp-badge--${STATUS_TONE[r.status]}`} data-status={r.status}>
                       <i />

@@ -41,7 +41,12 @@ model User {
   updatedAt            DateTime              @updatedAt
   preference           UserPreference?
   translationOverrides TranslationOverride[] @relation("TranslationOverrideUpdatedBy")
+  /// Operational staff role (Roles & Permissions). Only meaningful for platform role USER; OWNER/ADMIN ignore it.
+  accessRoleId         String?
+  accessRole           AccessRole?           @relation(fields: [accessRoleId], references: [id], onDelete: Restrict)
+  warehouseScopes      UserWarehouseScope[]
 
+  @@index([accessRoleId])
   @@map("users")
 }
 
@@ -94,6 +99,7 @@ model Warehouse {
   quotations      Quotation[]
   sales           Sale[]
   saleReturns     SaleReturn[]
+  userScopes      UserWarehouseScope[]
 
   @@map("warehouses")
 }
@@ -527,6 +533,70 @@ model InventoryCostBaseline {
 
   @@index([currencyId])
   @@map("inventory_cost_baselines")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Roles & Permissions (OWNER only). Platform roles (OWNER / ADMIN / USER) are unchanged; a USER gains operational
+// access through an AccessRole. Permission keys come from the typed server-side catalog (lib/access.ts), never from the browser.
+// ---------------------------------------------------------------------------------------------
+
+/// An operational staff role. `normalizedName` (trimmed, lower-cased) is the case-insensitive unique identity.
+/// System templates (Cashier, Salesperson, Storekeeper, Accountant) are identified by `templateKey`; they can be edited but never deleted.
+/// A role assigned to any user can't be deleted (Restrict on User.accessRoleId); deactivate it instead.
+model AccessRole {
+  id             String                 @id @default(cuid())
+  name           String                 @db.VarChar(80)
+  normalizedName String                 @unique @db.VarChar(80)
+  description    String?                @db.VarChar(255)
+  active         Boolean                @default(true)
+  isSystem       Boolean                @default(false)
+  templateKey    String?                @unique @db.VarChar(32)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  permissions    AccessRolePermission[]
+  users          User[]
+
+  @@map("access_roles")
+}
+
+model AccessRolePermission {
+  id            String     @id @default(cuid())
+  roleId        String
+  role          AccessRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionKey String     @db.VarChar(64)
+
+  @@unique([roleId, permissionKey])
+  @@map("access_role_permissions")
+}
+
+/// The warehouses a scoped USER may work with (warehouse scope only; there is no Branch model).
+model UserWarehouseScope {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  createdAt   DateTime  @default(now())
+
+  @@unique([userId, warehouseId])
+  @@index([warehouseId])
+  @@map("user_warehouse_scopes")
+}
+
+/// Immutable audit trail of access-control changes. No update/delete path exists anywhere in the app. `actorId` is a plain value
+/// (not a foreign key) so the history survives user deletion. `metadata` holds only safe, non-secret facts.
+model AuditEvent {
+  id         String   @id @default(cuid())
+  actorId    String   @db.VarChar(191)
+  eventType  String   @db.VarChar(48)
+  targetType String   @db.VarChar(32)
+  targetId   String   @db.VarChar(191)
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([targetType, targetId])
+  @@index([createdAt])
+  @@map("audit_events")
 }
 
 enum PurchaseStatus {

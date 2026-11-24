@@ -19,8 +19,8 @@ export default async function CashBankAccountsPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canViewFinance(session.user.role)) redirect("/dashboard");
+  if (!canViewFinance(session.user)) redirect("/dashboard");
 
   const data = await getAccountsView(await getDict());
-  return <AccountsView {...data} canManage={canManageCashBankAccounts(session.user.role)} canOpenSettings={canManageSystemSettings(session.user.role)} />;
+  return <AccountsView {...data} canManage={canManageCashBankAccounts(session.user)} canOpenSettings={canManageSystemSettings(session.user)} />;
 }

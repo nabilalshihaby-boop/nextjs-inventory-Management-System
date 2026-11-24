@@ -21,7 +21,7 @@ export default async function QuotationsPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageQuotations(session.user.role)) redirect("/dashboard");
+  if (!canManageQuotations(session.user)) redirect("/dashboard");
 
   const [rows, customers, currency] = await Promise.all([getQuotationRows(), db.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }), getDefaultCurrency()]);
   return <QuotationsTable rows={rows} customers={customers} currency={currency ? { code: currency.code, symbol: currency.symbol, right: currency.right } : null} />;

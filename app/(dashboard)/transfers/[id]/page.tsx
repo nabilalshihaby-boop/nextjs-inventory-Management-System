@@ -1,3 +1,4 @@
+import { recordOutOfScope } from "@/lib/access-scope";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -6,7 +7,7 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { formatDateOnly, formatDateTime } from "@/lib/format";
 import { formatMoney, formatQuantity } from "@/lib/money";
-import { canManageTransfers } from "@/lib/roles";
+import { canManageTransfers, canViewCost } from "@/lib/roles";
 import { getDefaultCurrency, getSystemSettings } from "@/lib/settings";
 import { STATUS_TONE, fromUnits, lineTotalCents, toUnits, transferTotal } from "@/lib/transfers";
 import Icon from "@/components/layout/Icon";
@@ -26,11 +27,14 @@ export default async function TransferDetailsPage({ params }: PageProps<"/transf
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  const canManage = canManageTransfers(session.user.role);
+  const canManage = canManageTransfers(session.user);
+  // Unit costs, line totals and the grand total are cost data: only with cost.view (never in the payload otherwise).
+  const showCost = canViewCost(session.user);
   const { locale, dict } = await getLocaleInfo();
   const X = dict.transfers.details;
 
   const { id } = await params;
+  if (await recordOutOfScope("transfer", id)) notFound();
   const t = await db.stockTransfer.findUnique({
     where: { id },
     select: {
@@ -46,7 +50,7 @@ export default async function TransferDetailsPage({ params }: PageProps<"/transf
       toWarehouse: { select: { name: true } },
       items: {
         orderBy: { id: "asc" },
-        select: { id: true, quantity: true, baseQuantity: true, unitName: true, unitCost: true, product: { select: { code: true, name: true, productUnit: { select: { name: true } } } } },
+        select: { id: true, quantity: true, baseQuantity: true, unitName: true, ...(showCost ? { unitCost: true } : {}), product: { select: { code: true, name: true, productUnit: { select: { name: true } } } } },
       },
     },
   });
@@ -54,14 +58,14 @@ export default async function TransferDetailsPage({ params }: PageProps<"/transf
 
   const [settings, currency, creator] = await Promise.all([
     getSystemSettings(),
-    canManage ? getDefaultCurrency() : null,
+    showCost ? getDefaultCurrency() : null,
     t.createdById ? db.user.findUnique({ where: { id: t.createdById }, select: { firstName: true, lastName: true } }) : null,
   ]);
   const fmt = settings?.dateFormat;
-  const lines = t.items.map((i) => ({ ...i, qty: i.quantity.toFixed(3), cost: i.unitCost.toFixed(2) }));
+  const lines = t.items.map((i) => ({ id: i.id, product: i.product, unitName: i.unitName, qty: i.quantity.toFixed(3), cost: showCost && "unitCost" in i && i.unitCost ? i.unitCost.toFixed(2) : "0.00" }));
   // Total quantity is counted in BASE units (lines may use different units).
   const totalQty = fromUnits(t.items.reduce((a, i) => a + toUnits(i.baseQuantity.toFixed(3), 3), BigInt(0)), 3);
-  const total = transferTotal(lines.map((l) => ({ quantity: l.qty, unitCost: l.cost })));
+  const total = showCost ? transferTotal(lines.map((l) => ({ quantity: l.qty, unitCost: l.cost }))) : "0.00";
 
   const info: [string, string][] = [
     [X.reference, t.reference],
@@ -118,9 +122,9 @@ export default async function TransferDetailsPage({ params }: PageProps<"/transf
                 <thead>
                   <tr>
                     <th>{X.colProduct}</th>
-                    {canManage && <th>{X.colCost}</th>}
+                    {showCost && <th>{X.colCost}</th>}
                     <th>{X.colQty}</th>
-                    {canManage && <th className="num">{X.colSubtotal}</th>}
+                    {showCost && <th className="num">{X.colSubtotal}</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -130,11 +134,11 @@ export default async function TransferDetailsPage({ params }: PageProps<"/transf
                         <div style={{ fontWeight: 600, marginBottom: 4 }}><bdi dir="ltr">{l.product.code}</bdi></div>
                         <span className="sp-badge sp-badge--success">{l.product.name}</span>
                       </td>
-                      {canManage && <td><bdi dir="ltr">{formatMoney(l.cost, currency)}</bdi></td>}
+                      {showCost && <td><bdi dir="ltr">{formatMoney(l.cost, currency)}</bdi></td>}
                       <td>
                         <bdi dir="ltr">{formatQuantity(l.qty)}</bdi> {l.unitName ?? l.product.productUnit.name}
                       </td>
-                      {canManage && <td className="num"><bdi dir="ltr">{formatMoney(fromUnits(lineTotalCents(l.qty, l.cost), 2), currency)}</bdi></td>}
+                      {showCost && <td className="num"><bdi dir="ltr">{formatMoney(fromUnits(lineTotalCents(l.qty, l.cost), 2), currency)}</bdi></td>}
                     </tr>
                   ))}
                 </tbody>
@@ -152,7 +156,7 @@ export default async function TransferDetailsPage({ params }: PageProps<"/transf
             <span>{X.sumQty}</span>
             <span><bdi dir="ltr">{formatQuantity(totalQty)}</bdi></span>
           </div>
-          {canManage && (
+          {showCost && (
             <div>
               <span>{X.sumTotal}</span>
               <span data-testid="transfer-total"><bdi dir="ltr">{formatMoney(total, currency)}</bdi></span>

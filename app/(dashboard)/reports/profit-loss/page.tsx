@@ -30,7 +30,7 @@ export default async function ProfitLossReportPage({ searchParams }: PageProps<"
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canViewProfitLoss(session.user.role)) redirect("/dashboard");
+  if (!canViewProfitLoss(session.user)) redirect("/dashboard");
 
   const { dict: T, locale } = await getLocaleInfo();
   const P = T.profitLoss;
@@ -151,7 +151,7 @@ export default async function ProfitLossReportPage({ searchParams }: PageProps<"
                 )}
                 <p className="bp-report-muted">{P.incomplete.why}</p>
                 <p className="sp-noprint" data-testid="pl-setup-note">
-                  {canSetCostBaseline(session.user.role) ? (
+                  {canSetCostBaseline(session.user) ? (
                     <>
                       {P.incomplete.setupOwner}{" "}
                       <Link href={`/profit-loss/setup?currency=${data.currency.id}`} className="sp-btn sp-btn--secondary" data-testid="pl-setup-link">

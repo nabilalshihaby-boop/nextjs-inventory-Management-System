@@ -8,6 +8,7 @@ import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
 import { deleteImage, saveImage, validateImage, type ValidImage } from "@/lib/image-upload";
 import { canManageUsers } from "@/lib/roles";
+import { AccessRejected, applyUserAccess } from "@/lib/access-assign";
 import { makeUserSchemas, type UserField } from "@/lib/users";
 import { getDict } from "@/lib/i18n/server";
 import { fmt } from "@/lib/i18n/config";
@@ -34,12 +35,16 @@ const str = (fd: FormData, k: string) => {
   const v = fd.get(k);
   return typeof v === "string" ? v : "";
 };
+/** Only these form fields exist; anything else (a forged permission list, role flag, user id …) is rejected outright. */
+const ALLOWED_FIELDS = new Set(["firstName", "lastName", "email", "phoneNumber", "password", "confirmPassword", "role", "avatar", "removeAvatar", "accessRoleId", "warehouseIds"]);
+const hasUnknownFields = (fd: FormData) => [...fd.keys()].some((k) => !ALLOWED_FIELDS.has(k));
+const accessOf = (fd: FormData, role: "ADMIN" | "USER") => ({ role, accessRoleId: str(fd, "accessRoleId").trim().slice(0, 64), warehouseIds: fd.getAll("warehouseIds").filter((v): v is string => typeof v === "string").map((v) => v.trim().slice(0, 64)).filter(Boolean).slice(0, 500) });
 const isUnique = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
 
 async function authorize(t: Dictionary): Promise<{ userId: string } | { error: UserResult }> {
   const session = await auth();
   if (!session?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
-  if (!canManageUsers(session.user.role)) return { error: { ok: false, message: t.users.err.noPermission } };
+  if (!canManageUsers(session.user)) return { error: { ok: false, message: t.users.err.noPermission } };
   return { userId: session.user.id };
 }
 
@@ -68,7 +73,7 @@ export async function createUser(formData: FormData): Promise<UserResult> {
   const t = await getDict();
   const a = await authorize(t);
   if ("error" in a) return a.error;
-  if (!(formData instanceof FormData)) return { ok: false, message: t.users.err.invalidRequest };
+  if (!(formData instanceof FormData) || hasUnknownFields(formData)) return { ok: false, message: t.users.err.invalidRequest };
   const DUPLICATE = t.users.err.duplicate;
 
   const parsed = makeUserSchemas(t.users.val).create.safeParse({
@@ -89,12 +94,16 @@ export async function createUser(formData: FormData): Promise<UserResult> {
   const passwordHash = await bcrypt.hash(d.password, BCRYPT_COST);
   const image = avatar.image ? await saveImage(FOLDER, avatar.image) : null;
   try {
-    await db.user.create({
-      data: { firstName: d.firstName, lastName: d.lastName, email: d.email, phoneNumber: d.phoneNumber, role: d.role, passwordHash, image },
-      select: { id: true }, // never read the hash back
+    await db.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: { firstName: d.firstName, lastName: d.lastName, email: d.email, phoneNumber: d.phoneNumber, role: d.role, passwordHash, image },
+        select: { id: true }, // never read the hash back
+      });
+      await applyUserAccess(tx, { actorId: a.userId, userId: created.id, userName: `${d.firstName} ${d.lastName}`.trim(), input: accessOf(formData, d.role), t });
     });
   } catch (e) {
     await removeAvatarFile(image);
+    if (e instanceof AccessRejected) return { ok: false, message: e.message, fieldErrors: { accessRoleId: e.message } };
     if (isUnique(e)) return { ok: false, message: DUPLICATE, fieldErrors: { email: DUPLICATE } };
     throw e;
   }
@@ -110,7 +119,7 @@ export async function updateUser(id: unknown, formData: FormData): Promise<UserR
   const t = await getDict();
   const a = await authorize(t);
   if ("error" in a) return a.error;
-  if (!(formData instanceof FormData)) return { ok: false, message: t.users.err.invalidRequest };
+  if (!(formData instanceof FormData) || hasUnknownFields(formData)) return { ok: false, message: t.users.err.invalidRequest };
   const DUPLICATE = t.users.err.duplicate;
   const uid = idSchema.safeParse(id);
   if (!uid.success) return { ok: false, message: t.users.err.notFound };
@@ -139,24 +148,29 @@ export async function updateUser(id: unknown, formData: FormData): Promise<UserR
   const removeAvatar = formData.get("removeAvatar") === "on";
   const newImage = avatar.image ? await saveImage(FOLDER, avatar.image) : undefined; // undefined = keep
   const image = newImage !== undefined ? newImage : removeAvatar ? null : undefined;
+  const newHash = d.password ? await bcrypt.hash(d.password, BCRYPT_COST) : null;
   try {
-    await db.user.update({
-      where: { id: target.id },
-      data: {
-        firstName: d.firstName,
-        lastName: d.lastName,
-        email: d.email,
-        phoneNumber: d.phoneNumber,
-        role: d.role,
-        // A password reset also bumps sessionVersion in the same UPDATE (one transaction), so every
-        // existing session of that user ends on its next request (auth.ts).
-        ...(d.password ? { passwordHash: await bcrypt.hash(d.password, BCRYPT_COST), sessionVersion: { increment: 1 } } : {}),
-        ...(image !== undefined ? { image } : {}),
-      },
-      select: { id: true },
+    await db.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: target.id },
+        data: {
+          firstName: d.firstName,
+          lastName: d.lastName,
+          email: d.email,
+          phoneNumber: d.phoneNumber,
+          role: d.role,
+          // A password reset also bumps sessionVersion in the same UPDATE (one transaction), so every
+          // existing session of that user ends on its next request (auth.ts).
+          ...(newHash ? { passwordHash: newHash, sessionVersion: { increment: 1 } } : {}),
+          ...(image !== undefined ? { image } : {}),
+        },
+        select: { id: true },
+      });
+      await applyUserAccess(tx, { actorId: a.userId, userId: target.id, userName: `${d.firstName} ${d.lastName}`.trim(), input: accessOf(formData, d.role), t });
     });
   } catch (e) {
     if (newImage) await removeAvatarFile(newImage);
+    if (e instanceof AccessRejected) return { ok: false, message: e.message, fieldErrors: { accessRoleId: e.message } };
     if (isUnique(e)) return { ok: false, message: DUPLICATE, fieldErrors: { email: DUPLICATE } };
     throw e;
   }

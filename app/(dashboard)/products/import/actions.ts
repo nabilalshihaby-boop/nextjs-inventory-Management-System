@@ -30,7 +30,7 @@ export type ConfirmResult =
 async function authorize(t: Dictionary): Promise<{ userId: string } | { error: string }> {
   const session = await auth();
   if (!session?.user?.id) return { error: t.common.sessionExpired };
-  if (!canManageProducts(session.user.role)) return { error: t.importExport.err.noPermission };
+  if (!canManageProducts(session.user)) return { error: t.importExport.err.noPermission };
   return { userId: session.user.id };
 }
 

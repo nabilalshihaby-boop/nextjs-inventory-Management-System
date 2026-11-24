@@ -23,7 +23,7 @@ export default async function BarcodeLabelsPage({ searchParams }: PageProps<"/pr
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageProducts(session.user.role)) redirect("/dashboard");
+  if (!canManageProducts(session.user)) redirect("/dashboard");
 
   const T = await getDict();
   const L = T.barcode.labels;

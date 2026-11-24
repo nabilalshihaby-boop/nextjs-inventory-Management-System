@@ -18,7 +18,7 @@ export default async function CreateCustomerPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageCustomers(session.user.role)) redirect("/customers");
+  if (!canManageCustomers(session.user)) redirect("/customers");
 
   return <CustomerForm countries={getCountryOptions(await getLocale())} />;
 }

@@ -19,7 +19,7 @@ export default async function CreateAdjustmentPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageAdjustments(session.user.role)) redirect("/adjustments");
+  if (!canManageAdjustments(session.user)) redirect("/adjustments");
 
   return <AdjustmentForm {...await getAdjustmentFormData()} today={todayIso()} />;
 }

@@ -26,7 +26,7 @@ export default async function BrandsPage() {
   return (
     <CatalogTable
       rows={rows}
-      canManage={canManageCatalog(session.user.role)}
+      canManage={canManageCatalog(session.user)}
       idPrefix="br"
       entity="brand"
       actions={{ create: createBrand, update: updateBrand, remove: deleteBrand }}

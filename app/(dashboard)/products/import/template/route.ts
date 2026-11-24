@@ -10,6 +10,6 @@ export async function GET() {
   const t = await getDict();
   const session = await auth();
   if (!session?.user?.id) return denied(401, t.common.sessionExpired);
-  if (!canManageProducts(session.user.role)) return denied(403, t.importExport.err.noPermission);
+  if (!canManageProducts(session.user)) return denied(403, t.importExport.err.noPermission);
   return csvDownload(toCsv([[...IMPORT_HEADERS]]), "product-import-template.csv");
 }

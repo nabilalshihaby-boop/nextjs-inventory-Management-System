@@ -1,3 +1,4 @@
+import { recordOutOfScope } from "@/lib/access-scope";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
@@ -22,9 +23,10 @@ export default async function EditTransferPage({ params }: PageProps<"/transfers
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageTransfers(session.user.role)) redirect("/transfers");
+  if (!canManageTransfers(session.user)) redirect("/transfers");
 
   const { id } = await params;
+  if (await recordOutOfScope("transfer", id)) notFound();
   const t = await db.stockTransfer.findUnique({
     where: { id },
     select: {

@@ -52,7 +52,7 @@ async function authorize(): Promise<{ userId: string; t: Dictionary } | { error:
   const s = await auth();
   const t = await getDict();
   if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
-  if (!canManageCustomerPayments(s.user.role)) return { error: { ok: false, message: t.custPay.err.noPermission } };
+  if (!canManageCustomerPayments(s.user)) return { error: { ok: false, message: t.custPay.err.noPermission } };
   return { userId: s.user.id, t };
 }
 

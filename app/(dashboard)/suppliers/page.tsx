@@ -37,5 +37,5 @@ export default async function SuppliersPage() {
     createdOn: formatDateTime(s.createdAt, settings?.dateFormat, locale),
   }));
 
-  return <SuppliersTable rows={rows} canManage={canManageSuppliers(session.user.role)} canViewStatement={canViewSupplierStatement(session.user.role)} />;
+  return <SuppliersTable rows={rows} canManage={canManageSuppliers(session.user)} canViewStatement={canViewSupplierStatement(session.user)} />;
 }

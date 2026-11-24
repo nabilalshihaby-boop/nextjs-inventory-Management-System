@@ -21,7 +21,7 @@ export default async function SupplierPaymentsPage({ searchParams }: PageProps<"
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageSupplierPayments(session.user.role)) redirect("/dashboard");
+  if (!canManageSupplierPayments(session.user)) redirect("/dashboard");
 
   const [rows, suppliers, currency] = await Promise.all([
     getSupplierPaymentRows(),

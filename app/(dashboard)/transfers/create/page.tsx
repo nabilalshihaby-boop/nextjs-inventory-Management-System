@@ -18,7 +18,7 @@ export default async function CreateTransferPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageTransfers(session.user.role)) redirect("/transfers");
+  if (!canManageTransfers(session.user)) redirect("/transfers");
 
   const data = await getTransferFormData();
   return <TransferForm {...data} today={todayIso()} />;

@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { bridgeAllows, consumeSessionGrant } from "@/lib/session-upgrade";
+import { loadAccess } from "@/lib/access-server";
 import type { Role } from "@/app/generated/prisma/client";
 
 declare module "next-auth" {
@@ -12,7 +13,15 @@ declare module "next-auth" {
     sessionVersion?: number;
   }
   interface Session {
-    user: { id: string; role: Role } & DefaultSession["user"];
+    user: {
+      id: string;
+      role: Role;
+      /** Permissions of the user's assigned, ACTIVE operational role (USER only). Resolved from the database on every request. */
+      permissions: string[];
+      /** USER: assigned warehouses; OWNER / ADMIN: null (unrestricted). */
+      warehouseIds: string[] | null;
+      accessRole: { id: string; name: string } | null;
+    } & DefaultSession["user"];
   }
 }
 
@@ -130,9 +139,15 @@ export const {
       }
       return token;
     },
-    session({ session, token }) {
+    async session({ session, token }) {
       if (token.id) session.user.id = token.id;
       if (token.role) session.user.role = token.role;
+      // Operational permissions and warehouse scope are read from MySQL on every session read (never from the cookie, never from the
+      // client), so assigning / deactivating a role or changing a scope applies on the very next request.
+      const access = token.id ? await loadAccess(token.id) : { permissions: [], warehouseIds: [] as string[] | null, accessRole: null };
+      session.user.permissions = access.permissions;
+      session.user.warehouseIds = access.warehouseIds;
+      session.user.accessRole = access.accessRole;
       session.user.name = token.name ?? null;
       session.user.email = token.email ?? "";
       session.user.image = token.picture ?? null;

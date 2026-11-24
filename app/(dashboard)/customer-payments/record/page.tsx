@@ -21,7 +21,7 @@ export default async function RecordCustomerPaymentPage({ searchParams }: PagePr
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageCustomerPayments(session.user.role)) redirect("/dashboard");
+  if (!canManageCustomerPayments(session.user)) redirect("/dashboard");
 
   const sp = await searchParams;
   const data = await getCustomerPaymentFormData();

@@ -105,7 +105,10 @@ export default function UsersTable({ rows }: { rows: UserRow[] }) {
                       </div>
                     </div>
                   </td>
-                  <td data-testid="role">{r.roleLabel}</td>
+                  <td data-testid="role">
+                    {r.roleLabel}
+                    {r.accessRole && <span className="t-caption" style={{ display: "block", color: "var(--text-2)" }} data-testid="access-role">{r.accessRole}</span>}
+                  </td>
                   <td><bdi dir="ltr">{r.phoneNumber}</bdi></td>
                   <td>
                     <span className="sp-badge sp-badge--info">{r.createdOn}</span>

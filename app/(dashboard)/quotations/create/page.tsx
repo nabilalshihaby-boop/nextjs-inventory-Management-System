@@ -19,8 +19,8 @@ export default async function CreateQuotationPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageQuotations(session.user.role)) redirect("/dashboard");
+  if (!canManageQuotations(session.user)) redirect("/dashboard");
 
   const data = await getQuotationFormData();
-  return <QuotationForm {...data} today={todayLocal()} canOpenSettings={canManageSystemSettings(session.user.role)} />;
+  return <QuotationForm {...data} today={todayLocal()} canOpenSettings={canManageSystemSettings(session.user)} />;
 }

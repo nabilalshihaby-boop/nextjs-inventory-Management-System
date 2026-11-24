@@ -19,7 +19,7 @@ export default async function CreateExpensePage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageExpenses(session.user.role)) redirect("/dashboard");
+  if (!canManageExpenses(session.user)) redirect("/dashboard");
 
-  return <ExpenseForm {...await getExpenseFormData(await getDict())} today={todayLocal()} canOpenSettings={canManageSystemSettings(session.user.role)} />;
+  return <ExpenseForm {...await getExpenseFormData(await getDict())} today={todayLocal()} canOpenSettings={canManageSystemSettings(session.user)} />;
 }

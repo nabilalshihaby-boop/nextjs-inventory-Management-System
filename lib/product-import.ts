@@ -1,3 +1,4 @@
+import { warehouseFilter } from "@/lib/access-scope";
 import { parse } from "csv-parse/sync";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { fmt } from "@/lib/i18n/config";
@@ -118,7 +119,7 @@ async function loadLookups(db: Prisma.TransactionClient): Promise<Lookups> {
     db.productCategory.findMany({ select: { id: true, name: true } }),
     db.brand.findMany({ select: { id: true, name: true } }),
     db.productUnit.findMany({ select: { id: true, name: true } }),
-    db.warehouse.findMany({ select: { id: true, name: true } }),
+    db.warehouse.findMany({ where: await warehouseFilter(), select: { id: true, name: true } }), // CSV opening stock may only target the user's own warehouses
   ]);
   return { category: mapOf(category), brand: mapOf(brand), unit: mapOf(unit), warehouse: mapOf(warehouse) };
 }

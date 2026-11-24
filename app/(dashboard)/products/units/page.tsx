@@ -26,7 +26,7 @@ export default async function UnitsPage() {
   return (
     <CatalogTable
       rows={rows}
-      canManage={canManageCatalog(session.user.role)}
+      canManage={canManageCatalog(session.user)}
       idPrefix="un"
       entity="unit"
       actions={{ create: createUnit, update: updateUnit, remove: deleteUnit }}

@@ -1,5 +1,6 @@
 "use server";
 
+import { recordScopeError, scopeError } from "@/lib/access-scope";
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -48,7 +49,7 @@ class GoneError extends Error {}
 async function authorize(t: Dictionary): Promise<{ userId: string } | { error: AdjustmentResult }> {
   const session = await auth();
   if (!session?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
-  if (!canManageAdjustments(session.user.role)) return { error: { ok: false, message: t.adjustments.err.noPermission } };
+  if (!canManageAdjustments(session.user)) return { error: { ok: false, message: t.adjustments.err.noPermission } };
   return { userId: session.user.id };
 }
 
@@ -191,6 +192,8 @@ export async function createAdjustment(input: unknown): Promise<AdjustmentResult
   const r = await resolve(v.data, t);
   if (!r.ok) return r.error;
   const d = v.data;
+  const scopeMsg = await scopeError([d.warehouseId]);
+  if (scopeMsg) return { ok: false, message: scopeMsg };
 
   try {
     const created = await withRetry(() =>
@@ -231,12 +234,16 @@ export async function updateAdjustment(id: unknown, input: unknown): Promise<Adj
   if ("error" in a) return a.error;
   const aid = idSchema.safeParse(id);
   if (!aid.success) return { ok: false, message: t.adjustments.err.notFound };
+  const scopeRec = await recordScopeError("adjustment", aid.data);
+  if (scopeRec) return { ok: false, message: scopeRec };
   if (!(await db.stockAdjustment.findUnique({ where: { id: aid.data }, select: { id: true } }))) return { ok: false, message: t.adjustments.err.notFound };
   const v = parse(input, t);
   if (!v.ok) return v.error;
   const r = await resolve(v.data, t);
   if (!r.ok) return r.error;
   const d = v.data;
+  const scopeMsg = await scopeError([d.warehouseId]);
+  if (scopeMsg) return { ok: false, message: scopeMsg };
 
   try {
     const ref = await withRetry(() =>
@@ -276,6 +283,8 @@ export async function deleteAdjustment(id: unknown): Promise<AdjustmentResult> {
   if ("error" in a) return a.error;
   const aid = idSchema.safeParse(id);
   if (!aid.success) return { ok: false, message: t.adjustments.err.notFound };
+  const scopeRec = await recordScopeError("adjustment", aid.data);
+  if (scopeRec) return { ok: false, message: scopeRec };
 
   try {
     const ref = await withRetry(() =>

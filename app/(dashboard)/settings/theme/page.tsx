@@ -21,7 +21,7 @@ export default async function ThemeSettingsPage() {
   // Checked before any data is read (the page renders in parallel with the settings layout).
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageSystemSettings(session.user.role)) redirect("/dashboard");
+  if (!canManageSystemSettings(session.user)) redirect("/dashboard");
 
   const [saved, brand, settings] = await Promise.all([getGlobalTheme(), getShellBranding(), getSystemSettings()]);
 

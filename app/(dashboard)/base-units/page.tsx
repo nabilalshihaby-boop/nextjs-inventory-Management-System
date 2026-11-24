@@ -33,5 +33,5 @@ export default async function BaseUnitsPage() {
     base: p.productUnit.name,
     packs: p.unitConversions.map((c) => ({ unit: c.unit.name, factor: trimFactor(c.factor.toFixed(6)), active: c.active })),
   }));
-  return <BaseUnitsTable rows={rows} canManage={canManageProducts(session.user.role)} />;
+  return <BaseUnitsTable rows={rows} canManage={canManageProducts(session.user)} />;
 }

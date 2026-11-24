@@ -52,10 +52,10 @@ const english = makeUserSchemas();
 export const createUserSchema = english.create;
 export const updateUserSchema = english.update;
 
-export type UserField = "firstName" | "lastName" | "email" | "phoneNumber" | "password" | "confirmPassword" | "role" | "avatar";
+export type UserField = "firstName" | "lastName" | "email" | "phoneNumber" | "password" | "confirmPassword" | "role" | "avatar" | "accessRoleId" | "warehouseIds";
 
 /** Form values (never includes a password from the server — password fields always start empty). */
-export type UserFormValues = { firstName: string; lastName: string; email: string; phoneNumber: string; role: string; image: string | null };
+export type UserFormValues = { firstName: string; lastName: string; email: string; phoneNumber: string; role: string; image: string | null; accessRoleId?: string; warehouseIds?: string[] };
 
 /** A user as shown in the list (no hash, no secrets). */
 export type UserRow = {
@@ -65,6 +65,8 @@ export type UserRow = {
   phoneNumber: string;
   role: "OWNER" | "ADMIN" | "USER";
   roleLabel: string;
+  /** Display name of the operational role (USER only), or null. */
+  accessRole?: string | null;
   image: string | null;
   initials: string;
   createdOn: string;

@@ -20,7 +20,7 @@ export default async function DenominationsPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageSystemSettings(session.user.role)) redirect("/dashboard");
+  if (!canManageSystemSettings(session.user)) redirect("/dashboard");
 
   const [currencies, rows, used] = await Promise.all([
     db.currency.findMany({ orderBy: { code: "asc" }, select: { id: true, code: true, name: true } }),

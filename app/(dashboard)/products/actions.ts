@@ -1,5 +1,6 @@
 "use server";
 
+import { warehouseFilter } from "@/lib/access-scope";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/auth";
@@ -52,7 +53,7 @@ const isUniqueViolation = (e: unknown) => e instanceof Prisma.PrismaClientKnownR
 async function authorize(t: Dictionary) {
   const session = await auth();
   if (!session?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } as ProductResult };
-  if (!canManageProducts(session.user.role)) return { error: { ok: false, message: t.products.err.noPermission } as ProductResult };
+  if (!canManageProducts(session.user)) return { error: { ok: false, message: t.products.err.noPermission } as ProductResult };
   return { userId: session.user.id };
 }
 
@@ -175,7 +176,8 @@ export async function createProduct(formData: FormData): Promise<ProductResult> 
   const barcodesNew = f && units ? await barcodeChecks(t, null, baseRawNew?.trim() ? baseRawNew : undefined, undefined, units, new Map(), errors) : new Map<string, string | null>();
   if (stock.success) {
     const [warehouse, supplier] = await Promise.all([
-      db.warehouse.findUnique({ where: { id: stock.data.warehouseId }, select: { id: true } }),
+      // Opening stock writes into a warehouse: it must be inside the user's scope (a scoped user can't stock another warehouse).
+      db.warehouse.findFirst({ where: { AND: [{ id: stock.data.warehouseId }, await warehouseFilter()] }, select: { id: true } }),
       db.supplier.findUnique({ where: { id: stock.data.supplierId }, select: { id: true } }),
     ]);
     if (!warehouse) errors.warehouseId ??= E.validWarehouse;

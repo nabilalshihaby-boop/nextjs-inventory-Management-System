@@ -21,7 +21,7 @@ export default async function SupplierStatementPage({ searchParams }: PageProps<
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canViewSupplierStatement(session.user.role)) redirect("/dashboard");
+  if (!canViewSupplierStatement(session.user)) redirect("/dashboard");
 
   const sp = await searchParams;
   const str = (v: unknown) => (typeof v === "string" ? v : undefined);

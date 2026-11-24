@@ -48,7 +48,7 @@ export default async function ProfilePage() {
         </div>
       </div>
       <ProfileForm initial={values} roleLabel={(t.roles as Record<string, string>)[role] ?? roleLabel(role)} />
-      {canUsePos(role) && <PosPinForm hasPin={!!posPinHash} />}
+      {canUsePos(session.user) && <PosPinForm hasPin={!!posPinHash} />}
     </>
   );
 }

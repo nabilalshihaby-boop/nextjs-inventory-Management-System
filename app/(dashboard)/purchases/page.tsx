@@ -1,3 +1,4 @@
+import { warehouseIdFilter } from "@/lib/access-scope";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
@@ -23,11 +24,12 @@ export default async function PurchasesPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManagePurchases(session.user.role)) redirect("/dashboard");
+  if (!canManagePurchases(session.user)) redirect("/dashboard");
 
   const locale = await getLocale();
   const [purchases, settings, currency] = await Promise.all([
     db.purchase.findMany({
+      where: await warehouseIdFilter(),
       orderBy: { number: "desc" },
       select: { id: true, reference: true, status: true, purchaseDate: true, grandTotal: true, paidAmount: true, createdAt: true, currencyId: true, currency: { select: { code: true, symbol: true } }, supplier: { select: { name: true } }, warehouse: { select: { name: true } } },
     }),

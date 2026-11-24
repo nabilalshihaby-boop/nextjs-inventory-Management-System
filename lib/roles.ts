@@ -1,4 +1,5 @@
 import type { Role } from "@/app/generated/prisma/client";
+import { hasPermission, isOwner, isOwnerOrAdmin, type PermissionKey, type Who } from "@/lib/access";
 
 // Human-readable labels for the Role enum (shared by the topbar and the profile page).
 export const ROLE_LABELS: Record<Role, string> = {
@@ -11,171 +12,65 @@ export function roleLabel(role: string) {
   return ROLE_LABELS[role as Role] ?? role;
 }
 
-/** Currencies: every signed-in role may view; only OWNER and ADMIN may create, edit or delete. */
-export function canManageCurrencies(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
+// Authorization helpers. Every page, report, export and Server Action calls one of these with the SESSION USER (`session.user`),
+// which carries the platform role and the permissions resolved from the database on this very request (auth.ts). A legacy call with
+// only a role string still works and means "no operational permissions".
+//   OWNER  → always allowed.
+//   ADMIN  → allowed exactly where it was allowed before this module existed (all of the operational helpers below).
+//   USER   → allowed only with the matching permission of its assigned, ACTIVE access role.
+// Owner-only capabilities (users, roles, system settings, opening cost baseline) are not permissions and can't be granted.
+const needs = (key: PermissionKey) => (who: Who) => hasPermission(who, key);
+const adminOnly = (who: Who) => isOwnerOrAdmin(who);
+const ownerOnly = (who: Who) => isOwner(who);
 
-/** Warehouses: every signed-in role may view; only OWNER and ADMIN may create, edit or delete. */
-export function canManageWarehouses(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
+/** Currencies: view is part of finance access; only OWNER and ADMIN may create, edit or delete. */
+export const canManageCurrencies = adminOnly;
+/** Warehouses: create, edit, delete. */
+export const canManageWarehouses = needs("warehouses.manage");
+/** Product catalog (categories, brands, units, base units): create, edit, delete. */
+export const canManageCatalog = needs("catalog.manage");
+export const canManageSuppliers = needs("suppliers.manage");
+export const canManageCustomers = needs("customers.manage");
+/** Inventory Reports (stock balance, product movement, low stock): read-only. */
+export const canViewInventoryReports = needs("reports.inventory.view");
+/** Profit & Loss, Cash Flow and Aging expose costs, margins, expenses and every unpaid balance: read-only. */
+export const canViewProfitLoss = (who: Who) => hasPermission(who, "reports.financial.view") && hasPermission(who, "cost.view");
+export const canViewCashFlow = needs("reports.financial.view");
+export const canViewAging = needs("reports.financial.view");
+/** Opening Inventory Cost Setup (Profit & Loss cutover): OWNER only. */
+export const canSetCostBaseline = ownerOnly;
+export const canManageProducts = needs("products.manage");
+/** Inventory transfers: create, edit/delete pending ones, send or complete them. */
+export const canManageTransfers = needs("transfers.manage");
+export const canManageAdjustments = needs("inventory.adjust");
+/** Finance (Cash & Bank accounts and transactions): view. */
+export const canViewFinance = needs("finance.view");
+export const canManagePurchases = needs("purchases.manage");
+export const canManagePurchaseReturns = needs("purchases.returns.manage");
+export const canManageSupplierPayments = needs("suppliers.payments.manage");
+export const canManageQuotations = needs("quotations.manage");
+export const canManageSales = needs("sales.manage");
+export const canManageSaleReturns = needs("sales.returns.manage");
+export const canManageCustomerPayments = needs("customers.payments.manage");
+export const canViewSupplierStatement = needs("suppliers.statement.view");
+export const canViewCustomerStatement = needs("customers.statement.view");
+export const canUsePos = needs("pos.use");
+/** POS register: open / close a session, Cash In / Cash Out. */
+export const canManagePosRegister = needs("pos.register.manage");
+export const canManageExpenses = needs("expenses.manage");
+export const canManageExpenseCategories = needs("expenses.categories.manage");
+export const canManageCashBankAccounts = needs("finance.accounts.manage");
+export const canRecordCashBankTransactions = needs("finance.transactions.record");
+/** Cost data (product costs, purchase costs, transfer unit costs). */
+export const canViewCost = needs("cost.view");
+/** CSV / file exports (warehouse export). */
+export const canExport = needs("export.use");
+export const canPrintBarcodes = needs("barcode.print");
+export const canViewProducts = (who: Who) => hasPermission(who, "products.view") || hasPermission(who, "products.manage");
 
-/** Product catalog (categories, …): every signed-in role may view; OWNER and ADMIN may change it. */
-export function canManageCatalog(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/** Suppliers: every signed-in role may view/search; only OWNER and ADMIN may create, edit or delete. */
-export function canManageSuppliers(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/** Customers: every signed-in role may view/search; only OWNER and ADMIN may create, edit or delete. */
-export function canManageCustomers(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/** Inventory Reports (stock balance, product movement, low stock): OWNER and ADMIN only; read-only. */
-export function canViewInventoryReports(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/** Profit & Loss: OWNER and ADMIN only; read-only (it exposes costs, margins and expenses). */
-export function canViewProfitLoss(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/** Opening Inventory Cost Setup (Profit & Loss cutover): OWNER only. ADMIN may view Profit & Loss but cannot set the baseline. */
-export function canSetCostBaseline(role: string | undefined): boolean {
-  return role === "OWNER";
-}
-
-/** Cash Flow report: OWNER and ADMIN only; read-only (it exposes every Cash & Bank movement). */
-export function canViewCashFlow(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/** Receivables & Payables Aging report: OWNER and ADMIN only; read-only (it exposes every unpaid customer and supplier balance). */
-export function canViewAging(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/** Products: every signed-in role may view/search; only OWNER and ADMIN may create or edit. */
-export function canManageProducts(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/**
- * Inventory transfers: every signed-in role may view/search the history; only OWNER and ADMIN may
- * create, edit/delete pending transfers, send or complete them. Costs are shown to them only.
- */
-export function canManageTransfers(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/** Stock adjustments: every signed-in role may view/search; only OWNER and ADMIN may create, edit or delete. */
-export function canManageAdjustments(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/**
- * Finance (Cash & Bank): OWNER and ADMIN may view accounts and transactions; USER may not access
- * Finance at all (routes redirect and no finance data is sent).
- */
-export function canViewFinance(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/** Purchases: OWNER and ADMIN view, create and receive; USER has no access (costs, supplier totals). */
-export function canManagePurchases(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/** Purchase returns: same audience as Purchases — OWNER and ADMIN view and create; USER has no access. */
-export function canManagePurchaseReturns(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/** Supplier payments: OWNER and ADMIN view and record them; USER has no access. */
-export function canManageSupplierPayments(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/**
- * Quotations: OWNER and ADMIN view, create, edit/delete drafts and change permitted statuses;
- * USER has no access (customer prices and offers).
- */
-export function canManageQuotations(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/**
- * Sales: OWNER and ADMIN view, create, edit/delete pending sales, complete them and convert
- * accepted quotations; USER has no access (prices, customer invoices, stock deductions).
- */
-export function canManageSales(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/** Sales returns: same audience as Sales — OWNER and ADMIN view and create; USER has no access. */
-export function canManageSaleReturns(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/** Customer payments: OWNER and ADMIN view and record them; USER has no access. */
-export function canManageCustomerPayments(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/** Supplier account statement (purchases, returns, payments, balances): OWNER and ADMIN only. */
-export function canViewSupplierStatement(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/** POS checkout (creates a completed sale + payment + stock/ledger effects): OWNER and ADMIN only. */
-export function canUsePos(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/** Customer account statement (sales, returns, payments, balances): OWNER and ADMIN only. */
-export function canViewCustomerStatement(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/** Expenses (Finance): OWNER and ADMIN view, create, edit and delete; USER has no access. */
-export function canManageExpenses(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/** Expense categories (Finance): OWNER and ADMIN view and manage them; USER has no access. */
-export function canManageExpenseCategories(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/** Cash & bank accounts: OWNER and ADMIN may create, edit, activate or deactivate them (never delete). */
-export function canManageCashBankAccounts(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/** Cash & bank transactions (manual deposit / withdrawal / internal transfer): OWNER and ADMIN. */
-export function canRecordCashBankTransactions(role: string | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-/**
- * Users management (/users and everything under it) is OWNER-only. ADMIN and USER are redirected
- * to /dashboard and never receive user data; every Users Server Action re-checks this.
- */
-export function canManageUsers(role: string | undefined): boolean {
-  return role === "OWNER";
-}
-
-/**
- * System Settings (/settings and everything under it, e.g. /settings/theme) are OWNER-only.
- * ADMIN and USER must never read or change them. Enforced server-side in the settings layout,
- * every settings page and every settings Server Action — not only in the UI or proxy.
- */
-export function canManageSystemSettings(role: string | undefined): boolean {
-  return role === "OWNER";
-}
+/** Users: OWNER only. */
+export const canManageUsers = ownerOnly;
+/** Roles & Permissions: OWNER only (never grantable, not even to ADMIN). */
+export const canManageRoles = ownerOnly;
+/** System Settings (company data, default currency, theme, denominations, languages): OWNER only. */
+export const canManageSystemSettings = ownerOnly;

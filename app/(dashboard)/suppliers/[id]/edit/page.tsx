@@ -19,7 +19,7 @@ export default async function EditSupplierPage({ params }: PageProps<"/suppliers
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageSuppliers(session.user.role)) redirect("/suppliers");
+  if (!canManageSuppliers(session.user)) redirect("/suppliers");
 
   const { id } = await params;
   const s = await db.supplier.findUnique({ where: { id } });

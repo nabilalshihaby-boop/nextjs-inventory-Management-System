@@ -22,7 +22,7 @@ const idSchema = z.string().trim().min(1).max(64);
 async function authorize(t: Dictionary): Promise<CurrencyResult | null> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, message: t.common.sessionExpired };
-  if (!canManageCurrencies(session.user.role)) return { ok: false, message: t.currencies.err.noPermission };
+  if (!canManageCurrencies(session.user)) return { ok: false, message: t.currencies.err.noPermission };
   return null;
 }
 

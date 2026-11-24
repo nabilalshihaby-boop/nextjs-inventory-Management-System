@@ -19,7 +19,7 @@ export default async function Page({ searchParams }: PageProps<"/inventory-repor
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canViewInventoryReports(session.user.role)) redirect("/dashboard");
+  if (!canViewInventoryReports(session.user)) redirect("/dashboard");
 
   const sp = await searchParams;
   const s = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string).slice(0, 64) : "");

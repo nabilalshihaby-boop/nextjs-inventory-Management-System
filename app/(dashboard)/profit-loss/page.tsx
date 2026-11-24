@@ -20,7 +20,7 @@ export default async function Page({ searchParams }: PageProps<"/profit-loss">) 
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canViewProfitLoss(session.user.role)) redirect("/dashboard");
+  if (!canViewProfitLoss(session.user)) redirect("/dashboard");
 
   const sp = await searchParams;
   const s = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string).slice(0, 64) : "");
@@ -29,7 +29,7 @@ export default async function Page({ searchParams }: PageProps<"/profit-loss">) 
   return (
     <ProfitLossForm
       currencies={currencies.map((c) => ({ id: c.id, label: `${c.code} (${c.symbol}) — ${c.name}` }))}
-      canSetup={canSetCostBaseline(session.user.role)}
+      canSetup={canSetCostBaseline(session.user)}
       initial={{ from: s("from") || `${today.slice(0, 8)}01`, to: s("to") || today, currency: s("currency") }}
     />
   );

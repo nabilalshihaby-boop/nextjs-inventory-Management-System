@@ -1,3 +1,4 @@
+import { recordOutOfScope } from "@/lib/access-scope";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
@@ -28,11 +29,12 @@ export default async function SaleDetailsPage({ params }: PageProps<"/sales/[id]
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageSales(session.user.role)) redirect("/dashboard");
+  if (!canManageSales(session.user)) redirect("/dashboard");
 
   const { id } = await params;
   const { locale, dict: T } = await getLocaleInfo();
   const D = T.sales.details;
+  if (await recordOutOfScope("sale", id)) notFound();
   const s = await db.sale.findUnique({
     where: { id },
     include: { customer: true, warehouse: { select: { name: true } }, currency: { select: { code: true, symbol: true } }, quotation: { select: { id: true, reference: true } }, items: { orderBy: { id: "asc" } } },

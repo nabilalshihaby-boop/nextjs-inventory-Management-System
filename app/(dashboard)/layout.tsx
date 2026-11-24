@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { auth } from "@/auth";
-import { roleLabel } from "@/lib/roles";
+import { canUsePos, canViewProducts, roleLabel } from "@/lib/roles";
 import AppShell from "@/components/layout/AppShell";
 import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
@@ -48,9 +48,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
       )}
       {/* Role-restricted items (Users/Settings: OWNER; Finance: OWNER/ADMIN) are hidden for other
           roles — UX only; the routes themselves stay protected server-side. */}
-      <Sidebar brand={brand.name} logo={brand.logo} role={role} />
+      <Sidebar brand={brand.name} logo={brand.logo} user={{ role, permissions: session.user.permissions }} />
       <div className="bp-main">
-        <Topbar user={user} />
+        <Topbar user={user} showPos={canUsePos(session.user)} showProducts={canViewProducts(session.user)} />
         <main className="bp-content">{children}</main>
         <Footer text={brand.footerCustom || fmt(t.shell.footerDefault, { name: brand.name })} version={brand.version} />
       </div>

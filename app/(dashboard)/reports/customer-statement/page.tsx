@@ -38,7 +38,7 @@ export default async function CustomerStatementReportPage({ searchParams }: Page
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canViewCustomerStatement(session.user.role)) redirect("/dashboard");
+  if (!canViewCustomerStatement(session.user)) redirect("/dashboard");
 
   const sp = await searchParams;
   const one = (v: unknown) => (Array.isArray(v) ? v[0] : v);

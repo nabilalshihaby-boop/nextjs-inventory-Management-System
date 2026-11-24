@@ -5,6 +5,7 @@ import { auth } from "@/auth";
 import { canManageUsers } from "@/lib/roles";
 import { getDict } from "@/lib/i18n/server";
 import UserForm from "@/components/users/UserForm";
+import { getAccessFormData } from "@/lib/access-form";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: (await getDict()).users.createTitle };
@@ -17,7 +18,7 @@ export default async function CreateUserPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageUsers(session.user.role)) redirect("/dashboard");
+  if (!canManageUsers(session.user)) redirect("/dashboard");
 
-  return <UserForm />;
+  return <UserForm {...await getAccessFormData()} />;
 }

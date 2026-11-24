@@ -1,3 +1,4 @@
+import { warehouseIdFilter } from "@/lib/access-scope";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
@@ -26,6 +27,7 @@ export default async function AdjustmentsPage() {
 
   const [adjustments, settings] = await Promise.all([
     db.stockAdjustment.findMany({
+      where: await warehouseIdFilter(),
       orderBy: { number: "desc" },
       select: {
         id: true,
@@ -46,5 +48,5 @@ export default async function AdjustmentsPage() {
     lines: a.items.map((i) => ({ product: i.product.name, code: i.product.code, type: i.type, quantity: formatQuantity(i.quantity.toFixed(3)), unit: i.unitName ?? i.product.productUnit.name })),
   }));
 
-  return <AdjustmentsTable rows={rows} canManage={canManageAdjustments(session.user.role)} />;
+  return <AdjustmentsTable rows={rows} canManage={canManageAdjustments(session.user)} />;
 }

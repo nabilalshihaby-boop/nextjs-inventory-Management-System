@@ -1,3 +1,4 @@
+import { warehouseFilter } from "@/lib/access-scope";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
@@ -25,7 +26,7 @@ export default async function WarehousePage() {
 
   const { locale } = await getLocaleInfo();
   const [warehouses, settings] = await Promise.all([
-    db.warehouse.findMany({ orderBy: { createdAt: "desc" } }),
+    db.warehouse.findMany({ where: await warehouseFilter(), orderBy: { createdAt: "desc" } }),
     getSystemSettings(),
   ]);
   const countryName = new Map(getCountryOptions(locale).map((c) => [c.code, c.name]));
@@ -42,5 +43,5 @@ export default async function WarehousePage() {
     createdOn: formatDateTime(w.createdAt, settings?.dateFormat, locale),
   }));
 
-  return <WarehouseTable rows={rows} canManage={canManageWarehouses(session.user.role)} />;
+  return <WarehouseTable rows={rows} canManage={canManageWarehouses(session.user)} />;
 }

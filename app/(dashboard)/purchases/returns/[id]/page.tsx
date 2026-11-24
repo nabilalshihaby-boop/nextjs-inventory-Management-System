@@ -1,3 +1,4 @@
+import { recordOutOfScope } from "@/lib/access-scope";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -33,11 +34,12 @@ export default async function PurchaseReturnDetailsPage({ params }: PageProps<"/
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManagePurchaseReturns(session.user.role)) redirect("/dashboard");
+  if (!canManagePurchaseReturns(session.user)) redirect("/dashboard");
 
   const { id } = await params;
   const { locale, dict: T } = await getLocaleInfo();
   const D = T.purchaseReturns.details;
+  if (await recordOutOfScope("purchaseReturn", id)) notFound();
   const r = await db.purchaseReturn.findUnique({
     where: { id },
     include: {

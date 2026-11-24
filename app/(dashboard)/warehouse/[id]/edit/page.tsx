@@ -1,3 +1,4 @@
+import { inScope } from "@/lib/access-scope";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
@@ -19,9 +20,10 @@ export default async function EditWarehousePage({ params }: PageProps<"/warehous
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageWarehouses(session.user.role)) redirect("/warehouse");
+  if (!canManageWarehouses(session.user)) redirect("/warehouse");
 
   const { id } = await params;
+  if (!(await inScope([id]))) notFound();
   const w = await db.warehouse.findUnique({ where: { id } });
   if (!w) notFound();
   const { locale } = await getLocaleInfo();

@@ -21,7 +21,7 @@ export default async function CustomerPaymentsPage({ searchParams }: PageProps<"
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageCustomerPayments(session.user.role)) redirect("/dashboard");
+  if (!canManageCustomerPayments(session.user)) redirect("/dashboard");
 
   const [rows, customers, currency] = await Promise.all([
     getCustomerPaymentRows(),

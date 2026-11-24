@@ -1,4 +1,5 @@
 // Server-only loaders for the Sales pages (OWNER/ADMIN — callers check the role first).
+import { recordOutOfScope, warehouseIdFilter } from "@/lib/access-scope";
 import { db } from "@/lib/db";
 import { formatDateOnly, formatDateTime } from "@/lib/format";
 import { getLocale } from "@/lib/i18n/server";
@@ -42,7 +43,7 @@ export async function saleReturnState(saleIds: string[]): Promise<Map<string, { 
 /** A sale's stored values for the edit form (null if missing). */
 export async function getSaleDraft(id: string): Promise<{ status: SaleStatusValue; reference: string; draft: SaleDraft } | null> {
   const [s, settings] = await Promise.all([
-    db.sale.findUnique({
+    (await recordOutOfScope("sale", id)) ? Promise.resolve(null) : db.sale.findUnique({
       where: { id },
       select: {
         id: true, reference: true, status: true, saleDate: true, warehouseId: true, customerId: true, orderTaxRate: true, discount: true, shipping: true, notes: true,
@@ -95,6 +96,7 @@ export async function getSaleRows(): Promise<SaleRow[]> {
   const locale = await getLocale();
   const [rows, settings, def] = await Promise.all([
     db.sale.findMany({
+      where: await warehouseIdFilter(),
       orderBy: { number: "desc" },
       select: { id: true, reference: true, status: true, saleDate: true, grandTotal: true, paidAmount: true, createdAt: true, currencyId: true, customerId: true, customer: { select: { name: true } }, warehouse: { select: { name: true } }, currency: { select: { code: true, symbol: true } }, quotation: { select: { reference: true } } },
     }),

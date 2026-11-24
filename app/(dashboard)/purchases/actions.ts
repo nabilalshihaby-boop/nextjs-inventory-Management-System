@@ -1,5 +1,6 @@
 "use server";
 
+import { recordScopeError, scopeError } from "@/lib/access-scope";
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -38,7 +39,7 @@ async function authorize(): Promise<{ userId: string; t: Dictionary } | { error:
   const s = await auth();
   const t = await getDict();
   if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
-  if (!canManagePurchases(s.user.role)) return { error: { ok: false, message: t.purchases.err.noPermission } };
+  if (!canManagePurchases(s.user)) return { error: { ok: false, message: t.purchases.err.noPermission } };
   return { userId: s.user.id, t };
 }
 
@@ -94,6 +95,8 @@ export async function createPurchase(input: unknown): Promise<PurchaseResult> {
   const v = parse(input, t);
   if (!v.ok) return v.error;
   const d = v.data;
+  const scopeMsg = await scopeError([d.warehouseId]);
+  if (scopeMsg) return { ok: false, message: scopeMsg };
   const currency = await getDefaultCurrency();
   if (!currency) return { ok: false, message: t.purchases.err.noCurrency };
 
@@ -199,6 +202,8 @@ export async function markPurchaseReceived(id: unknown): Promise<PurchaseResult>
   const t = a.t;
   const pid = idSchema.safeParse(id);
   if (!pid.success) return { ok: false, message: t.purchases.err.notFound };
+  const scopeRec = await recordScopeError("purchase", pid.data);
+  if (scopeRec) return { ok: false, message: scopeRec };
   const p = await db.purchase.findUnique({ where: { id: pid.data }, select: { id: true, reference: true, status: true } });
   if (!p) return { ok: false, message: t.purchases.err.notFound };
   if (p.status === "RECEIVED") return { ok: false, message: tr(t, "purchases.err.alreadyReceived", { ref: p.reference }) };

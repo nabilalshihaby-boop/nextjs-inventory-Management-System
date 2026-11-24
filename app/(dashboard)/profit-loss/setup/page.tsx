@@ -24,7 +24,7 @@ export default async function Page({ searchParams }: PageProps<"/profit-loss/set
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canSetCostBaseline(session.user.role)) redirect(session.user.role === "ADMIN" ? "/profit-loss" : "/dashboard");
+  if (!canSetCostBaseline(session.user)) redirect(session.user.role === "ADMIN" ? "/profit-loss" : "/dashboard");
 
   const { locale } = await getLocaleInfo();
   const sp = await searchParams;

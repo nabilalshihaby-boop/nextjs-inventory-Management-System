@@ -36,7 +36,7 @@ async function authorize(): Promise<{ userId: string; t: Dictionary } | { error:
   const s = await auth();
   const t = await getDict();
   if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
-  if (!canManageExpenses(s.user.role)) return { error: { ok: false, message: t.expenses.err.noPermission } };
+  if (!canManageExpenses(s.user)) return { error: { ok: false, message: t.expenses.err.noPermission } };
   return { userId: s.user.id, t };
 }
 

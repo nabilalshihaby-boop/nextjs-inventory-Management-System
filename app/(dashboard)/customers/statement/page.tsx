@@ -21,7 +21,7 @@ export default async function CustomerStatementPage({ searchParams }: PageProps<
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canViewCustomerStatement(session.user.role)) redirect("/dashboard");
+  if (!canViewCustomerStatement(session.user)) redirect("/dashboard");
 
   const sp = await searchParams;
   const str = (v: unknown) => (typeof v === "string" ? v.slice(0, 64) : undefined);

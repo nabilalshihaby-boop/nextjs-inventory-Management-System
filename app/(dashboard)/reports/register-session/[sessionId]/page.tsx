@@ -28,7 +28,7 @@ export default async function RegisterSessionReportPage({ params }: PageProps<"/
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canUsePos(session.user.role)) redirect("/dashboard");
+  if (!canUsePos(session.user)) redirect("/dashboard");
 
     const { sessionId } = await params;
   const { dict: T, locale } = await getLocaleInfo();

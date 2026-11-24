@@ -1,3 +1,4 @@
+import { recordOutOfScope } from "@/lib/access-scope";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
@@ -22,9 +23,10 @@ export default async function EditAdjustmentPage({ params }: PageProps<"/adjustm
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageAdjustments(session.user.role)) redirect("/adjustments");
+  if (!canManageAdjustments(session.user)) redirect("/adjustments");
 
   const { id } = await params;
+  if (await recordOutOfScope("adjustment", id)) notFound();
   const a = await db.stockAdjustment.findUnique({
     where: { id },
     select: { id: true, reference: true, warehouseId: true, adjustmentDate: true, items: { orderBy: { id: "asc" }, select: { productId: true, quantity: true, type: true, unitId: true, baseQuantity: true } } },

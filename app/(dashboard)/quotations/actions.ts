@@ -1,5 +1,6 @@
 "use server";
 
+import { recordScopeError, scopeError } from "@/lib/access-scope";
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -56,7 +57,7 @@ async function authorize(): Promise<{ userId: string; t: Dictionary } | { error:
   const s = await auth();
   const t = await getDict();
   if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
-  if (!canManageQuotations(s.user.role)) return { error: { ok: false, message: t.quotations.err.noPermission } };
+  if (!canManageQuotations(s.user)) return { error: { ok: false, message: t.quotations.err.noPermission } };
   return { userId: s.user.id, t };
 }
 
@@ -146,6 +147,8 @@ export async function createQuotation(input: unknown): Promise<QuotationResult> 
   const v = parse(input, t);
   if (!v.ok) return v.error;
   const d = v.data;
+  const scopeMsg = await scopeError([d.warehouseId]);
+  if (scopeMsg) return { ok: false, message: scopeMsg };
   const currency = await getDefaultCurrency();
   if (!currency) return { ok: false, message: t.quotations.err.noCurrency };
   const p = await prepare(d, t);
@@ -192,9 +195,13 @@ export async function updateQuotation(id: unknown, input: unknown): Promise<Quot
   const t = a.t;
   const qid = idSchema.safeParse(id);
   if (!qid.success) return { ok: false, message: t.quotations.err.notFound };
+  const scopeRec = await recordScopeError("quotation", qid.data);
+  if (scopeRec) return { ok: false, message: scopeRec };
   const v = parse(input, t);
   if (!v.ok) return v.error;
   const d = v.data;
+  const scopeMsg = await scopeError([d.warehouseId]);
+  if (scopeMsg) return { ok: false, message: scopeMsg };
   const p = await prepare(d, t);
   if (!p.ok) return p.error;
 
@@ -237,6 +244,8 @@ export async function deleteQuotation(id: unknown): Promise<QuotationResult> {
   if ("error" in a) return a.error;
   const qid = idSchema.safeParse(id);
   if (!qid.success) return { ok: false, message: a.t.quotations.err.notFound };
+  const scopeRec = await recordScopeError("quotation", qid.data);
+  if (scopeRec) return { ok: false, message: scopeRec };
   try {
     const ref = await db.$transaction(async (tx) => {
       const q = await lockQuotation(tx, qid.data);
@@ -259,6 +268,8 @@ export async function changeQuotationStatus(id: unknown, to: unknown): Promise<Q
   if ("error" in a) return a.error;
   const qid = idSchema.safeParse(id);
   if (!qid.success) return { ok: false, message: a.t.quotations.err.notFound };
+  const scopeRec = await recordScopeError("quotation", qid.data);
+  if (scopeRec) return { ok: false, message: scopeRec };
   const target = statusSchema.safeParse(to);
   if (!target.success) return { ok: false, message: a.t.quotations.err.chooseStatus };
   try {

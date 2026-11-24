@@ -1,4 +1,5 @@
 // Server-only loaders for Sales Returns (OWNER/ADMIN — callers check the role first).
+import { warehouseIdFilter } from "@/lib/access-scope";
 import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
 import { formatDateOnly, formatDateTime } from "@/lib/format";
@@ -14,7 +15,7 @@ import type { SaleReturnRow, SaleReturnSource } from "@/lib/sale-returns";
 export async function getSaleReturnSources(): Promise<SaleReturnSource[]> {
   const settings = await getSystemSettings();
   const sales = await db.sale.findMany({
-    where: { status: "COMPLETED" },
+    where: { status: "COMPLETED", ...(await warehouseIdFilter()) },
     orderBy: { number: "desc" },
     select: {
       id: true, reference: true, saleDate: true, warehouseId: true, subtotal: true, orderTaxAmount: true, orderTaxRate: true, discount: true, grandTotal: true, paidAmount: true,
@@ -85,6 +86,7 @@ export async function getSaleReturnRows(): Promise<SaleReturnRow[]> {
   const locale = await getLocale();
   const [returns, settings, def] = await Promise.all([
     db.saleReturn.findMany({
+      where: await warehouseIdFilter(),
       orderBy: { number: "desc" },
       select: { id: true, reference: true, returnDate: true, grandTotal: true, createdAt: true, currencyId: true, customerId: true, currency: { select: { code: true, symbol: true } }, sale: { select: { id: true, reference: true } }, customer: { select: { name: true } }, warehouse: { select: { name: true } } },
     }),

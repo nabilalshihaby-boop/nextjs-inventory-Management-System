@@ -20,7 +20,7 @@ export default async function SalesPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageSales(session.user.role)) redirect("/dashboard");
+  if (!canManageSales(session.user)) redirect("/dashboard");
 
   const [rows, customers, currency] = await Promise.all([getSaleRows(), db.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }), getDefaultCurrency()]);
   return <SalesTable rows={rows} customers={customers} currency={currency ? { code: currency.code, symbol: currency.symbol, right: currency.right } : null} />;

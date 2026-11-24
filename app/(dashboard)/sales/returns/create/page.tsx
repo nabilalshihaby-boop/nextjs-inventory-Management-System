@@ -20,7 +20,7 @@ export default async function CreateSaleReturnPage({ searchParams }: PageProps<"
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageSaleReturns(session.user.role)) redirect("/dashboard");
+  if (!canManageSaleReturns(session.user)) redirect("/dashboard");
 
   const sp = await searchParams;
   const sources = await getSaleReturnSources();

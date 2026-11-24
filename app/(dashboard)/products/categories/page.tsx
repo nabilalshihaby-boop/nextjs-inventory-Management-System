@@ -26,7 +26,7 @@ export default async function ProductCategoriesPage() {
   return (
     <CatalogTable
       rows={rows}
-      canManage={canManageCatalog(session.user.role)}
+      canManage={canManageCatalog(session.user)}
       idPrefix="pc"
       entity="category"
       actions={{ create: createCategory, update: updateCategory, remove: deleteCategory }}

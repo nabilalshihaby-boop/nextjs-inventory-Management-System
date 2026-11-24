@@ -19,8 +19,8 @@ export default async function CreateSalePage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageSales(session.user.role)) redirect("/dashboard");
+  if (!canManageSales(session.user)) redirect("/dashboard");
 
   const data = await getSaleFormData();
-  return <SaleForm {...data} today={todayLocal()} canOpenSettings={canManageSystemSettings(session.user.role)} />;
+  return <SaleForm {...data} today={todayLocal()} canOpenSettings={canManageSystemSettings(session.user)} />;
 }

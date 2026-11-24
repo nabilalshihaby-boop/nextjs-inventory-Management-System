@@ -25,5 +25,5 @@ export default async function CurrenciesPage() {
     select: { id: true, name: true, code: true, symbol: true },
   });
 
-  return <CurrenciesTable rows={rows} canManage={canManageCurrencies(session.user.role)} />;
+  return <CurrenciesTable rows={rows} canManage={canManageCurrencies(session.user)} />;
 }

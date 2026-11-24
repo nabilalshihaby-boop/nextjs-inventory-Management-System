@@ -19,7 +19,7 @@ export default async function ExpenseCategoriesPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageExpenseCategories(session.user.role)) redirect("/dashboard");
+  if (!canManageExpenseCategories(session.user)) redirect("/dashboard");
 
   const rows = await db.expenseCategory.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } });
   return <ExpenseCategoriesTable rows={rows} />;

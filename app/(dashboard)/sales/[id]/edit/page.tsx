@@ -23,7 +23,7 @@ export default async function EditSalePage({ params }: PageProps<"/sales/[id]/ed
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageSales(session.user.role)) redirect("/dashboard");
+  if (!canManageSales(session.user)) redirect("/dashboard");
 
   const { id } = await params;
   const found = await getSaleDraft(id);
@@ -42,5 +42,5 @@ export default async function EditSalePage({ params }: PageProps<"/sales/[id]/ed
     );
   }
   const data = await getSaleFormData();
-  return <SaleForm {...data} draft={found.draft} today={todayLocal()} canOpenSettings={canManageSystemSettings(session.user.role)} />;
+  return <SaleForm {...data} draft={found.draft} today={todayLocal()} canOpenSettings={canManageSystemSettings(session.user)} />;
 }

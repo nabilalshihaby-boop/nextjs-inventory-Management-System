@@ -23,7 +23,7 @@ async function authorize(): Promise<ExpenseCategoryResult | null> {
   const session = await auth();
   const t = await getDict();
   if (!session?.user?.id) return { ok: false, message: t.common.sessionExpired };
-  if (!canManageExpenseCategories(session.user.role)) return { ok: false, message: t.expenses.cat.err.noPermission };
+  if (!canManageExpenseCategories(session.user)) return { ok: false, message: t.expenses.cat.err.noPermission };
   return null;
 }
 

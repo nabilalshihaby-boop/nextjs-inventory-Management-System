@@ -19,7 +19,7 @@ export default async function EditCustomerPage({ params }: PageProps<"/customers
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageCustomers(session.user.role)) redirect("/customers");
+  if (!canManageCustomers(session.user)) redirect("/customers");
 
   const { id } = await params;
   const c = await db.customer.findUnique({ where: { id } });

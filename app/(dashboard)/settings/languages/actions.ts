@@ -25,7 +25,7 @@ async function owner(): Promise<Owner> {
   const s = await auth();
   const t = await getDict();
   if (!s?.user?.id) return { ok: false, t, error: t.common.sessionExpired };
-  if (!canManageSystemSettings(s.user.role)) return { ok: false, t, error: t.langAdmin.onlyOwner };
+  if (!canManageSystemSettings(s.user)) return { ok: false, t, error: t.langAdmin.onlyOwner };
   const u = await db.user.findUnique({ where: { id: s.user.id }, select: { firstName: true, lastName: true } });
   return { ok: true, t, uid: s.user.id, name: u ? `${u.firstName} ${u.lastName}`.trim() : "" };
 }

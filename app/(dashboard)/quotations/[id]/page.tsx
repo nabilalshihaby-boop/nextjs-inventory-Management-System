@@ -1,3 +1,4 @@
+import { recordOutOfScope } from "@/lib/access-scope";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
@@ -24,11 +25,12 @@ export default async function QuotationDetailsPage({ params }: PageProps<"/quota
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageQuotations(session.user.role)) redirect("/dashboard");
+  if (!canManageQuotations(session.user)) redirect("/dashboard");
 
   const { id } = await params;
   const { locale, dict: T } = await getLocaleInfo();
   const D = T.quotations.details;
+  if (await recordOutOfScope("quotation", id)) notFound();
   const q = await db.quotation.findUnique({
     where: { id },
     include: { customer: true, warehouse: { select: { name: true } }, currency: { select: { code: true, symbol: true } }, items: { orderBy: { id: "asc" } }, sale: { select: { id: true, reference: true } } },

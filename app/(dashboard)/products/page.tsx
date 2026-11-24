@@ -1,3 +1,4 @@
+import { warehouseIdFilter } from "@/lib/access-scope";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
@@ -40,7 +41,7 @@ export default async function ProductsPage() {
       },
     }),
     // "In Stock" = on-hand quantity summed over all warehouses (ProductStock only).
-    db.productStock.groupBy({ by: ["productId"], _sum: { quantity: true } }),
+    db.productStock.groupBy({ by: ["productId"], where: await warehouseIdFilter(), _sum: { quantity: true } }),
     getSystemSettings(),
     getDefaultCurrency(),
   ]);
@@ -63,5 +64,5 @@ export default async function ProductsPage() {
     };
   });
 
-  return <ProductsTable rows={rows} canManage={canManageProducts(session.user.role)} />;
+  return <ProductsTable rows={rows} canManage={canManageProducts(session.user)} />;
 }

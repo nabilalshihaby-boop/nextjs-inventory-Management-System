@@ -20,7 +20,7 @@ export default async function RecordSupplierPaymentPage({ searchParams }: PagePr
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageSupplierPayments(session.user.role)) redirect("/dashboard");
+  if (!canManageSupplierPayments(session.user)) redirect("/dashboard");
 
   const sp = await searchParams;
   const data = await getSupplierPaymentFormData();

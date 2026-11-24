@@ -1,5 +1,6 @@
 "use server";
 
+import { scopeError } from "@/lib/access-scope";
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
@@ -55,7 +56,7 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
   const session = await auth();
   const dict = await getDict();
   if (!session?.user?.id) return { ok: false, message: dict.common.sessionExpired };
-  if (!canUsePos(session.user.role)) return { ok: false, message: dict.pos.noPermission };
+  if (!canUsePos(session.user)) return { ok: false, message: dict.pos.noPermission };
   const userId = session.user.id;
 
   const v = posCheckoutSchema.safeParse(input);
@@ -65,6 +66,8 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
     return { ok: false, message: Object.values(fieldErrors)[0] ?? "Please check the checkout", fieldErrors };
   }
   const d = v.data;
+  const scopeMsg = await scopeError([d.warehouseId]);
+  if (scopeMsg) return { ok: false, message: scopeMsg };
 
   // A finished checkout with this key: replay it (idempotent), never repeat any effect.
   const replay = async (): Promise<PosCheckoutResult | null> => {

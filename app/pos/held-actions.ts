@@ -1,5 +1,6 @@
 "use server";
 
+import { scopeError } from "@/lib/access-scope";
 import { randomBytes } from "node:crypto";
 import { auth } from "@/auth";
 import { Prisma } from "@/app/generated/prisma/client";
@@ -35,7 +36,7 @@ async function authorize(): Promise<{ userId: string; t: Dictionary } | { error:
   const s = await auth();
   const t = await getDict();
   if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
-  if (!canUsePos(s.user.role)) return { error: { ok: false, message: t.pos.noPermission } };
+  if (!canUsePos(s.user)) return { error: { ok: false, message: t.pos.noPermission } };
   return { userId: s.user.id, t };
 }
 
@@ -52,6 +53,10 @@ export async function holdPosOrder(input: unknown): Promise<HoldResult> {
   const v = holdOrderSchema.safeParse(input);
   if (!v.success) return { ok: false, message: v.error.issues[0]?.code === "unrecognized_keys" ? t.common.unexpectedFields : (v.error.issues[0]?.message.startsWith("posTx.") ? tr(t, v.error.issues[0].message) : (v.error.issues[0]?.message ?? t.common.checkForm)) };
   const d = v.data;
+  if (d.warehouseId) {
+    const scopeMsg = await scopeError([d.warehouseId]);
+    if (scopeMsg) return { ok: false, message: scopeMsg };
+  }
 
   const productIds = [...new Set(d.items.map((i) => i.productId))];
 
@@ -135,6 +140,10 @@ export async function resumeHeldOrder(id: unknown): Promise<ResumeResult> {
   if (!hid.success) return { ok: false, message: NOT_FOUND };
   const o = await db.posHeldOrder.findFirst({ where: { id: hid.data, createdById: a.userId, status: "HELD" }, include: { items: { orderBy: { id: "asc" } }, tenders: { orderBy: { position: "asc" } } } });
   if (!o) return { ok: false, message: NOT_FOUND };
+  if (o.warehouseId) {
+    const scopeMsg = await scopeError([o.warehouseId]);
+    if (scopeMsg) return { ok: false, message: scopeMsg };
+  }
 
   // Saved tender rows; an order held BEFORE split payments has none and carries one legacy account/method: it resumes as ONE tender.
   const saved = o.tenders.length ? o.tenders.map((t) => ({ paymentMethod: t.paymentMethod ?? "", cashBankAccountId: t.cashBankAccountId ?? "", amount: t.amount ? t.amount.toFixed(2) : "" })) : o.cashBankAccountId || o.paymentMethod ? [{ paymentMethod: o.paymentMethod ?? "", cashBankAccountId: o.cashBankAccountId ?? "", amount: "" }] : [];

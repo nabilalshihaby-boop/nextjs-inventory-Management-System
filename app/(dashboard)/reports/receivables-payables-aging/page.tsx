@@ -29,7 +29,7 @@ export default async function AgingReportPage({ searchParams }: PageProps<"/repo
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canViewAging(session.user.role)) redirect("/dashboard");
+  if (!canViewAging(session.user)) redirect("/dashboard");
 
   const { dict: T } = await getLocaleInfo();
   const A = T.aging;

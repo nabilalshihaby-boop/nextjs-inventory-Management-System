@@ -12,8 +12,8 @@ import { useT } from "@/components/i18n/I18nProvider";
 // `brand` and `logo` come from System Settings (company name/logo), with Bluepiller as fallback.
 // `role` (from the server session) decides which role-restricted items appear: Users/Settings for
 // the OWNER, Finance for OWNER/ADMIN. UX only — routes are protected server-side.
-export default function Sidebar({ brand = siteConfig.name, logo = null, role }: { brand?: string; logo?: string | null; role?: string }) {
-  const items = visibleNav(role);
+export default function Sidebar({ brand = siteConfig.name, logo = null, user }: { brand?: string; logo?: string | null; user?: { role?: string; permissions?: readonly string[] } }) {
+  const items = visibleNav(user);
   const { collapsed, toggleSidebar } = useShell();
   const [logoFailed, setLogoFailed] = useState(false);
   const [logoSrc, setLogoSrc] = useState(logo);

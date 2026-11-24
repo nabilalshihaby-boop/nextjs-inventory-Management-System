@@ -30,7 +30,7 @@ export default async function CashFlowReportPage({ searchParams }: PageProps<"/r
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canViewCashFlow(session.user.role)) redirect("/dashboard");
+  if (!canViewCashFlow(session.user)) redirect("/dashboard");
 
   const { dict: T } = await getLocaleInfo();
   const C = T.cashFlow;

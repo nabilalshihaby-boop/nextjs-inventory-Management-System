@@ -67,7 +67,7 @@ async function accountManager(): Promise<FinanceResult<AccountField> | null> {
     const u = await session();
   const t = await getDict();
   if (!u) return { ok: false, message: t.common.sessionExpired };
-  if (!canManageCashBankAccounts(u.role)) return { ok: false, message: t.finance.err.noPermissionAccounts };
+  if (!canManageCashBankAccounts(u)) return { ok: false, message: t.finance.err.noPermissionAccounts };
   return null;
 }
 
@@ -168,7 +168,7 @@ async function recorder(): Promise<{ userId: string; t: Dictionary } | { error: 
   const u = await session();
   const t = await getDict();
   if (!u) return { error: { ok: false, message: t.common.sessionExpired } };
-  if (!canRecordCashBankTransactions(u.role)) return { error: { ok: false, message: t.finance.err.noPermissionTx } };
+  if (!canRecordCashBankTransactions(u)) return { error: { ok: false, message: t.finance.err.noPermissionTx } };
   return { userId: u.id, t };
 }
 

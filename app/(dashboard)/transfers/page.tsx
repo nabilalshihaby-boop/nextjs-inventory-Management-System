@@ -1,3 +1,4 @@
+import { transferFilter } from "@/lib/access-scope";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
@@ -6,7 +7,7 @@ import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 import { getLocaleInfo } from "@/lib/i18n/server";
 import { formatMoney } from "@/lib/money";
-import { canManageTransfers } from "@/lib/roles";
+import { canManageTransfers, canViewCost } from "@/lib/roles";
 import { getDefaultCurrency, getSystemSettings } from "@/lib/settings";
 import { transferTotal, type TransferRow } from "@/lib/transfers";
 import TransfersTable from "@/components/transfers/TransfersTable";
@@ -23,11 +24,13 @@ export default async function TransfersPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  const canManage = canManageTransfers(session.user.role);
+  const canManage = canManageTransfers(session.user);
+  const showCost = canViewCost(session.user);
 
   const { locale } = await getLocaleInfo();
   const [transfers, settings, currency] = await Promise.all([
     db.stockTransfer.findMany({
+      where: await transferFilter(),
       orderBy: { number: "desc" },
       select: {
         id: true,
@@ -36,11 +39,11 @@ export default async function TransfersPage() {
         createdAt: true,
         fromWarehouse: { select: { name: true } },
         toWarehouse: { select: { name: true } },
-        items: { select: { quantity: true, unitCost: true } },
+        items: { select: showCost ? { quantity: true, unitCost: true } : { quantity: true } },
       },
     }),
     getSystemSettings(),
-    canManage ? getDefaultCurrency() : null,
+    showCost ? getDefaultCurrency() : null,
   ]);
 
   const rows: TransferRow[] = transfers.map((t) => ({
@@ -49,11 +52,11 @@ export default async function TransfersPage() {
     from: t.fromWarehouse.name,
     to: t.toWarehouse.name,
     items: t.items.length,
-    // Costs are never sent to USER.
-    total: canManage ? formatMoney(transferTotal(t.items.map((i) => ({ quantity: i.quantity.toFixed(3), unitCost: i.unitCost.toFixed(2) }))), currency) : null,
+    // Costs are only computed and sent with cost.view.
+    total: showCost ? formatMoney(transferTotal(t.items.map((i) => ({ quantity: i.quantity.toFixed(3), unitCost: "unitCost" in i ? (i as { unitCost: { toFixed(d: number): string } }).unitCost.toFixed(2) : "0.00" }))), currency) : null,
     status: t.status,
     createdOn: formatDateTime(t.createdAt, settings?.dateFormat, locale),
   }));
 
-  return <TransfersTable rows={rows} canManage={canManage} />;
+  return <TransfersTable rows={rows} canManage={canManage} showCost={showCost} />;
 }

@@ -23,7 +23,7 @@ export default async function StockBalanceReportPage({ searchParams }: PageProps
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canViewInventoryReports(session.user.role)) redirect("/dashboard");
+  if (!canViewInventoryReports(session.user)) redirect("/dashboard");
 
   const { dict: T } = await getLocaleInfo();
   const C = T.invReports.common;

@@ -22,7 +22,7 @@ async function authorize(): Promise<SupplierResult | null> {
   const session = await auth();
   const t = await getDict();
   if (!session?.user?.id) return { ok: false, message: t.common.sessionExpired };
-  if (!canManageSuppliers(session.user.role)) return { ok: false, message: t.suppliers.err.noPermission };
+  if (!canManageSuppliers(session.user)) return { ok: false, message: t.suppliers.err.noPermission };
   return null;
 }
 

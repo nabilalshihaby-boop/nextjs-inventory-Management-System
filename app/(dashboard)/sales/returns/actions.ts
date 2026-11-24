@@ -1,5 +1,6 @@
 "use server";
 
+import { recordScopeError } from "@/lib/access-scope";
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
@@ -52,7 +53,7 @@ async function authorize(): Promise<{ userId: string; t: Dictionary } | { error:
   const s = await auth();
   const t = await getDict();
   if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
-  if (!canManageSaleReturns(s.user.role)) return { error: { ok: false, message: t.salesReturns.err.noPermission } };
+  if (!canManageSaleReturns(s.user)) return { error: { ok: false, message: t.salesReturns.err.noPermission } };
   return { userId: s.user.id, t };
 }
 
@@ -67,6 +68,8 @@ export async function createSaleReturn(input: unknown): Promise<SaleReturnResult
     return { ok: false, message: Object.values(fieldErrors)[0] ?? t.common.checkForm, fieldErrors };
   }
   const d = v.data;
+  const scopeRec = await recordScopeError("sale", d.saleId);
+  if (scopeRec) return { ok: false, message: scopeRec };
   const settings = await getSystemSettings();
 
   for (let attempt = 1; ; attempt++) {

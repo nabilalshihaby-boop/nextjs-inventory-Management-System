@@ -20,12 +20,12 @@ export default async function CashBankTransactionsPage({ searchParams }: PagePro
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canViewFinance(session.user.role)) redirect("/dashboard");
+  if (!canViewFinance(session.user)) redirect("/dashboard");
 
     const sp = await searchParams;
   const { dict, locale } = await getLocaleInfo();
   const data = await getLedgerView(dict, locale);
   const wanted = typeof sp.account === "string" ? sp.account : "";
   const initialAccount = data.accounts.some((a) => a.id === wanted) ? wanted : "";
-  return <TransactionsView {...data} initialAccount={initialAccount} today={todayLocal()} canRecord={canRecordCashBankTransactions(session.user.role)} />;
+  return <TransactionsView {...data} initialAccount={initialAccount} today={todayLocal()} canRecord={canRecordCashBankTransactions(session.user)} />;
 }

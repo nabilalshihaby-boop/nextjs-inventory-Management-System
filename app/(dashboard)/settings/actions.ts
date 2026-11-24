@@ -54,7 +54,7 @@ export async function saveSettings(_prev: SettingsState, formData: FormData): Pr
   const session = await auth();
   const t = await getDict();
   if (!session?.user?.id) return { status: "error", message: t.common.sessionExpired, fieldErrors: {} };
-  if (!canManageSystemSettings(session.user.role)) return { status: "error", message: t.settings.onlyOwner, fieldErrors: {} };
+  if (!canManageSystemSettings(session.user)) return { status: "error", message: t.settings.onlyOwner, fieldErrors: {} };
 
   const parsed = makeSchema(t).safeParse({
     defaultCurrencyId: str(formData.get("defaultCurrencyId")),

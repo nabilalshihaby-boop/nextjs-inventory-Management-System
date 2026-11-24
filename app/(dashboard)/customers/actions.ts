@@ -22,7 +22,7 @@ async function authorize(): Promise<CustomerResult | null> {
   const session = await auth();
   const t = await getDict();
   if (!session?.user?.id) return { ok: false, message: t.common.sessionExpired };
-  if (!canManageCustomers(session.user.role)) return { ok: false, message: t.customers.err.noPermission };
+  if (!canManageCustomers(session.user)) return { ok: false, message: t.customers.err.noPermission };
   return null;
 }
 

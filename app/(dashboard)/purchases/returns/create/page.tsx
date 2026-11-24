@@ -20,7 +20,7 @@ export default async function CreatePurchaseReturnPage({ searchParams }: PagePro
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManagePurchaseReturns(session.user.role)) redirect("/dashboard");
+  if (!canManagePurchaseReturns(session.user)) redirect("/dashboard");
 
   const sp = await searchParams;
   const sources = await getReturnSources();

@@ -20,7 +20,7 @@ async function authorize(): Promise<DenominationResult | null> {
   const s = await auth();
   const t = await getDict();
   if (!s?.user?.id) return { ok: false, message: t.common.sessionExpired };
-  if (!canManageSystemSettings(s.user.role)) return { ok: false, message: t.denom.err.onlyOwner };
+  if (!canManageSystemSettings(s.user)) return { ok: false, message: t.denom.err.onlyOwner };
   return null;
 }
 function invalid(error: { issues: { path: PropertyKey[]; code: string; message: string }[] }, t: Dictionary): DenominationResult {

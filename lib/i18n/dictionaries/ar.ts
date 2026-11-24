@@ -28,6 +28,7 @@ import { arProfitLoss } from "@/lib/i18n/dictionaries/ar-profitloss";
 import { arCostSetup } from "@/lib/i18n/dictionaries/ar-costsetup";
 import { arCashFlow } from "@/lib/i18n/dictionaries/ar-cashflow";
 import { arAging } from "@/lib/i18n/dictionaries/ar-aging";
+import { arAccess } from "@/lib/i18n/dictionaries/ar-access";
 import { arUnits } from "@/lib/i18n/dictionaries/ar-units";
 import { arBarcode } from "@/lib/i18n/dictionaries/ar-barcode";
 export const ar: Dictionary = {
@@ -650,6 +651,7 @@ export const ar: Dictionary = {
   costSetup: arCostSetup,
   cashFlow: arCashFlow,
   aging: arAging,
+  access: arAccess,
   stockGuard: arStockGuard,
   units: arUnits,
   barcode: arBarcode,

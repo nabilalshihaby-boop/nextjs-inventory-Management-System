@@ -54,7 +54,7 @@ export function catalogActions(c: CatalogConfig) {
   async function authorize(t: Dictionary): Promise<CatalogResult | null> {
     const session = await auth();
     if (!session?.user?.id) return { ok: false, message: t.common.sessionExpired };
-    if (!canManageCatalog(session.user.role)) return { ok: false, message: fmt(t.catalog.err.noPermission, { plural: t.catalog[c.entity].plural }) };
+    if (!canManageCatalog(session.user)) return { ok: false, message: fmt(t.catalog.err.noPermission, { plural: t.catalog[c.entity].plural }) };
     return null;
   }
 

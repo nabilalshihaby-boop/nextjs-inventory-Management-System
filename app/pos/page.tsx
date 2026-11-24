@@ -20,7 +20,7 @@ export default async function PosPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canUsePos(session.user.role)) redirect("/dashboard");
+  if (!canUsePos(session.user)) redirect("/dashboard");
   const [data, held] = await Promise.all([getPosData(session.user.name?.trim() || session.user.email || "User", session.user.role, session.user.id), getHeldOrders(session.user.id)]);
   return <PosView data={data} initialHeld={held} />;
 }

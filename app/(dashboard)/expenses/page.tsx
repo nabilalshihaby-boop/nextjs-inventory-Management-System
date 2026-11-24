@@ -23,7 +23,7 @@ export default async function ExpensesPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageExpenses(session.user.role)) redirect("/dashboard");
+  if (!canManageExpenses(session.user)) redirect("/dashboard");
 
     const locale = await getLocale();
   const [expenses, settings] = await Promise.all([

@@ -18,7 +18,7 @@ export default async function CreateSupplierPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageSuppliers(session.user.role)) redirect("/suppliers");
+  if (!canManageSuppliers(session.user)) redirect("/suppliers");
 
   return <SupplierForm countries={getCountryOptions(await getLocale())} />;
 }

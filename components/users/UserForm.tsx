@@ -9,6 +9,7 @@ import { useT } from "@/components/i18n/I18nProvider";
 import { fmt } from "@/lib/i18n/config";
 import { createUser, updateUser, type UserResult } from "@/app/(dashboard)/users/actions";
 import { ASSIGNABLE_ROLES, MIN_PASSWORD, type UserField, type UserFormValues } from "@/lib/users";
+import type { AccessRoleOption } from "@/lib/access-form";
 
 // Port of design/Create User.html: PageHeader (+ Back), FormCard (2 columns, Cancel / Save):
 // Change Image (avatar picker), First Name, Last Name, Email, Phone Number, Password, Confirm
@@ -20,7 +21,7 @@ const ACCEPT = ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp";
 const EMPTY: UserFormValues = { firstName: "", lastName: "", email: "", phoneNumber: "", role: "", image: null };
 type Text = "firstName" | "lastName" | "email" | "phoneNumber" | "password" | "confirmPassword";
 
-export default function UserForm({ userId, initial }: { userId?: string; initial?: UserFormValues }) {
+export default function UserForm({ userId, initial, accessRoles = [], warehouses = [] }: { userId?: string; initial?: UserFormValues; accessRoles?: AccessRoleOption[]; warehouses?: { id: string; name: string }[] }) {
   const router = useRouter();
   const T = useT();
   const F = T.users.form;
@@ -32,6 +33,8 @@ export default function UserForm({ userId, initial }: { userId?: string; initial
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [removeAvatar, setRemoveAvatar] = useState(false);
+  const [accessRoleId, setAccessRoleId] = useState(start.accessRoleId ?? "");
+  const [warehouseIds, setWarehouseIds] = useState<string[]>(start.warehouseIds ?? []);
   const [pending, startTransition] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -79,6 +82,10 @@ export default function UserForm({ userId, initial }: { userId?: string; initial
     }
     const fd = new FormData();
     for (const [k, v] of Object.entries(f)) fd.set(k, v);
+    if (f.role === "USER") {
+      fd.set("accessRoleId", accessRoleId);
+      if (selectedRole?.needsScope) for (const w of warehouseIds) fd.append("warehouseIds", w);
+    }
     if (file) fd.set("avatar", file);
     if (removeAvatar) fd.set("removeAvatar", "on");
     startTransition(async () => {
@@ -101,6 +108,8 @@ export default function UserForm({ userId, initial }: { userId?: string; initial
     });
   }
 
+  const A = T.access;
+  const selectedRole = accessRoles.find((r) => r.id === accessRoleId);
   const shown = removeAvatar ? null : (preview ?? start.image);
   const field = (k: Text, label: string, placeholder: string, type = "text", required = true, autoComplete?: string) => (
     <div className={"sp-field" + (e[k] ? " sp-field--error" : "")}>
@@ -198,6 +207,51 @@ export default function UserForm({ userId, initial }: { userId?: string; initial
               </select>
               {e.role && <span className="sp-error" id="us-role-error">{e.role}</span>}
             </div>
+            {f.role === "ADMIN" && (
+              <span className="t-caption sp-span-all" data-testid="us-admin-note">
+                {A.user.adminNote}
+              </span>
+            )}
+            {f.role === "USER" && (
+              <>
+                <div className={"sp-field" + (e.accessRoleId ? " sp-field--error" : "")}>
+                  <label className="sp-label" htmlFor="us-access-role">
+                    {A.user.operationalRole}
+                  </label>
+                  <select id="us-access-role" name="accessRoleId" className="sp-select " value={accessRoleId} onChange={(ev) => (setAccessRoleId(ev.target.value), setE({ ...e, accessRoleId: "" }))}>
+                    <option value="">{A.user.unassigned}</option>
+                    {accessRoles
+                      .filter((r) => r.active || r.id === accessRoleId)
+                      .map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.label}
+                          {r.active ? "" : ` ${A.user.inactiveSuffix}`}
+                        </option>
+                      ))}
+                  </select>
+                  <span className="sp-hint">{accessRoleId ? "" : A.user.unassignedHint}</span>
+                  {e.accessRoleId && <span className="sp-error">{e.accessRoleId}</span>}
+                </div>
+                {selectedRole?.needsScope && (
+                  <div className="sp-field sp-span-all" data-testid="us-warehouses">
+                    <span className="sp-label">{A.user.warehouses}</span>
+                    {warehouses.length === 0 ? (
+                      <span className="sp-hint">{A.user.noWarehouses}</span>
+                    ) : (
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "8px 20px" }}>
+                        {warehouses.map((w) => (
+                          <label key={w.id} className="sp-check">
+                            <input type="checkbox" checked={warehouseIds.includes(w.id)} onChange={(ev) => setWarehouseIds(ev.target.checked ? [...warehouseIds, w.id] : warehouseIds.filter((x) => x !== w.id))} data-warehouse={w.id} />
+                            {w.name}
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    <span className="sp-hint">{A.user.warehousesHint}</span>
+                  </div>
+                )}
+              </>
+            )}
             {editing && (
               <span className="t-caption sp-span-all" style={{ marginTop: -8 }}>
                 {fmt(F.editHint, { min: MIN_PASSWORD })}

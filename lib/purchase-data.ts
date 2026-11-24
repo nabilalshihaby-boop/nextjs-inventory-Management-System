@@ -1,4 +1,5 @@
 // Server-only loaders for the Purchases pages (OWNER/ADMIN — callers check the role first).
+import { warehouseFilter, warehouseIdFilter } from "@/lib/access-scope";
 import { db } from "@/lib/db";
 import { getDefaultCurrency } from "@/lib/settings";
 import { unitOptionsFor } from "@/lib/product-units";
@@ -16,9 +17,9 @@ export type PurchaseFormData = {
 export async function getPurchaseFormData(): Promise<PurchaseFormData> {
   const [suppliers, warehouses, products, stock, currency] = await Promise.all([
     db.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
-    db.warehouse.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.warehouse.findMany({ where: await warehouseFilter(), orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.product.findMany({ orderBy: { name: "asc" }, select: { id: true, code: true, name: true, cost: true, taxType: true, orderTax: true, purchaseUnit: { select: { name: true } } } }),
-    db.productStock.findMany({ select: { productId: true, warehouseId: true, quantity: true } }),
+    db.productStock.findMany({ where: await warehouseIdFilter(), select: { productId: true, warehouseId: true, quantity: true } }),
     getDefaultCurrency(),
   ]);
   const units = await unitOptionsFor(db, products.map((p) => p.id));

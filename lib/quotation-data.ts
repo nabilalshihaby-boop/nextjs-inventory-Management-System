@@ -1,4 +1,5 @@
 // Server-only loaders for the Quotations pages (OWNER/ADMIN — callers check the role first).
+import { recordOutOfScope, warehouseFilter, warehouseIdFilter } from "@/lib/access-scope";
 import { db } from "@/lib/db";
 import { formatDateOnly, formatDateTime } from "@/lib/format";
 import { getLocale } from "@/lib/i18n/server";
@@ -17,9 +18,9 @@ export type QuotationFormData = {
 export async function getQuotationFormData(): Promise<QuotationFormData> {
   const [customers, warehouses, products, stock, currency] = await Promise.all([
     db.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
-    db.warehouse.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.warehouse.findMany({ where: await warehouseFilter(), orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.product.findMany({ orderBy: { name: "asc" }, select: { id: true, code: true, name: true, price: true, taxType: true, orderTax: true, productUnit: { select: { name: true } } } }),
-    db.productStock.findMany({ select: { productId: true, warehouseId: true, quantity: true } }),
+    db.productStock.findMany({ where: await warehouseIdFilter(), select: { productId: true, warehouseId: true, quantity: true } }),
     getDefaultCurrency(),
   ]);
   return {
@@ -34,7 +35,7 @@ export async function getQuotationFormData(): Promise<QuotationFormData> {
 /** A DRAFT quotation's stored values for the edit form (null if missing). */
 export async function getQuotationDraft(id: string): Promise<{ status: QuotationStatusValue; reference: string; draft: QuotationDraft } | null> {
   const [q, settings] = await Promise.all([
-    db.quotation.findUnique({
+    (await recordOutOfScope("quotation", id)) ? Promise.resolve(null) : db.quotation.findUnique({
       where: { id },
       select: {
         id: true, reference: true, status: true, quotationDate: true, warehouseId: true, customerId: true, orderTaxRate: true, discount: true, shipping: true, notes: true,
@@ -80,6 +81,7 @@ export async function getQuotationRows(): Promise<QuotationRow[]> {
   const locale = await getLocale();
   const [rows, settings, def] = await Promise.all([
     db.quotation.findMany({
+      where: await warehouseIdFilter(),
       orderBy: { number: "desc" },
       select: { id: true, reference: true, status: true, quotationDate: true, grandTotal: true, createdAt: true, currencyId: true, customerId: true, customer: { select: { name: true } }, warehouse: { select: { name: true } }, currency: { select: { code: true, symbol: true } }, sale: { select: { id: true, reference: true } } },
     }),

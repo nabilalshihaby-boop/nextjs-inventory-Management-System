@@ -18,7 +18,7 @@ export default async function CreateWarehousePage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageWarehouses(session.user.role)) redirect("/warehouse");
+  if (!canManageWarehouses(session.user)) redirect("/warehouse");
 
   const { locale } = await getLocaleInfo();
   return <WarehouseForm countries={getCountryOptions(locale)} />;

@@ -21,7 +21,7 @@ export default async function SaleReturnsPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageSaleReturns(session.user.role)) redirect("/dashboard");
+  if (!canManageSaleReturns(session.user)) redirect("/dashboard");
 
   const [rows, customers, currency] = await Promise.all([getSaleReturnRows(), db.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }), getDefaultCurrency()]);
   return <SaleReturnsTable rows={rows} customers={customers} currency={currency ? { code: currency.code, symbol: currency.symbol, right: currency.right } : null} />;

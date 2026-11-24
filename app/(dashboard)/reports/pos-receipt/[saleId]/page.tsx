@@ -1,3 +1,4 @@
+import { recordOutOfScope } from "@/lib/access-scope";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
@@ -27,12 +28,13 @@ export default async function PosReceiptPage({ params }: PageProps<"/reports/pos
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canUsePos(session.user.role)) redirect("/dashboard");
+  if (!canUsePos(session.user)) redirect("/dashboard");
 
   const { dict, locale } = await getLocaleInfo();
   const R = dict.posReceipt;
   const { saleId } = await params;
   if (typeof saleId !== "string" || saleId.length > 64) notFound();
+  if (await recordOutOfScope("sale", saleId)) notFound();
   const sale = await db.sale.findFirst({
     where: { id: saleId, posCheckoutKey: { not: null } },
     select: {

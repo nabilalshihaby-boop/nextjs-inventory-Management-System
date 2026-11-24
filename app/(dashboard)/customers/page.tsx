@@ -38,5 +38,5 @@ export default async function CustomersPage() {
     createdOn: formatDateTime(c.createdAt, settings?.dateFormat, locale),
   }));
 
-  return <CustomersTable rows={rows} canManage={canManageCustomers(session.user.role)} canViewStatement={canViewCustomerStatement(session.user.role)} />;
+  return <CustomersTable rows={rows} canManage={canManageCustomers(session.user)} canViewStatement={canViewCustomerStatement(session.user)} />;
 }

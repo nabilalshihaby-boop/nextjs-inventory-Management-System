@@ -33,7 +33,7 @@ async function authorize() {
   const t = await getDict();
   const session = await auth();
   if (!session?.user?.id) return { t, denied: { ok: false, message: t.common.sessionExpired } as BaselineResult, userId: "" };
-  if (!canSetCostBaseline(session.user.role)) return { t, denied: { ok: false, message: t.costSetup.err.noPermission } as BaselineResult, userId: "" };
+  if (!canSetCostBaseline(session.user)) return { t, denied: { ok: false, message: t.costSetup.err.noPermission } as BaselineResult, userId: "" };
   return { t, denied: null, userId: session.user.id };
 }
 

@@ -19,7 +19,7 @@ export default async function CreatePurchasePage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManagePurchases(session.user.role)) redirect("/dashboard");
+  if (!canManagePurchases(session.user)) redirect("/dashboard");
 
-  return <PurchaseForm {...await getPurchaseFormData()} today={todayLocal()} canOpenSettings={canManageSystemSettings(session.user.role)} />;
+  return <PurchaseForm {...await getPurchaseFormData()} today={todayLocal()} canOpenSettings={canManageSystemSettings(session.user)} />;
 }

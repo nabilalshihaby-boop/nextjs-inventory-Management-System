@@ -23,7 +23,7 @@ export default async function EditProductPage({ params }: PageProps<"/products/[
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageProducts(session.user.role)) redirect("/products");
+  if (!canManageProducts(session.user)) redirect("/products");
 
   const { id } = await params;
   const p = await db.product.findUnique({

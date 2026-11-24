@@ -18,7 +18,7 @@ async function ownerCheck(): Promise<ThemeActionResult | null> {
   const session = await auth();
   const t = await getDict();
   if (!session?.user?.id) return { ok: false, message: t.common.sessionExpired };
-  if (!canManageSystemSettings(session.user.role)) return { ok: false, message: t.theme.onlyOwner };
+  if (!canManageSystemSettings(session.user)) return { ok: false, message: t.theme.onlyOwner };
   return null;
 }
 

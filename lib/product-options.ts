@@ -1,3 +1,4 @@
+import { warehouseFilter } from "@/lib/access-scope";
 import { db } from "@/lib/db";
 import { getDefaultCurrency } from "@/lib/settings";
 import type { Option } from "@/lib/products";
@@ -8,7 +9,7 @@ export async function getProductFormData() {
     db.productCategory.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.brand.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.productUnit.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
-    db.warehouse.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.warehouse.findMany({ where: await warehouseFilter(), orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     getDefaultCurrency(),
   ]);

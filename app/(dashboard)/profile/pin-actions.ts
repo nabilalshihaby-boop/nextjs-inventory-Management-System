@@ -25,7 +25,7 @@ async function authorize(): Promise<{ uid: string } | { error: PinResult }> {
   const s = await auth();
   const t = await getDict();
   if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
-  if (!canUsePos(s.user.role)) return { error: { ok: false, message: t.pin.rolesOnly } };
+  if (!canUsePos(s.user)) return { error: { ok: false, message: t.pin.rolesOnly } };
   return { uid: s.user.id };
 }
 async function invalid(error: { issues: { path: PropertyKey[]; code: string; message: string }[] }): Promise<PinResult> {

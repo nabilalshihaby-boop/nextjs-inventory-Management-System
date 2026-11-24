@@ -23,7 +23,7 @@ export default async function SettingsPage() {
   // the layout, so the role must be verified before any settings data is read.
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageSystemSettings(session.user.role)) redirect("/dashboard");
+  if (!canManageSystemSettings(session.user)) redirect("/dashboard");
 
   const locale = await getLocale();
   const t = await getDict();

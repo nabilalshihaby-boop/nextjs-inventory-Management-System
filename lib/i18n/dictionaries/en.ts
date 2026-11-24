@@ -27,6 +27,7 @@ import { enProfitLoss } from "@/lib/i18n/dictionaries/en-profitloss";
 import { enCostSetup } from "@/lib/i18n/dictionaries/en-costsetup";
 import { enCashFlow } from "@/lib/i18n/dictionaries/en-cashflow";
 import { enAging } from "@/lib/i18n/dictionaries/en-aging";
+import { enAccess } from "@/lib/i18n/dictionaries/en-access";
 import { enUnits } from "@/lib/i18n/dictionaries/en-units";
 import { enBarcode } from "@/lib/i18n/dictionaries/en-barcode";
 export const en = {
@@ -650,6 +651,7 @@ export const en = {
   costSetup: enCostSetup,
   cashFlow: enCashFlow,
   aging: enAging,
+  access: enAccess,
   stockGuard: enStockGuard,
   units: enUnits,
   barcode: enBarcode,

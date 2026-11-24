@@ -20,7 +20,7 @@ export default async function PrintBarcodePage({ searchParams }: PageProps<"/pri
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageProducts(session.user.role)) redirect("/dashboard");
+  if (!canManageProducts(session.user)) redirect("/dashboard");
 
   const products = await getSelectionProducts();
   // Coming back from the preview restores the previous choice (ids that no longer exist are simply dropped).

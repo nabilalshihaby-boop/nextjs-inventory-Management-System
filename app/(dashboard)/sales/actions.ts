@@ -1,5 +1,6 @@
 "use server";
 
+import { recordScopeError, scopeError } from "@/lib/access-scope";
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -49,7 +50,7 @@ async function authorize(): Promise<{ userId: string; t: Dictionary } | { error:
   const s = await auth();
   const t = await getDict();
   if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
-  if (!canManageSales(s.user.role)) return { error: { ok: false, message: t.sales.err.noPermission } };
+  if (!canManageSales(s.user)) return { error: { ok: false, message: t.sales.err.noPermission } };
   return { userId: s.user.id, t };
 }
 
@@ -173,6 +174,8 @@ export async function createSale(input: unknown): Promise<SaleResult> {
   const v = parse(input, a.t);
   if (!v.ok) return v.error;
   const d = v.data;
+  const scopeMsg = await scopeError([d.warehouseId]);
+  if (scopeMsg) return { ok: false, message: scopeMsg };
   const currency = await getDefaultCurrency();
   if (!currency) return { ok: false, message: a.t.sales.err.noCurrency };
   const p = await prepare(d, a.t);
@@ -223,9 +226,13 @@ export async function updateSale(id: unknown, input: unknown): Promise<SaleResul
   if ("error" in a) return a.error;
   const sid = idSchema.safeParse(id);
   if (!sid.success) return { ok: false, message: a.t.sales.err.notFound };
+  const scopeRec = await recordScopeError("sale", sid.data);
+  if (scopeRec) return { ok: false, message: scopeRec };
   const v = parse(input, a.t);
   if (!v.ok) return v.error;
   const d = v.data;
+  const scopeMsg = await scopeError([d.warehouseId]);
+  if (scopeMsg) return { ok: false, message: scopeMsg };
   const p = await prepare(d, a.t);
   if (!p.ok) return p.error;
 
@@ -272,6 +279,8 @@ export async function completeSale(id: unknown): Promise<SaleResult> {
   if ("error" in a) return a.error;
   const sid = idSchema.safeParse(id);
   if (!sid.success) return { ok: false, message: a.t.sales.err.notFound };
+  const scopeRec = await recordScopeError("sale", sid.data);
+  if (scopeRec) return { ok: false, message: scopeRec };
   try {
     const r = await withRetry(() =>
       db.$transaction(async (tx) => {
@@ -299,6 +308,8 @@ export async function deleteSale(id: unknown): Promise<SaleResult> {
   if ("error" in a) return a.error;
   const sid = idSchema.safeParse(id);
   if (!sid.success) return { ok: false, message: a.t.sales.err.notFound };
+  const scopeRec = await recordScopeError("sale", sid.data);
+  if (scopeRec) return { ok: false, message: scopeRec };
   try {
     const r = await db.$transaction(async (tx) => {
       const s = await lockSale(tx, sid.data);
@@ -324,6 +335,8 @@ export async function convertQuotationToSale(quotationId: unknown): Promise<Sale
   if ("error" in a) return a.error;
   const qid = idSchema.safeParse(quotationId);
   if (!qid.success) return { ok: false, message: a.t.sales.err.quotationNotFound };
+  const scopeRec = await recordScopeError("quotation", qid.data);
+  if (scopeRec) return { ok: false, message: scopeRec };
   try {
     const created = await db.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM quotations WHERE id = ${qid.data} FOR UPDATE`;

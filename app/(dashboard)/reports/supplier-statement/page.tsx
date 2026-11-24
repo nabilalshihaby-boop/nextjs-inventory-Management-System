@@ -38,7 +38,7 @@ export default async function SupplierStatementReportPage({ searchParams }: Page
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canViewSupplierStatement(session.user.role)) redirect("/dashboard");
+  if (!canViewSupplierStatement(session.user)) redirect("/dashboard");
 
   const sp = await searchParams;
   const one = (v: unknown) => (Array.isArray(v) ? v[0] : v);

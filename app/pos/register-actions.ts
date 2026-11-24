@@ -12,7 +12,7 @@ import { getRegisterOverview } from "@/lib/register-data";
 import { getDict } from "@/lib/i18n/server";
 import { tr } from "@/lib/i18n/messages";
 import type { Dictionary } from "@/lib/i18n";
-import { canUsePos } from "@/lib/roles";
+import { canManagePosRegister, canUsePos } from "@/lib/roles";
 import { getDefaultCurrency } from "@/lib/settings";
 
 // Register sessions (cash-drawer shifts). NOT an accounting system:
@@ -36,11 +36,13 @@ const isKnown = (e: unknown, ...codes: string[]) => e instanceof Prisma.PrismaCl
 const reject = (key: string, vars: Record<string, string | number> = {}, field?: string): never => ledgerFail(key, vars, field);
 const msgOf = (t: Dictionary, e: LedgerError) => (e.i18n ? tr(t, e.i18n.key, e.i18n.vars) : e.message);
 
-async function authorize(): Promise<{ userId: string; t: Dictionary } | { error: { ok: false; message: string } }> {
+async function authorize(manage = false): Promise<{ userId: string; t: Dictionary } | { error: { ok: false; message: string } }> {
   const s = await auth();
   const t = await getDict();
   if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
-  if (!canUsePos(s.user.role)) return { error: { ok: false, message: t.pos.noPermission } };
+  if (!canUsePos(s.user)) return { error: { ok: false, message: t.pos.noPermission } };
+  // Opening / closing a register and Cash In / Cash Out are register management: they need their own permission.
+  if (manage && !canManagePosRegister(s.user)) return { error: { ok: false, message: t.pos.noPermission } };
   return { userId: s.user.id, t };
 }
 
@@ -57,7 +59,7 @@ export async function getRegisters(): Promise<RegisterResult> {
 }
 
 export async function openRegister(input: unknown): Promise<RegisterResult> {
-  const a = await authorize();
+  const a = await authorize(true);
   if ("error" in a) return a.error;
   const t = a.t;
   const v = makeRegisterSchemas(t.register.val, t.denom.val).openRegisterSchema.safeParse(input);
@@ -92,7 +94,7 @@ export async function openRegister(input: unknown): Promise<RegisterResult> {
 }
 
 export async function closeRegister(input: unknown): Promise<RegisterResult> {
-  const a = await authorize();
+  const a = await authorize(true);
   if ("error" in a) return a.error;
   const t = a.t;
   const v = makeRegisterSchemas(t.register.val, t.denom.val).closeRegisterSchema.safeParse(input);
@@ -185,7 +187,7 @@ export async function closeRegister(input: unknown): Promise<RegisterResult> {
  * The date is server "today" (no backdating); balances, status, user and reference are server-owned.
  */
 export async function recordRegisterMovement(input: unknown): Promise<RegisterResult> {
-  const a = await authorize();
+  const a = await authorize(true);
   if ("error" in a) return a.error;
   const t = a.t;
   const v = makeRegisterSchemas(t.register.val, t.denom.val).registerMovementSchema.safeParse(input);

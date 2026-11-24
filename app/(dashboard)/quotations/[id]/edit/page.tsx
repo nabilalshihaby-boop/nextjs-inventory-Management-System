@@ -23,7 +23,7 @@ export default async function EditQuotationPage({ params }: PageProps<"/quotatio
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageQuotations(session.user.role)) redirect("/dashboard");
+  if (!canManageQuotations(session.user)) redirect("/dashboard");
 
   const { id } = await params;
   const found = await getQuotationDraft(id);
@@ -43,5 +43,5 @@ export default async function EditQuotationPage({ params }: PageProps<"/quotatio
     );
   }
   const data = await getQuotationFormData();
-  return <QuotationForm {...data} draft={found.draft} today={todayLocal()} canOpenSettings={canManageSystemSettings(session.user.role)} />;
+  return <QuotationForm {...data} draft={found.draft} today={todayLocal()} canOpenSettings={canManageSystemSettings(session.user)} />;
 }
