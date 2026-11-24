@@ -34,7 +34,7 @@ export const arSuppliers: Dictionary["suppliers"] = {
   list: {
     title: "الموردون",
     importSoon: "استيراد الموردين قريبًا. الاستيراد من ملف CSV غير متاح بعد.",
-    statementDenied: "كشوف حسابات الموردين متاحة للمالكين والمديرين.",
+    statementDenied: "ليست لديك صلاحية لعرض كشوف حسابات الموردين.",
     search: "بحث",
     searchAria: "البحث في الموردين",
     importBtn: "استيراد الموردين",

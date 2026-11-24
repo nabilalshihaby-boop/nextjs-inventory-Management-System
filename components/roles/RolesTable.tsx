@@ -13,7 +13,7 @@ import { cloneRole, deleteRole, initializeDefaultRoles, setRoleActive } from "@/
 import type { RoleRow } from "@/lib/access-roles";
 
 // Roles list (port of design/Roles.html): search, Create Role, Initialize default staff roles, status / staff count / permission
-// summary, and per-row Edit · Audit · Clone · Activate / Deactivate · Delete. Every change goes through an Owner-only Server Action.
+// summary, and per-row Edit · Audit · Clone · Activate / Deactivate · Delete. Every change goes through an OWNER/ADMIN Server Action.
 
 type Dialog = { kind: "init" } | { kind: "delete"; row: RoleRow } | { kind: "toggle"; row: RoleRow } | { kind: "clone"; row: RoleRow };
 

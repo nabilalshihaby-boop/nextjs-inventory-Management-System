@@ -79,7 +79,7 @@ export const enTransfers = {
     oneWarehouse: "Only one warehouse exists so far.",
     needAdd: "Add another warehouse to start transferring stock.",
     goWarehouse: "Go to Warehouse",
-    noCurrencyA: "No default currency is configured, so costs are shown without a currency symbol. The Owner can choose one in ",
+    noCurrencyA: "No default currency is configured, so costs are shown without a currency symbol. An administrator can choose one in ",
     systemSettings: "System Settings",
     date: "Date",
     from: "From Warehouse",

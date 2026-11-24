@@ -34,7 +34,7 @@ export default function AccountsView({
   accounts: AccountRow[];
   defaultCurrency: (CurrencyView & { id: string }) | null;
   canManage: boolean;
-  /** System Settings stay OWNER-only, so only the Owner gets a link there. */
+  /** System Settings are OWNER/ADMIN only, so only they get a link there. */
   canOpenSettings: boolean;
 }) {
     const router = useRouter();

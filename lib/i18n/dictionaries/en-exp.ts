@@ -12,7 +12,7 @@ export const enExpenses = {
   },
   err: {
     noPermission: "You don't have permission to change expenses.",
-    noCurrency: "No default currency is configured. The Owner must choose one in System Settings before expenses can be recorded.",
+    noCurrency: "No default currency is configured. An administrator must choose one in System Settings before expenses can be recorded.",
     notFound: "Expense not found (it may have been deleted)",
     invalidWarehouse: "Choose a valid warehouse",
     invalidCategory: "Choose a valid expense category",
@@ -107,7 +107,7 @@ export const enExpenses = {
     setupAnd: " and ",
     setupSep: ", ",
     setupCurrency: "a default currency in System Settings",
-    setupCurrencyAsk: "a default currency (ask the Owner to choose one in System Settings)",
+    setupCurrencyAsk: "a default currency (ask an administrator to choose one in System Settings)",
     setupWarehouse: "a warehouse",
     setupCategory: "an expense category",
     setupAccount: "an active cash or bank account",

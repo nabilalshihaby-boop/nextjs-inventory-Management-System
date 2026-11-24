@@ -115,7 +115,7 @@ export const enDenom = {
     tooMany: "Too many denominations",
   },
   err: {
-    onlyOwner: "Only the owner can manage denominations.",
+    onlyOwner: "You don't have permission to manage cash denominations.",
     duplicate: "That currency already has a denomination with this value.",
     noCurrency: "Choose an existing currency",
     frozen: "This denomination is part of a closed register count, so its value is frozen. Inactivate it and add a new one instead.",

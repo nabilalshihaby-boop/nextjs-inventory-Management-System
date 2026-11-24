@@ -40,7 +40,7 @@ export const enSales = {
   },
   err: {
     noPermission: "You don't have permission to manage sales.",
-    noCurrency: "No default currency is configured. The Owner must choose one in System Settings before sales can be recorded.",
+    noCurrency: "No default currency is configured. An administrator must choose one in System Settings before sales can be recorded.",
     notFound: "Sale not found",
     quotationNotFound: "Quotation not found",
     invalidCustomer: "Choose a valid customer",
@@ -158,7 +158,7 @@ export const enSales = {
     setupAnd: " and ",
     setupSep: ", ",
     setupCurrency: "a default currency in System Settings",
-    setupCurrencyAsk: "a default currency (ask the Owner to choose one in System Settings)",
+    setupCurrencyAsk: "a default currency (ask an administrator to choose one in System Settings)",
     setupWarehouse: "a warehouse",
     setupCustomer: "a customer",
     setupProduct: "a product",

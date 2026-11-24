@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { CATALOG, SECTIONS } from "@/lib/i18n/catalog";
 import { getDict } from "@/lib/i18n/server";
 import { stamp } from "@/lib/i18n/translation-input";
-import { canManageSystemSettings } from "@/lib/roles";
+import { canManageTranslations } from "@/lib/roles";
 import TranslationManager, { type TranslationRow } from "@/components/settings/TranslationManager";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -15,14 +15,14 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export const instant = false;
 
-// OWNER-only Arabic translation management. The role is checked here BEFORE any translation data is read
+// Arabic translation management (translations.manage; OWNER and ADMIN have it). The role is checked here BEFORE any translation data is read
 // (also enforced by settings/layout.tsx and by every action). The catalog (keys, English, default Arabic,
 // section) is server-owned; the client only ever sees it and edits the Arabic override text.
 export default async function LanguagesPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageSystemSettings(session.user)) redirect("/dashboard");
+  if (!canManageTranslations(session.user)) redirect("/dashboard");
 
   const t = await getDict();
   const overrides = await db.translationOverride.findMany({

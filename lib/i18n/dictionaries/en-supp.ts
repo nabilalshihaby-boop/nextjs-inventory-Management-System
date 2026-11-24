@@ -32,7 +32,7 @@ export const enSuppliers = {
   list: {
     title: "Suppliers",
     importSoon: "Import Suppliers is coming soon. CSV import isn't available yet.",
-    statementDenied: "Supplier statements are available to Owners and Administrators.",
+    statementDenied: "You don't have permission to view supplier statements.",
     search: "Search",
     searchAria: "Search suppliers",
     importBtn: "Import Suppliers",

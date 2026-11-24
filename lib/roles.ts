@@ -37,8 +37,8 @@ export const canViewInventoryReports = needs("reports.inventory.view");
 export const canViewProfitLoss = (who: Who) => hasPermission(who, "reports.financial.view") && hasPermission(who, "cost.view");
 export const canViewCashFlow = needs("reports.financial.view");
 export const canViewAging = needs("reports.financial.view");
-/** Opening Inventory Cost Setup (Profit & Loss cutover): OWNER only. */
-export const canSetCostBaseline = ownerOnly;
+/** Opening Inventory Cost Setup (Profit & Loss cutover): the business administrator (OWNER / ADMIN). */
+export const canSetCostBaseline = adminOnly;
 export const canManageProducts = needs("products.manage");
 /** Inventory transfers: create, edit/delete pending ones, send or complete them. */
 export const canManageTransfers = needs("transfers.manage");
@@ -68,9 +68,14 @@ export const canExport = needs("export.use");
 export const canPrintBarcodes = needs("barcode.print");
 export const canViewProducts = (who: Who) => hasPermission(who, "products.view") || hasPermission(who, "products.manage");
 
-/** Users: OWNER only. */
-export const canManageUsers = ownerOnly;
-/** Roles & Permissions: OWNER only (never grantable, not even to ADMIN). */
-export const canManageRoles = ownerOnly;
-/** System Settings (company data, default currency, theme, denominations, languages): OWNER only. */
-export const canManageSystemSettings = ownerOnly;
+/** Users: OWNER and ADMIN manage ADMIN / USER accounts (the OWNER account itself is never touched, see users/actions.ts). */
+export const canManageUsers = adminOnly;
+/** Roles & Permissions (operational roles, templates, warehouse assignments, role audit): OWNER and ADMIN. Never grantable to a USER. */
+export const canManageRoles = adminOnly;
+/** Business system settings (company data, default currency, organization-wide theme, denominations): OWNER and ADMIN. */
+export const canManageSystemSettings = adminOnly;
+/** Translation Management (Arabic overrides): the translations.manage permission. OWNER and ADMIN have it; a USER only through an assigned role. */
+export const canManageTranslations = needs("translations.manage");
+/** Platform / future Control Panel capabilities (deployment and database connection, licensing, factory reset, backup destinations and
+ *  credentials, releases, secrets): OWNER only. No such pages exist yet; the route prefixes are already closed to ADMIN in lib/access.ts. */
+export const canManagePlatform = ownerOnly;

@@ -23,6 +23,18 @@ export function MenuButton() {
   );
 }
 
+/** Desktop collapse / expand control for the sidebar, placed right before the page title (hidden where the drawer's menu button shows). */
+export function SidebarToggle() {
+  const { collapsed, toggleSidebar } = useShell();
+  const t = useT();
+  const label = collapsed ? t.shell.expandSidebar : t.shell.collapseSidebar;
+  return (
+    <button type="button" className="sp-btn sp-btn--ghost sp-btn--icon sp-side-toggle" aria-label={label} title={label} aria-expanded={!collapsed} onClick={toggleSidebar}>
+      <Icon name={collapsed ? "panel-left-open" : "panel-left-close"} size={18} />
+    </button>
+  );
+}
+
 /** Page title derived from the route (e.g. /warehouse/create → "Warehouse"). Wrap in <Suspense>. */
 export function PageTitle() {
   const t = useT();

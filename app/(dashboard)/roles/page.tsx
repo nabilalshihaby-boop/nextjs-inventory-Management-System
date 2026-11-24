@@ -13,7 +13,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export const instant = false;
 
-// Roles & Permissions (OWNER only). The role is re-read BEFORE anything is loaded; every other role is redirected and receives no data.
+// Roles & Permissions (OWNER or ADMIN only). The role is re-read BEFORE anything is loaded; every other role is redirected and receives no data.
 export default async function RolesPage() {
   await connection();
   const session = await auth();

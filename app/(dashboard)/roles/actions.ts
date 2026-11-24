@@ -14,7 +14,7 @@ import { getDict } from "@/lib/i18n/server";
 import { fmt } from "@/lib/i18n/config";
 import type { Dictionary } from "@/lib/i18n";
 
-// Roles & Permissions — OWNER only. Every action re-reads the session (which re-reads the user from MySQL), checks that the caller
+// Roles & Permissions — OWNER or ADMIN only. Every action re-reads the session (which re-reads the user from MySQL), checks that the caller
 // is the OWNER, validates a STRICT payload (unknown / extra fields are rejected), derives every value from the database and writes the
 // change together with its audit event in one transaction. Permission keys come only from the typed catalog; the browser can never
 // supply a role id to act on behalf of another user, a permission outside the catalog, or an audit event.

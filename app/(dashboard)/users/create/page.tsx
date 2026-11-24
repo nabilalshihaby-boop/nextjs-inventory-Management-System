@@ -13,7 +13,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export const instant = false;
 
-// Create User (design/Create User.html). OWNER only; ADMIN and USER go to /dashboard.
+// Create User (design/Create User.html). OWNER or ADMIN; a USER goes to /dashboard.
 export default async function CreateUserPage() {
   await connection();
   const session = await auth();

@@ -53,13 +53,13 @@ model User {
 /// Currencies managed on /currencies. `code` is ISO-style: exactly 3 uppercase letters, unique
 /// regardless of case (stored uppercase; the column collation is case-insensitive as well).
 model Currency {
-  id               String                 @id @default(cuid())
-  name             String                 @db.VarChar(100)
-  code             String                 @unique @db.Char(3)
-  symbol           String                 @db.VarChar(10)
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
-  defaultIn        SystemSettings[]       @relation("DefaultCurrency")
+  id               String                  @id @default(cuid())
+  name             String                  @db.VarChar(100)
+  code             String                  @unique @db.Char(3)
+  symbol           String                  @db.VarChar(10)
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  defaultIn        SystemSettings[]        @relation("DefaultCurrency")
   cashBankAccounts CashBankAccount[]
   purchases        Purchase[]
   purchaseReturns  PurchaseReturn[]
@@ -78,28 +78,29 @@ model Currency {
 /// Future stock, sales, purchase and transfer records will reference warehouses; deletion must
 /// be refused while such references exist (see app/(dashboard)/warehouse/actions.ts).
 model Warehouse {
-  id              String              @id @default(cuid())
-  name            String              @unique @db.VarChar(120)
-  email           String              @db.VarChar(191)
-  phoneNumber     String              @db.VarChar(32)
+  id                 String               @id @default(cuid())
+  name               String               @unique @db.VarChar(120)
+  email              String               @db.VarChar(191)
+  phoneNumber        String               @db.VarChar(32)
   /// ISO 3166-1 alpha-2 code (see lib/countries.ts).
-  countryCode     String              @db.Char(2)
-  city            String              @db.VarChar(120)
-  zipCode         String?             @db.VarChar(20)
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  stocks          ProductStock[]
-  stockEntries    ProductStockEntry[]
-  transfersOut    StockTransfer[]     @relation("TransferFrom")
-  transfersIn     StockTransfer[]     @relation("TransferTo")
-  adjustments     StockAdjustment[]
-  expenses        Expense[]
-  purchases       Purchase[]
-  purchaseReturns PurchaseReturn[]
-  quotations      Quotation[]
-  sales           Sale[]
-  saleReturns     SaleReturn[]
-  userScopes      UserWarehouseScope[]
+  countryCode        String               @db.Char(2)
+  city               String               @db.VarChar(120)
+  zipCode            String?              @db.VarChar(20)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  stocks             ProductStock[]
+  stockEntries       ProductStockEntry[]
+  transfersOut       StockTransfer[]      @relation("TransferFrom")
+  transfersIn        StockTransfer[]      @relation("TransferTo")
+  adjustments        StockAdjustment[]
+  expenses           Expense[]
+  purchases          Purchase[]
+  purchaseReturns    PurchaseReturn[]
+  quotations         Quotation[]
+  sales              Sale[]
+  saleReturns        SaleReturn[]
+  userScopes         UserWarehouseScope[]
+  defaultForSettings SystemSettings[]     @relation("DefaultWarehouse")
 
   @@map("warehouses")
 }
@@ -941,35 +942,38 @@ model TranslationOverride {
 /// Global system settings: a singleton row (id is always 1), edited by administrators on /settings.
 /// Default customer / warehouse are added once the Customer and Warehouse models exist.
 model SystemSettings {
-  id                  Int       @id @default(1)
+  id                  Int        @id @default(1)
   /// The default Currency record (required in the form; null only until a currency exists).
   /// Restrict: the database refuses to delete the currency selected here.
   defaultCurrencyId   String?
-  defaultCurrency     Currency? @relation("DefaultCurrency", fields: [defaultCurrencyId], references: [id], onDelete: Restrict)
+  defaultCurrency     Currency?  @relation("DefaultCurrency", fields: [defaultCurrencyId], references: [id], onDelete: Restrict)
   /// Optional POS Walk-in Customer: a REAL customer chosen by the Owner (never auto-created). Restrict:
   /// the database refuses to delete the customer selected here, so this can never point at a stale row.
   posWalkInCustomerId String?
-  posWalkInCustomer   Customer? @relation("PosWalkInCustomer", fields: [posWalkInCustomerId], references: [id], onDelete: Restrict)
-  defaultEmail        String?   @db.VarChar(191)
-  currencyIconRight   Boolean   @default(false)
+  posWalkInCustomer   Customer?  @relation("PosWalkInCustomer", fields: [posWalkInCustomerId], references: [id], onDelete: Restrict)
+  /// Optional default Warehouse (OWNER/ADMIN choose it in System Settings). Restrict: the database refuses to delete the warehouse selected here.
+  defaultWarehouseId  String?
+  defaultWarehouse    Warehouse? @relation("DefaultWarehouse", fields: [defaultWarehouseId], references: [id], onDelete: Restrict)
+  defaultEmail        String?    @db.VarChar(191)
+  currencyIconRight   Boolean    @default(false)
   /// Relative path under /uploads/logos (local-development storage), or null.
-  companyLogo         String?   @db.VarChar(255)
-  companyName         String    @db.VarChar(120)
-  companyPhone        String?   @db.VarChar(32)
-  developedBy         String?   @db.VarChar(120)
-  footerText          String?   @db.VarChar(255)
+  companyLogo         String?    @db.VarChar(255)
+  companyName         String     @db.VarChar(120)
+  companyPhone        String?    @db.VarChar(32)
+  developedBy         String?    @db.VarChar(120)
+  footerText          String?    @db.VarChar(255)
   /// ISO 3166-1 alpha-2 code, e.g. "EG".
-  country             String    @db.Char(2)
-  state               String    @db.VarChar(120)
-  city                String?   @db.VarChar(120)
-  postalCode          String?   @db.VarChar(20)
-  dateFormat          String    @db.VarChar(16)
-  address             String?   @db.VarChar(500)
-  showVersionInFooter Boolean   @default(false)
+  country             String     @db.Char(2)
+  state               String     @db.VarChar(120)
+  city                String?    @db.VarChar(120)
+  postalCode          String?    @db.VarChar(20)
+  dateFormat          String     @db.VarChar(16)
+  address             String?    @db.VarChar(500)
+  showVersionInFooter Boolean    @default(false)
   /// Owner's global theme override (validated ThemeState JSON, see lib/theme.ts); null = Bluepiller defaults.
   theme               Json?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
 
   @@map("system_settings")
 }

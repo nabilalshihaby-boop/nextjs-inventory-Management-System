@@ -14,7 +14,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export const instant = false;
 
-// Edit User (design/Create User.html, pre-filled; password fields empty). OWNER only. The Owner
+// Edit User (design/Create User.html, pre-filled; password fields empty). OWNER or ADMIN only. The Owner
 // account itself is managed in Profile / Change Password, so it redirects there.
 export default async function EditUserPage({ params }: PageProps<"/users/[id]/edit">) {
   await connection();

@@ -27,7 +27,7 @@ export const enPurch = {
   },
   err: {
     noPermission: "You don't have permission to change purchases.",
-    noCurrency: "No default currency is configured. The Owner must choose one in System Settings before purchases can be recorded.",
+    noCurrency: "No default currency is configured. An administrator must choose one in System Settings before purchases can be recorded.",
     invalidSupplier: "Choose a valid supplier",
     invalidWarehouse: "Choose a valid warehouse",
     productGone: "A product in the order no longer exists",
@@ -117,7 +117,7 @@ export const enPurch = {
     setupAnd: " and ",
     setupSep: ", ",
     setupCurrency: "a default currency in System Settings",
-    setupCurrencyAsk: "a default currency (ask the Owner to choose one in System Settings)",
+    setupCurrencyAsk: "a default currency (ask an administrator to choose one in System Settings)",
     setupWarehouse: "a warehouse",
     setupSupplier: "a supplier",
     setupProduct: "a product",

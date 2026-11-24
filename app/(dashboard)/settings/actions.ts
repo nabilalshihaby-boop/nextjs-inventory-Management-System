@@ -9,6 +9,7 @@ import type { Dictionary } from "@/lib/i18n";
 import { isCountryCode } from "@/lib/countries";
 import { canManageSystemSettings } from "@/lib/roles";
 import { deleteImage, saveImage, validateImage, type ValidImage } from "@/lib/image-upload";
+import { validateDefaultWarehouseId } from "@/lib/default-warehouse";
 import { DATE_FORMATS, SETTINGS_ID, toSettingsValues, type SettingsValues } from "@/lib/settings";
 
 export type SettingsField = keyof SettingsValues | "logo";
@@ -25,6 +26,8 @@ const makeSchema = (t: Dictionary) => z.object({
   defaultCurrencyId: z.string().trim().max(64),
   // Optional POS Walk-in Customer: "" clears it, otherwise a real Customer id (checked below).
   posWalkInCustomerId: z.string().trim().max(64),
+  // Optional default Warehouse: "" clears it, otherwise a real Warehouse id (checked below).
+  defaultWarehouseId: z.string().trim().max(64, t.settings.chooseExistingWarehouse),
   defaultEmail: z
     .string()
     .trim()
@@ -49,7 +52,7 @@ const str = (v: FormDataEntryValue | null) => (typeof v === "string" ? v : "");
 const nullIfEmpty = (v: string) => (v === "" ? null : v);
 
 export async function saveSettings(_prev: SettingsState, formData: FormData): Promise<SettingsState> {
-  // Global settings: OWNER only. Re-checked here before reading the form or touching the
+  // Global settings: OWNER or ADMIN only. Re-checked here before reading the form or touching the
   // database/files — page gating is not a security boundary (actions are plain POST endpoints).
   const session = await auth();
   const t = await getDict();
@@ -59,6 +62,7 @@ export async function saveSettings(_prev: SettingsState, formData: FormData): Pr
   const parsed = makeSchema(t).safeParse({
     defaultCurrencyId: str(formData.get("defaultCurrencyId")),
     posWalkInCustomerId: str(formData.get("posWalkInCustomerId")),
+    defaultWarehouseId: str(formData.get("defaultWarehouseId")),
     defaultEmail: str(formData.get("defaultEmail")),
     currencyIconRight: formData.get("currencyIconRight") === "on",
     companyName: str(formData.get("companyName")),
@@ -97,6 +101,12 @@ export async function saveSettings(_prev: SettingsState, formData: FormData): Pr
     if (!c) fieldErrors.posWalkInCustomerId = t.settings.chooseExistingCustomer;
   }
 
+  // The default warehouse must be a real warehouse (a forged or stale id is rejected, never stored).
+  if (parsed.success) {
+    const w = await validateDefaultWarehouseId(session.user, parsed.data.defaultWarehouseId, db);
+    if (!w.ok) fieldErrors.defaultWarehouseId = w.reason === "forbidden" ? t.settings.onlyOwner : t.settings.chooseExistingWarehouse;
+  }
+
   // Logo: an uploaded file only (never a URL), validated by content.
   const removeLogo = formData.get("removeLogo") === "on";
   const file = formData.get("logo");
@@ -119,6 +129,7 @@ export async function saveSettings(_prev: SettingsState, formData: FormData): Pr
   const data = {
     defaultCurrencyId: d.defaultCurrencyId,
     posWalkInCustomerId: nullIfEmpty(d.posWalkInCustomerId),
+    defaultWarehouseId: nullIfEmpty(d.defaultWarehouseId),
     defaultEmail: nullIfEmpty(d.defaultEmail),
     currencyIconRight: d.currencyIconRight,
     companyName: d.companyName,

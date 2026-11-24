@@ -3,7 +3,7 @@
 export const enAccess = {
   title: "Roles & Permissions",
   intro: "Define what operational staff may do, assign one role to each staff user and, where needed, limit them to some warehouses.",
-  ownerNote: "Owner and Administrator accounts are not restricted by these roles. Only the Owner can manage roles.",
+  ownerNote: "Owner and Administrator accounts are not restricted by these roles. Only the Owner and Administrators can manage roles.",
   list: {
     search: "Search roles",
     searchAria: "Search roles",
@@ -81,6 +81,7 @@ export const enAccess = {
     finance: "Finance, Expenses and Financial Reports",
     reports: "Operational and Inventory Reports",
     output: "Printing and Exporting",
+    system: "System Administration",
   },
   perm: {
     dashboard_view: "View the dashboard figures",
@@ -120,6 +121,7 @@ export const enAccess = {
     reports_operational_view: "View POS receipts and register reports",
     export_use: "Export data",
     barcode_print: "Print barcode labels",
+    translations_manage: "Edit and reset Arabic translations (English source text stays read-only)",
   },
   templates: {
     CASHIER: { name: "Cashier", desc: "Sells at the POS and manages the register." },
@@ -144,6 +146,8 @@ export const enAccess = {
       USER_ROLE_CHANGED: "A user's role changed",
       USER_ROLE_UNASSIGNED: "Role removed from a user",
       USER_WAREHOUSE_SCOPE_CHANGED: "A user's warehouses changed",
+      TRANSLATION_SAVED: "Arabic translation saved",
+      TRANSLATION_RESET: "Arabic translation reset",
     },
     added: "Added: {list}",
     removed: "Removed: {list}",
@@ -163,7 +167,7 @@ export const enAccess = {
     rolesLink: "Manage roles",
   },
   err: {
-    noPermission: "Only the Owner can manage roles and permissions.",
+    noPermission: "You don't have permission to manage roles and permissions.",
     invalid: "Check the form: the request is not valid.",
     nameRequired: "Name is required.",
     nameLong: "Name is too long (80 characters at most).",

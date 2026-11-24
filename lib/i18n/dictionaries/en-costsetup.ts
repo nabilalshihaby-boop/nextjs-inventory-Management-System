@@ -1,4 +1,4 @@
-// English text for the Owner-only Opening Inventory Cost Setup (part of Profit & Loss setup).
+// English text for the Opening Inventory Cost Setup (part of Profit & Loss setup).
 // Product names, codes, units, currency codes, dates and amounts come from the database and are never translated.
 export const enCostSetup = {
   title: "Opening Inventory Cost Setup",
@@ -36,13 +36,13 @@ export const enCostSetup = {
   locked: "Locked — later costed activity exists. Corrections are not supported yet.",
   undo: "Undo",
   undoConfirm: "Remove this baseline? The product's stock will be uncosted again.",
-  ownerOnly: "Only the Owner can set the opening cost baseline.",
+  ownerOnly: "You don't have permission to set the opening cost baseline.",
   ok: {
     saved: "Saved {count} opening cost baseline(s). Profit & Loss now costs this stock from this moment.",
     undone: "The baseline was removed.",
   },
   err: {
-    noPermission: "Only the Owner can set the opening cost baseline.",
+    noPermission: "You don't have permission to set the opening cost baseline.",
     nothing: "Enter a cost for at least one product.",
     invalid: "Check the entered costs: use a number of 0 or more with at most 2 decimals.",
     notEligible: "A selected product is not eligible any more (no uncosted stock, a baseline already exists, or its stock changed). Reload the page and try again.",

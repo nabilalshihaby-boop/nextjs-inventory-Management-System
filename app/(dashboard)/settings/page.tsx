@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { getCountryOptions } from "@/lib/countries";
 import { getLocale, getDict } from "@/lib/i18n/server";
 import { canManageSystemSettings } from "@/lib/roles";
+import { defaultWarehouseState, getDefaultWarehouseOptions } from "@/lib/default-warehouse";
 import { DATE_FORMATS, getCurrencyOptions, getSystemSettings, toSettingsValues } from "@/lib/settings";
 import SettingsForm from "@/components/settings/SettingsForm";
 
@@ -16,7 +17,7 @@ export async function generateMetadata(): Promise<Metadata> {
 // Needs the session + database per request, so navigations here may block.
 export const instant = false;
 
-// System Settings (design/Settings.html). Global settings: OWNER only.
+// System Settings (design/Settings.html). Global settings: OWNER or ADMIN only.
 export default async function SettingsPage() {
   await connection();
   // Checked again here (not only in settings/layout.tsx): the page renders in parallel with
@@ -28,7 +29,13 @@ export default async function SettingsPage() {
   const locale = await getLocale();
   const t = await getDict();
   const regionNames = new Intl.DisplayNames([locale], { type: "region" });
-  const [settings, currencies, customers] = await Promise.all([getSystemSettings(), getCurrencyOptions(), db.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } })]);
+  const [settings, currencies, customers, warehouses] = await Promise.all([
+    getSystemSettings(),
+    getCurrencyOptions(),
+    db.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    // Every warehouse for OWNER/ADMIN (never narrowed by UserWarehouseScope); a USER never reaches this point.
+    getDefaultWarehouseOptions(session.user, db),
+  ]);
 
   return (
     <>
@@ -44,6 +51,8 @@ export default async function SettingsPage() {
         countries={getCountryOptions().map((c) => ({ ...c, name: regionNames.of(c.code) ?? c.name }))}
         currencies={currencies}
         customers={customers.map((c) => ({ value: c.id, label: c.name }))}
+        warehouses={warehouses}
+        warehouseStatus={defaultWarehouseState(settings?.defaultWarehouseId, warehouses).status}
         dateFormats={[...DATE_FORMATS]}
       />
     </>

@@ -25,7 +25,7 @@ export const enQuot = {
   },
   err: {
     noPermission: "You don't have permission to manage quotations.",
-    noCurrency: "No default currency is configured. The Owner must choose one in System Settings before quotations can be created.",
+    noCurrency: "No default currency is configured. An administrator must choose one in System Settings before quotations can be created.",
     notFound: "Quotation not found",
     chooseStatus: "Choose a valid status",
     invalidCustomer: "Choose a valid customer",

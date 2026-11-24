@@ -15,6 +15,8 @@ export type SettingsValues = {
   defaultCurrencyId: string;
   /** POS Walk-in Customer id ("" = none). */
   posWalkInCustomerId: string;
+  /** Default Warehouse id ("" = none). */
+  defaultWarehouseId: string;
   defaultEmail: string;
   currencyIconRight: boolean;
   companyLogo: string | null;
@@ -35,6 +37,7 @@ export type SettingsValues = {
 export const EMPTY_SETTINGS: SettingsValues = {
   defaultCurrencyId: "",
   posWalkInCustomerId: "",
+  defaultWarehouseId: "",
   defaultEmail: "",
   currencyIconRight: false,
   companyLogo: null,
@@ -58,6 +61,7 @@ export function toSettingsValues(s: SettingsRow | null): SettingsValues {
   return {
     defaultCurrencyId: s.defaultCurrencyId ?? "",
     posWalkInCustomerId: s.posWalkInCustomerId ?? "",
+    defaultWarehouseId: s.defaultWarehouseId ?? "",
     defaultEmail: s.defaultEmail ?? "",
     currencyIconRight: s.currencyIconRight,
     companyLogo: s.companyLogo,

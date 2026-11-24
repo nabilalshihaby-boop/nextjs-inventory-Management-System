@@ -14,7 +14,7 @@ export const arExpenses: Dictionary["expenses"] = {
   },
   err: {
     noPermission: "ليست لديك صلاحية لتغيير المصروفات.",
-    noCurrency: "لم يتم تحديد عملة افتراضية. يجب على المالك اختيار واحدة من إعدادات النظام قبل تسجيل المصروفات.",
+    noCurrency: "لم يتم تحديد عملة افتراضية. يجب على المسؤول اختيار واحدة من إعدادات النظام قبل تسجيل المصروفات.",
     notFound: "لم يتم العثور على المصروف (ربما تم حذفه)",
     invalidWarehouse: "اختر مستودعًا صالحًا",
     invalidCategory: "اختر تصنيف مصروف صالحًا",
@@ -109,7 +109,7 @@ export const arExpenses: Dictionary["expenses"] = {
     setupAnd: " و",
     setupSep: "، ",
     setupCurrency: "عملة افتراضية في إعدادات النظام",
-    setupCurrencyAsk: "عملة افتراضية (اطلب من المالك اختيار واحدة في إعدادات النظام)",
+    setupCurrencyAsk: "عملة افتراضية (اطلب من المسؤول اختيار واحدة في إعدادات النظام)",
     setupWarehouse: "مستودع",
     setupCategory: "تصنيف مصروفات",
     setupAccount: "حساب نقدية أو بنك نشط",

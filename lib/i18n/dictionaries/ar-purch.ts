@@ -29,7 +29,7 @@ export const arPurch: Dictionary["purchases"] = {
   },
   err: {
     noPermission: "ليست لديك صلاحية لتغيير المشتريات.",
-    noCurrency: "لم يتم تحديد عملة افتراضية. يجب على المالك اختيار واحدة من إعدادات النظام قبل تسجيل المشتريات.",
+    noCurrency: "لم يتم تحديد عملة افتراضية. يجب على المسؤول اختيار واحدة من إعدادات النظام قبل تسجيل المشتريات.",
     invalidSupplier: "اختر موردًا صالحًا",
     invalidWarehouse: "اختر مستودعًا صالحًا",
     productGone: "أحد المنتجات في الطلب لم يعد موجودًا",
@@ -119,7 +119,7 @@ export const arPurch: Dictionary["purchases"] = {
     setupAnd: " و",
     setupSep: "، ",
     setupCurrency: "عملة افتراضية في إعدادات النظام",
-    setupCurrencyAsk: "عملة افتراضية (اطلب من المالك اختيار واحدة في إعدادات النظام)",
+    setupCurrencyAsk: "عملة افتراضية (اطلب من المسؤول اختيار واحدة في إعدادات النظام)",
     setupWarehouse: "مستودع",
     setupSupplier: "مورد",
     setupProduct: "منتج",

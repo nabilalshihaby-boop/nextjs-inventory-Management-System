@@ -14,7 +14,7 @@ export type ThemeActionResult =
   | { ok: false; message: string };
 
 async function ownerCheck(): Promise<ThemeActionResult | null> {
-  // OWNER only — re-checked in every action (page gating is not a security boundary).
+  // OWNER or ADMIN only — re-checked in every action (page gating is not a security boundary).
   const session = await auth();
   const t = await getDict();
   if (!session?.user?.id) return { ok: false, message: t.common.sessionExpired };

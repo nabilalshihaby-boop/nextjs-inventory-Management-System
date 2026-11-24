@@ -113,7 +113,6 @@ a{color:var(--text-link);text-underline-offset:3px}a:hover{color:var(--primary-9
 .bp-sidebar{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;background:var(--bg-surface);border-right:1px solid var(--border);overflow:hidden}
 .sp-brand{height:var(--topbar-h);flex:none;display:flex;align-items:center;gap:12px;padding:0 24px;border-bottom:1px solid var(--border);font:800 22px/1 var(--font-display);letter-spacing:-.02em;color:var(--text-1);white-space:nowrap}
 .sp-brand-text{display:flex;white-space:nowrap}.sp-brand b{color:var(--primary-600);font-weight:800}
-.sp-brand .sp-btn{margin-left:auto}
 .sp-nav{flex:1;overflow-y:auto;padding:16px 12px;display:flex;flex-direction:column;gap:2px}
 .sp-nav-item{flex:none;position:relative;display:flex;align-items:center;gap:12px;width:100%;height:44px;padding:0 14px;border:0;border-radius:var(--radius-md);background:none;color:var(--text-2);font:600 14px/1 var(--font-body);cursor:pointer;text-align:left;text-decoration:none;white-space:nowrap}
 .sp-nav-item:hover{background:var(--neutral-100);color:var(--text-1)}
@@ -124,11 +123,24 @@ a{color:var(--text-link);text-underline-offset:3px}a:hover{color:var(--primary-9
 .sp-nav-sub .sp-nav-item{height:38px;padding-left:50px;font-weight:500}
 .bp-app[data-collapsed="true"] .sp-nav-label,.bp-app[data-collapsed="true"] .sp-chev,.bp-app[data-collapsed="true"] .sp-nav-sub,.bp-app[data-collapsed="true"] .sp-brand-name{display:none}
 .bp-app[data-collapsed="true"] .sp-nav-item{justify-content:center;padding:0}
-.bp-app[data-collapsed="true"] .sp-brand{padding:0;justify-content:center}.bp-app[data-collapsed="true"] .sp-brand .sp-btn{display:none}
+.bp-app[data-collapsed="true"] .sp-brand{padding:0;justify-content:center}
+/* Sidebar + mobile drawer follow the primary-button token (--primary-600) so theme changes keep them in sync.
+   Labels/icons are white (same as .sp-btn--primary); active/hover are translucent white/black overlays of that same colour. */
+.bp-sidebar{background:var(--primary-600);color:#fff;border:0}
+/* Company-branding header: fixed (flex:none) above the scrollable .sp-nav, on EXACTLY the topbar's surface token (--bg-surface) so the two read as one continuous band; normal foreground colours. */
+.bp-sidebar .sp-brand{background:var(--bg-surface);color:var(--text-1);border-bottom:1px solid var(--border);position:relative;z-index:1;min-width:0}
+.bp-sidebar .sp-brand-text{min-width:0;overflow:hidden;line-height:1.5}
+.bp-sidebar .sp-brand-name{line-height:1.5}
+html[dir="rtl"] .sp-side-toggle svg{transform:scaleX(-1)}
+.bp-sidebar .sp-nav-item{color:#fff}
+.bp-sidebar .sp-nav-item:hover{background:rgb(255 255 255/.12);color:#fff}
+.bp-sidebar .sp-nav-item[aria-current="page"]{background:rgb(0 0 0/.22);color:#fff}
+.bp-sidebar .sp-nav-item[aria-current="page"]::before{background:#fff}
+.bp-sidebar .sp-nav-item:focus-visible{outline:2px solid #fff;outline-offset:-2px;box-shadow:none}
 .bp-main{display:flex;flex-direction:column;min-width:0;min-height:100vh}
 .bp-topbar{position:sticky;top:0;z-index:20;height:var(--topbar-h);display:flex;align-items:center;gap:16px;padding:0 32px;background:var(--bg-surface);border-bottom:1px solid var(--border)}
 .bp-topbar .sp-crumb{font:700 18px/1 var(--font-display);letter-spacing:-.01em;margin-right:8px}
-.bp-topbar .sp-group{width:380px}.bp-topbar .sp-input{background:var(--neutral-50)}
+.bp-topbar .sp-group{width:380px}.bp-topbar .sp-input{background:var(--bg-surface)}.bp-topbar .sp-input::placeholder{color:var(--text-2)}
 .sp-topbar-r{margin-left:auto;display:flex;align-items:center;gap:8px}
 .sp-user{position:relative}
 .sp-user-btn{display:flex;align-items:center;gap:10px;height:46px;padding:0 10px 0 6px;border:0;border-radius:var(--radius-full);background:none;cursor:pointer;font:600 14px/1.2 var(--font-body);color:var(--text-1);text-align:left}
@@ -155,7 +167,7 @@ a{color:var(--text-link);text-underline-offset:3px}a:hover{color:var(--primary-9
 .bp-app[data-drawer="true"] .bp-sidebar{transform:none;visibility:visible}
 .bp-backdrop{display:block;position:fixed;inset:0;z-index:55;background:var(--overlay);opacity:0;pointer-events:none;transition:opacity .2s}
 .bp-app[data-drawer="true"] .bp-backdrop{opacity:1;pointer-events:auto}
-.bp-topbar .sp-menu-btn{display:inline-flex}
+.bp-topbar .sp-menu-btn{display:inline-flex}.bp-topbar .sp-side-toggle{display:none}
 .bp-topbar{padding:0 20px;gap:12px}.bp-topbar .sp-crumb{margin-right:0;white-space:nowrap}
 .bp-topbar .sp-group{width:auto;flex:1 1 160px;min-width:0;max-width:380px}
 .sp-toptabs{gap:20px;overflow-x:auto;min-width:0;flex:1;scrollbar-width:none}.sp-toptabs::-webkit-scrollbar{display:none}.sp-toptab{white-space:nowrap}
@@ -221,6 +233,19 @@ svg.sp-icon{background:none;-webkit-mask:none;mask:none}
 .th-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;align-items:start}
 @media(max-width:1180px){.th-grid{grid-template-columns:minmax(0,1fr)}}
 .th-sticky{position:sticky;top:92px}
+/* Live-preview mock of the shell: mirrors the .bp-sidebar / .bp-topbar rules (primary nav area, --bg-surface header + topbar). Non-interactive; flips with dir=rtl. */
+.th-pv-frame{display:grid;grid-template-columns:var(--th-side,150px) minmax(0,1fr);min-width:0;overflow:hidden}
+@media(max-width:600px){.th-pv-frame:not([data-cmp="true"]){--th-side:112px!important}.th-pv-side .sp-nav-item{gap:6px}}
+.th-pv-side{display:flex;flex-direction:column;min-width:0;overflow:hidden;background:var(--primary-600);color:#fff;pointer-events:none;user-select:none}
+.th-pv-bar{height:48px;flex:none;display:flex;align-items:center;gap:10px;background:var(--bg-surface);color:var(--text-1);border-bottom:1px solid var(--border);box-sizing:border-box}
+.th-pv-side .sp-brand{gap:0;min-width:0;line-height:1.5}
+.th-pv-top{padding:0 14px}
+.th-pv-search{margin-inline-start:auto;flex:0 1 150px;min-width:0;height:28px;display:flex;align-items:center;gap:6px;padding:0 10px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--bg-surface);color:var(--text-2);font:400 12px/1 var(--font-body);overflow:hidden;white-space:nowrap}
+.th-pv-nav{flex:1;padding:12px 8px;display:flex;flex-direction:column;gap:2px}
+.th-pv-side .sp-nav-item{color:#fff}
+.th-pv-side .sp-nav-item[aria-current="page"]{background:rgb(0 0 0/.22);color:#fff}
+.th-pv-side .sp-nav-item[aria-current="page"]::before{background:#fff;left:-8px}
+html[dir="rtl"] .th-pv-side .sp-nav-item[aria-current="page"]::before{left:auto;right:-8px}
 .th-color{display:flex;gap:8px;align-items:center}
 .th-color input[type=color]{flex:none;width:42px;height:42px;padding:3px;border:1px solid var(--border-strong);border-radius:var(--radius-md);background:var(--bg-surface);cursor:pointer}
 .th-seg{display:flex;gap:8px;flex-wrap:wrap}
@@ -330,8 +355,7 @@ html[dir="rtl"] .sp-table .act{text-align:left}
 html[dir="rtl"] .sp-pager .sp-select{padding-left:10px;padding-right:10px}
 html[dir="rtl"] .sp-menu{right:auto;left:0;text-align:right}
 html[dir="rtl"] .sp-menu-item{text-align:right}
-html[dir="rtl"] .bp-sidebar{border-right:0;border-left:1px solid var(--border)}
-html[dir="rtl"] .sp-brand .sp-btn{margin-left:0;margin-right:auto}
+html[dir="rtl"] .bp-sidebar{border:0}
 html[dir="rtl"] .sp-nav-item{text-align:right}
 html[dir="rtl"] .sp-nav-item[aria-current="page"]::before{left:auto;right:-12px;border-radius:4px 0 0 4px}
 html[dir="rtl"] .sp-nav-item .sp-chev{margin-left:0;margin-right:auto}

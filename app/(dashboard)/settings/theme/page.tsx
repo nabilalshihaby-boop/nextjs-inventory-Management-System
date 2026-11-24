@@ -14,7 +14,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export const instant = false;
 
-// Global Owner Theme Settings (design/Theme Settings.html). OWNER only — also enforced by
+// Global Owner Theme Settings (design/Theme Settings.html). OWNER or ADMIN only — also enforced by
 // settings/layout.tsx and inside every theme Server Action.
 export default async function ThemeSettingsPage() {
   await connection();

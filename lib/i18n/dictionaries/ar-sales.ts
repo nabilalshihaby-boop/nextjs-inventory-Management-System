@@ -42,7 +42,7 @@ export const arSales: Dictionary["sales"] = {
   },
   err: {
     noPermission: "ليست لديك صلاحية لإدارة المبيعات.",
-    noCurrency: "لم يتم تحديد عملة افتراضية. يجب على المالك اختيار واحدة من إعدادات النظام قبل تسجيل المبيعات.",
+    noCurrency: "لم يتم تحديد عملة افتراضية. يجب على المسؤول اختيار واحدة من إعدادات النظام قبل تسجيل المبيعات.",
     notFound: "لم يتم العثور على عملية البيع",
     quotationNotFound: "لم يتم العثور على عرض السعر",
     invalidCustomer: "اختر عميلًا صالحًا",
@@ -160,7 +160,7 @@ export const arSales: Dictionary["sales"] = {
     setupAnd: " و",
     setupSep: "، ",
     setupCurrency: "عملة افتراضية في إعدادات النظام",
-    setupCurrencyAsk: "عملة افتراضية (اطلب من المالك اختيار واحدة في إعدادات النظام)",
+    setupCurrencyAsk: "عملة افتراضية (اطلب من المسؤول اختيار واحدة في إعدادات النظام)",
     setupWarehouse: "مستودع",
     setupCustomer: "عميل",
     setupProduct: "منتج",

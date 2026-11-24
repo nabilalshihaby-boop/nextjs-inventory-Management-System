@@ -14,7 +14,7 @@ import type { UserRow } from "@/lib/users";
 
 // Port of design/Users.html: TableToolbar (search + Create User), DataTable (User = avatar +
 // name + email / Role / Phone Number / Created On / Action), Pagination and ConfirmDeleteModal.
-// OWNER-only page. The Owner's own row has no Delete; its Edit goes to Profile (the Owner account
+// OWNER/ADMIN page. The Owner's own row has no Delete; its Edit goes to Profile (the Owner account
 // is locked here — Profile / Change Password manage it).
 
 export default function UsersTable({ rows }: { rows: UserRow[] }) {

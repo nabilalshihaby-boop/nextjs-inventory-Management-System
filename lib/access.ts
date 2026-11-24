@@ -6,7 +6,7 @@
 // System configuration, user management, role management, translation management, reset, licensing and any future control panel are
 // Owner-only and are deliberately NOT in this catalog (they can't be granted).
 
-export const PERMISSION_GROUPS = ["dashboard", "pos", "sales", "customers", "purchases", "suppliers", "products", "warehouses", "finance", "reports", "output"] as const;
+export const PERMISSION_GROUPS = ["dashboard", "pos", "sales", "customers", "purchases", "suppliers", "products", "warehouses", "finance", "reports", "output", "system"] as const;
 export type PermissionGroup = (typeof PERMISSION_GROUPS)[number];
 
 /** [group, key, warehouse-scoped?]. A scoped permission touches warehouse-bound data, so it is limited to the user's assigned warehouses. */
@@ -48,6 +48,7 @@ const DEFINITIONS = [
   ["reports", "reports.operational.view", true],
   ["output", "export.use", true],
   ["output", "barcode.print", false],
+  ["system", "translations.manage", false],
 ] as const;
 
 export type PermissionKey = (typeof DEFINITIONS)[number][1];
@@ -140,8 +141,12 @@ const rule = (prefixes: string[], any: PermissionKey[], all?: PermissionKey[]): 
 
 /** Reachable by every signed-in user (their own profile, preferences, password, the safe dashboard shell and uploaded images). */
 const ALWAYS = ["/dashboard", "/profile", "/change-password", "/preferences", "/uploads"];
-/** Owner-only areas: never reachable by USER (or ADMIN) regardless of any role. */
-const OWNER_ONLY = ["/users", "/roles", "/settings", "/profit-loss/setup"];
+/** Business-administration areas: OWNER and ADMIN only, never a USER regardless of any role. */
+const ADMIN_AREAS = ["/users", "/roles", "/settings", "/profit-loss/setup"];
+/** OWNER-only (platform) areas: the reserved prefixes of the future Control Panel (deployment / database
+ *  connection, licensing, factory reset, backup destinations, releases, secrets). The reserved prefixes have no pages yet; keeping them
+ *  closed here means a future page can never become reachable by an ADMIN by accident. */
+const PLATFORM_ONLY = ["/control-panel", "/platform", "/licensing", "/backup", "/backups", "/database", "/factory-reset", "/releases", "/deployment", "/secrets"];
 
 const RULES: Rule[] = [
   { match: (p) => /^\/warehouse\/[^/]+\/export$/.test(p), any: ["export.use"] },
@@ -177,16 +182,18 @@ const RULES: Rule[] = [
 
 const normalize = (p: string) => (p.length > 1 ? p.replace(/\/+$/, "") : p) || "/";
 
-/** May this signed-in user open this path? (OWNER: always; ADMIN: everything except Roles & Permissions, whose own page re-checks the role.) */
+/** May this signed-in user open this path? (OWNER: always; ADMIN: everything except the platform-only areas; USER: only what its role grants.) */
 export function canOpenRoute(who: Who, pathname: string): boolean {
   const p = normalize(pathname);
   const r = roleOf(who);
   if (r === "OWNER") return true;
-  if (under("/roles")(p)) return false; // Roles & Permissions is Owner-only, for ADMIN as well
+  if (PLATFORM_ONLY.some((o) => under(o)(p))) return false; // platform-only: OWNER alone, ADMIN included
   if (r === "ADMIN") return true;
   if (r !== "USER") return false;
   if (ALWAYS.some((a) => under(a)(p))) return true;
-  if (OWNER_ONLY.some((o) => under(o)(p))) return false;
+  // Translation Management is its own permission (translations.manage): ADMIN has it, a USER only through an assigned role.
+  if (under("/settings/languages")(p)) return hasPermission(who, "translations.manage");
+  if (ADMIN_AREAS.some((o) => under(o)(p))) return false;
   const hit = RULES.find((x) => x.match(p));
   return !!hit && hasAnyPermission(who, hit.any) && (hit.all ?? []).every((k) => hasPermission(who, k));
 }

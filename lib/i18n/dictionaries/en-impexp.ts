@@ -39,7 +39,7 @@ export const enImpExp = {
     malformed: "The CSV is malformed (check the quotes around values).",
     empty: "The file has no data rows.",
     tooManyRows: "The file has more than {max} rows.",
-    noCurrency: "No default currency is configured. The Owner must choose one in System Settings.",
+    noCurrency: "No default currency is configured. An administrator must choose one in System Settings.",
     missingHeader: "Missing column “{name}”.",
     unexpectedHeader: "Unexpected column “{name}”.",
     duplicateHeader: "Duplicate column “{name}”.",

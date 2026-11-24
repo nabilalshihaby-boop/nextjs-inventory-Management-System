@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import Icon from "./Icon";
-import { FullscreenButton, MenuButton, PageTitle, SearchBox } from "./TopbarControls";
+import { FullscreenButton, MenuButton, SidebarToggle, PageTitle, SearchBox } from "./TopbarControls";
 import UserMenu, { type TopbarUser } from "./UserMenu";
 import { getDict } from "@/lib/i18n/server";
 
@@ -11,6 +11,7 @@ export default async function Topbar({ user, showPos = true, showProducts = true
   const t = await getDict();
   return (
     <header className="bp-topbar">
+      <SidebarToggle />
       <MenuButton />
       <Suspense fallback={<span className="sp-crumb" />}>
         <PageTitle />

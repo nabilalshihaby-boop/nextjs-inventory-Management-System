@@ -17,7 +17,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export const instant = false;
 
-// Users list (design/Users.html). OWNER only: ADMIN and USER are redirected before any user data
+// Users list (design/Users.html). OWNER or ADMIN: a USER is redirected before any user data
 // is read. Only display fields are selected — never passwordHash.
 export default async function UsersPage() {
   await connection();

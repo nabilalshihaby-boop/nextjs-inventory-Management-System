@@ -17,7 +17,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export const instant = false;
 
-// Opening Inventory Cost Setup (OWNER only). The role is re-read BEFORE any stock, cost or baseline is loaded: ADMIN is sent
+// Opening Inventory Cost Setup (OWNER or ADMIN only). The role is re-read BEFORE any stock, cost or baseline is loaded: ADMIN is sent
 // back to Profit & Loss, USER to the dashboard, signed-out visitors to sign-in. The page only reads; the one write is the
 // server action in ./actions.ts.
 export default async function Page({ searchParams }: PageProps<"/profit-loss/setup">) {

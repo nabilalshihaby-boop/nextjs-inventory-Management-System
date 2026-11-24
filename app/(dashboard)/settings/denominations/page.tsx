@@ -14,7 +14,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export const instant = false;
 
-// Cash denominations per currency (OWNER only; also enforced by settings/layout.tsx and every action).
+// Cash denominations per currency (OWNER or ADMIN only; also enforced by settings/layout.tsx and every action).
 // Used by the POS register close: the drawer is counted by denomination. Nothing is pre-filled.
 export default async function DenominationsPage() {
   await connection();

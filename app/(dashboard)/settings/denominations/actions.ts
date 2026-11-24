@@ -9,7 +9,7 @@ import { getDict } from "@/lib/i18n/server";
 import type { Dictionary } from "@/lib/i18n";
 import { canManageSystemSettings } from "@/lib/roles";
 
-// Cash denominations per currency (Settings). OWNER only - auth() and the role are re-read in every
+// Cash denominations per currency (Settings). OWNER or ADMIN only - auth() and the role are re-read in every
 // action (never from the client); payloads are strict Zod; the currency is looked up in the database.
 // Nothing is seeded. A denomination used by a closed register count is never deleted (inactivate it) and
 // its value is frozen; closed sessions keep their own snapshot rows, so history can never change.

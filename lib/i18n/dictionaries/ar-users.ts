@@ -23,7 +23,7 @@ export const arUsers: Dictionary["users"] = {
     mismatch: "كلمتا المرور غير متطابقتين",
   },
   err: {
-    noPermission: "المالك وحده يمكنه إدارة المستخدمين.",
+    noPermission: "ليست لديك صلاحية لإدارة المستخدمين.",
     invalidRequest: "طلب غير صالح",
     notFound: "لم يتم العثور على المستخدم",
     duplicate: "هذا البريد الإلكتروني مستخدم في حساب آخر",

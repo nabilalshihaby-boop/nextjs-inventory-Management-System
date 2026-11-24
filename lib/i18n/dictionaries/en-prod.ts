@@ -114,7 +114,7 @@ export const enProducts = {
   },
   err: {
     noPermission: "You don't have permission to change products.",
-    noCurrency: "No default currency is configured. The Owner must choose one in System Settings (/settings) before products can be saved.",
+    noCurrency: "No default currency is configured. An administrator must choose one in System Settings (/settings) before products can be saved.",
     notFound: "Product not found",
     invalidRequest: "Invalid request",
     duplicate: "A product with this code already exists",
@@ -156,7 +156,7 @@ export const enProducts = {
   },
   form: {
     back: "Back",
-    noCurrencyA: "No default currency is configured, so products can't be saved yet. The Owner must choose a default currency in ",
+    noCurrencyA: "No default currency is configured, so products can't be saved yet. An administrator must choose a default currency in ",
     systemSettings: "System Settings",
     before: "Before creating a product, add ",
     and: " and ",

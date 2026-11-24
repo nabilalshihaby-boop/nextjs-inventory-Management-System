@@ -11,7 +11,7 @@ import { fromUnits } from "@/lib/transfers";
 import { getDict } from "@/lib/i18n/server";
 import { fmt } from "@/lib/i18n/config";
 
-// Owner-only Opening Inventory Cost Setup. The browser may send ONLY a currency id and, per product, a cost per Base Unit:
+// OWNER/ADMIN Opening Inventory Cost Setup. The browser may send ONLY a currency id and, per product, a cost per Base Unit:
 // the payload is a strict schema, so a forged quantity, total, date, user or role field is rejected outright. The server
 // decides everything else — which products are eligible, their quantity, the total value, the cutover moment (its own
 // clock) and who created it (the session). The one and only write is the InventoryCostBaseline record: no stock quantity,

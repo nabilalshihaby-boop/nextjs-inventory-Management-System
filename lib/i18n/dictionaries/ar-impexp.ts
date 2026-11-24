@@ -39,7 +39,7 @@ export const arImpExp: Dictionary["importExport"] = {
     malformed: "ملف CSV غير صحيح التنسيق (تحقق من علامات الاقتباس حول القيم).",
     empty: "لا يحتوي الملف على صفوف بيانات.",
     tooManyRows: "يحتوي الملف على أكثر من {max} صف.",
-    noCurrency: "لم يتم تحديد عملة افتراضية. يجب على المالك اختيار واحدة في إعدادات النظام.",
+    noCurrency: "لم يتم تحديد عملة افتراضية. يجب على المسؤول اختيار واحدة في إعدادات النظام.",
     missingHeader: "العمود «{name}» مفقود.",
     unexpectedHeader: "عمود غير متوقع «{name}».",
     duplicateHeader: "العمود «{name}» مكرر.",

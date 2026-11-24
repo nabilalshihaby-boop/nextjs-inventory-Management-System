@@ -14,11 +14,11 @@ import { getDict } from "@/lib/i18n/server";
 import { fmt } from "@/lib/i18n/config";
 import type { Dictionary } from "@/lib/i18n";
 
-// Users management (OWNER only). Security rules enforced here, server-side:
-// - auth() is re-read in every action; only the OWNER may proceed (the role is never taken from
+// Users management (OWNER and ADMIN). Security rules enforced here, server-side:
+// - auth() is re-read in every action; only an OWNER or ADMIN may proceed (the role is never taken from
 //   the client, and the session itself is re-validated against MySQL in auth.ts).
 // - OWNER can never be assigned (role ∈ ADMIN | USER), the Owner account can't be edited,
-//   demoted or deleted here, and the Owner can't delete their own account.
+//   demoted or deleted here (by an ADMIN either), and nobody can delete their own account.
 // - Passwords: ≥ 8 characters, confirmed, hashed with bcryptjs cost 12. Plain passwords are never
 //   returned, logged, rendered or stored; hashes never leave the server.
 // - Avatars: content-validated JPG/PNG/WebP ≤ 2 MB, random name under public/uploads/users,
@@ -151,8 +151,9 @@ export async function updateUser(id: unknown, formData: FormData): Promise<UserR
   const newHash = d.password ? await bcrypt.hash(d.password, BCRYPT_COST) : null;
   try {
     await db.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id: target.id },
+      // Conditional on the role so an OWNER account can never be modified (or a user promoted to OWNER) by any request.
+      const upd = await tx.user.updateMany({
+        where: { id: target.id, role: { in: ["ADMIN", "USER"] } },
         data: {
           firstName: d.firstName,
           lastName: d.lastName,
@@ -164,8 +165,8 @@ export async function updateUser(id: unknown, formData: FormData): Promise<UserR
           ...(newHash ? { passwordHash: newHash, sessionVersion: { increment: 1 } } : {}),
           ...(image !== undefined ? { image } : {}),
         },
-        select: { id: true },
       });
+      if (upd.count !== 1) throw new AccessRejected(t.users.err.ownerLocked);
       await applyUserAccess(tx, { actorId: a.userId, userId: target.id, userName: `${d.firstName} ${d.lastName}`.trim(), input: accessOf(formData, d.role), t });
     });
   } catch (e) {

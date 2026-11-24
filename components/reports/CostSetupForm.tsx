@@ -8,7 +8,7 @@ import { useT } from "@/components/i18n/I18nProvider";
 import { formatMoney, formatQuantity } from "@/lib/money";
 import { saveCostBaseline, undoCostBaseline } from "@/app/(dashboard)/profit-loss/setup/actions";
 
-// Owner-only Opening Inventory Cost Setup form. The browser sends only the currency id and a cost per Base Unit for each product
+// OWNER/ADMIN Opening Inventory Cost Setup form. The browser sends only the currency id and a cost per Base Unit for each product
 // the Owner filled in; quantities, totals, the cutover moment and the user are decided by the server. The totals shown here are
 // a preview only (the same exact integer maths as the server).
 type Cur = { id: string; label: string; code: string; symbol: string };

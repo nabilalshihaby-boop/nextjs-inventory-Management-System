@@ -26,7 +26,7 @@ export type NavItem =
   | (NavLeaf & { icon: IconName; children?: undefined })
   | { id: string; label: string; icon: IconName; children: NavLeaf[]; href?: undefined; title?: undefined; roles?: readonly NavRole[] };
 
-const OWNER_ONLY = ["OWNER"] as const; // Users, Settings
+const STAFF_ADMIN = ["OWNER", "ADMIN"] as const; // Users, Roles & Permissions, Settings
 const STAFF = ["OWNER", "ADMIN"] as const; // Finance
 
 export const NAV: NavItem[] = [
@@ -91,10 +91,10 @@ export const NAV: NavItem[] = [
     children: [
       { id: "pe1", label: "Suppliers", href: "/suppliers", perm: ["suppliers.view", "suppliers.manage"] },
       { id: "pe2", label: "Customers", href: "/customers", perm: ["customers.view", "customers.manage"] },
-      { id: "pe3", label: "Users", href: "/users", roles: OWNER_ONLY },
+      { id: "pe3", label: "Users", href: "/users", roles: STAFF_ADMIN },
     ],
   },
-  { id: "ro", label: "Roles/Permissions", icon: "shield-check", href: "/roles", title: "Roles", roles: OWNER_ONLY },
+  { id: "ro", label: "Roles/Permissions", icon: "shield-check", href: "/roles", title: "Roles", roles: STAFF_ADMIN },
   { id: "wh", label: "Warehouse", icon: "warehouse", href: "/warehouse", perm: ["warehouses.view", "warehouses.manage"] },
   {
     id: "inv",
@@ -109,7 +109,7 @@ export const NAV: NavItem[] = [
   },
   { id: "re", label: "Reports", icon: "chart-column", href: "/reports" },
   { id: "cu", label: "Currencies", icon: "circle-dollar-sign", href: "/currencies", perm: ["finance.view"] },
-  { id: "la", label: "Languages", icon: "languages", href: "/settings/languages", roles: OWNER_ONLY },
+  { id: "la", label: "Languages", icon: "languages", href: "/settings/languages", roles: STAFF_ADMIN, perm: ["translations.manage"] },
   {
     id: "te",
     label: "Templates",
@@ -119,7 +119,7 @@ export const NAV: NavItem[] = [
       { id: "t2", label: "SMS Templates", href: "/sms-templates" },
     ],
   },
-  { id: "se", label: "Settings", icon: "settings", href: "/settings", roles: OWNER_ONLY },
+  { id: "se", label: "Settings", icon: "settings", href: "/settings", roles: STAFF_ADMIN },
 ];
 
 export type NavUser = { role?: string | null; permissions?: readonly string[] | null };

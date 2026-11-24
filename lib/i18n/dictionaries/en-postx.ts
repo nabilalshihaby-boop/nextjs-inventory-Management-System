@@ -31,7 +31,7 @@ export const enPosTx = {
   checkout: {
     keyInvalid: "This checkout key is invalid. Refresh the POS and try again.",
     replay: "Sale {ref} was already completed — nothing was charged again",
-    noCurrency: "No default currency is configured. The Owner must choose one in System Settings.",
+    noCurrency: "No default currency is configured. An administrator must choose one in System Settings.",
     chooseCustomer: "Choose a valid customer",
     walkInChanged: "The Walk-in Customer setting has changed. Refresh the POS and choose the customer again.",
     chooseWarehouse: "Choose a valid warehouse",

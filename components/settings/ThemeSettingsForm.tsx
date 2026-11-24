@@ -413,43 +413,51 @@ function Preview({ s, brandName }: { s: ThemeState; brandName: string }) {
   return (
     <div className="sp-card" style={{ overflow: "hidden" }} data-testid="theme-preview">
       <div
+        className="th-pv-frame"
+        data-cmp={cmp ? "true" : "false"}
         style={{
           ...v,
+          ["--th-side" as string]: cmp ? "60px" : "150px",
           background: "var(--bg-app)",
           color: "var(--text-1)",
-          display: "grid",
-          gridTemplateColumns: (cmp ? "60px" : "150px") + " minmax(0,1fr)",
           fontFamily: "var(--font-body)",
           position: "relative",
         }}
       >
-        <div style={{ background: "var(--bg-surface)", borderRight: "1px solid var(--border)", padding: "12px 8px", display: "flex", flexDirection: "column", gap: 2 }}>
-          <div className="sp-brand" style={{ padding: "0 6px", height: 44, fontSize: 16, border: 0, justifyContent: cmp ? "center" : "flex-start" }}>
+        {/* Non-interactive mock of the real sidebar: branding header on the topbar's surface token, then a nav area on the primary token (same rules as .bp-sidebar). */}
+        <div className="th-pv-side" aria-hidden="true" data-testid="theme-preview-sidebar">
+          <div className="sp-brand th-pv-bar" style={{ padding: cmp ? 0 : "0 12px", fontSize: 16, justifyContent: cmp ? "center" : "flex-start" }}>
             {cmp ? (
-              <b style={{ color: "var(--primary-600)" }}>{initials(brandName)}</b>
+              <b>{initials(brandName)}</b>
             ) : (
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
-                <b style={{ color: "var(--primary-600)" }}>{brandName[0]}</b>
+              <span className="sp-brand-text" style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                <b>{brandName[0]}</b>
                 {brandName.slice(1)}
               </span>
             )}
           </div>
-          {nav.map(([i, l, a]) => (
-            <div
-              key={l}
-              className="sp-nav-item"
-              aria-current={a ? "page" : undefined}
-              style={{ height: 36, padding: cmp ? 0 : "0 10px", justifyContent: cmp ? "center" : "flex-start", fontSize: 13 }}
-            >
-              <Icon name={i} size={16} />
-              {!cmp && l}
-            </div>
-          ))}
+          <div className="th-pv-nav">
+            {nav.map(([i, l, a]) => (
+              <div
+                key={l}
+                className="sp-nav-item"
+                aria-current={a ? "page" : undefined}
+                style={{ height: 36, padding: cmp ? 0 : "0 10px", justifyContent: cmp ? "center" : "flex-start", fontSize: 13, cursor: "default" }}
+              >
+                <Icon name={i} size={16} />
+                {!cmp && l}
+              </div>
+            ))}
+          </div>
         </div>
         <div style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
-          <div style={{ height: 48, display: "flex", alignItems: "center", gap: 10, padding: "0 16px", background: "var(--bg-surface)", borderBottom: "1px solid var(--border)" }}>
+          <div className="th-pv-bar th-pv-top" aria-hidden="true" data-testid="theme-preview-topbar">
             <b style={{ fontFamily: "var(--font-display)", fontSize: 15 }}>{T.theme.previewDashboard}</b>
-            <span style={{ marginLeft: "auto" }} className="sp-avatar">
+            <div className="th-pv-search">
+              <Icon name="search" size={14} />
+              <span>{T.theme.previewTypeName}</span>
+            </div>
+            <span className="sp-avatar" style={{ width: 28, height: 28, fontSize: 12 }}>
               A
             </span>
           </div>

@@ -21,7 +21,7 @@ export const enUsers = {
     mismatch: "Passwords do not match",
   },
   err: {
-    noPermission: "Only the Owner can manage users.",
+    noPermission: "You don't have permission to manage users.",
     invalidRequest: "Invalid request",
     notFound: "User not found",
     duplicate: "This email is already used by another account",

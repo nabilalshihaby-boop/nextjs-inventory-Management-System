@@ -14,7 +14,6 @@ import { useT } from "@/components/i18n/I18nProvider";
 // the OWNER, Finance for OWNER/ADMIN. UX only — routes are protected server-side.
 export default function Sidebar({ brand = siteConfig.name, logo = null, user }: { brand?: string; logo?: string | null; user?: { role?: string; permissions?: readonly string[] } }) {
   const items = visibleNav(user);
-  const { collapsed, toggleSidebar } = useShell();
   const [logoFailed, setLogoFailed] = useState(false);
   const [logoSrc, setLogoSrc] = useState(logo);
   if (logo !== logoSrc) {
@@ -22,7 +21,6 @@ export default function Sidebar({ brand = siteConfig.name, logo = null, user }: 
     setLogoFailed(false);
   }
   const showLogo = !!logo && !logoFailed;
-  const t = useT();
 
   return (
     <aside className="bp-sidebar">
@@ -39,7 +37,7 @@ export default function Sidebar({ brand = siteConfig.name, logo = null, user }: 
                 style={{ width: 32, height: 32, borderRadius: 8, objectFit: "cover", flex: "none" }}
                 onError={() => setLogoFailed(true)}
               />
-              <span className="sp-brand-name" style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+              <span className="sp-brand-name" title={brand} style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
                 {brand}
               </span>
             </>
@@ -50,27 +48,8 @@ export default function Sidebar({ brand = siteConfig.name, logo = null, user }: 
             </>
           )}
         </span>
-        <button
-          type="button"
-          className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-          aria-label={t.shell.collapseSidebar}
-          onClick={toggleSidebar}
-        >
-          <Icon name="panel-left-close" size={16} />
-        </button>
       </div>
       <nav className="sp-nav">
-        {collapsed && (
-          <button
-            type="button"
-            className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon"
-            aria-label={t.shell.expandSidebar}
-            onClick={toggleSidebar}
-            style={{ alignSelf: "center", marginBottom: 8 }}
-          >
-            <Icon name="panel-left-open" size={16} />
-          </button>
-        )}
         {/* usePathname may suspend under cacheComponents on dynamic routes */}
         <Suspense fallback={<NavItems pathname={null} items={items} />}>
           <NavItemsForRoute items={items} />
@@ -130,7 +109,7 @@ function NavItems({ pathname, items }: { pathname: string | null; items: NavItem
               className="sp-nav-item"
               title={collapsed ? name(it) : undefined}
               aria-expanded={expanded}
-              style={active ? { color: "var(--primary-700)" } : undefined}
+              style={active ? { background: "rgb(0 0 0 / .22)" } : undefined}
               onClick={() => setOpen(expanded ? null : it.id)}
             >
               <Icon name={it.icon} size={20} />

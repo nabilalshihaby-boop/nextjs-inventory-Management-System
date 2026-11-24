@@ -37,12 +37,17 @@ export default function SettingsForm({
   countries,
   currencies,
   customers,
+  warehouses,
+  warehouseStatus,
   dateFormats,
 }: {
   initial: SettingsValues;
   countries: CountryOption[];
   currencies: { value: string; label: string }[];
   customers: { value: string; label: string }[];
+  warehouses: { value: string; label: string }[];
+  /** "missing": a default is saved but that warehouse no longer exists. */
+  warehouseStatus: "none" | "ok" | "missing";
   dateFormats: string[];
 }) {
   const router = useRouter();
@@ -168,21 +173,6 @@ export default function SettingsForm({
         </option>
       ))}
     </select>
-  );
-  // Customer / Warehouse records don't exist yet: shown disabled, never submitted or saved.
-  const unavailable = (id: string, label: string, message: string) => (
-    <div className="sp-field">
-      <label className="sp-label" htmlFor={id}>
-        {label}
-        <i>*</i>
-      </label>
-      <select id={id} className="sp-select sp-select--placeholder" value="" disabled aria-describedby={`${id}-hint`}>
-        <option value="">{message}</option>
-      </select>
-      <span className="sp-hint" id={`${id}-hint`}>
-        {message}
-      </span>
-    </div>
   );
 
   return (
@@ -315,7 +305,27 @@ export default function SettingsForm({
                 </span>
               )}
             </Field>
-            {unavailable("st-defaultWarehouse", t.settings.defaultWarehouse, t.settings.noWarehousesYet)}
+            <Field k="defaultWarehouseId" error={e.defaultWarehouseId} label={t.settings.defaultWarehouse}>
+              {warehouses.length ? (
+                <>
+                  <select id="st-defaultWarehouseId" name="defaultWarehouseId" className="sp-select" value={f.defaultWarehouseId} onChange={set("defaultWarehouseId")} aria-describedby="st-defaultWarehouseId-hint">
+                    <option value="">{t.settings.selectWarehouse}</option>
+                    {warehouses.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className={warehouseStatus === "missing" ? "sp-error" : "sp-hint"} id="st-defaultWarehouseId-hint" role={warehouseStatus === "missing" ? "alert" : undefined}>
+                    {warehouseStatus === "missing" ? t.settings.defaultWarehouseMissing : t.settings.defaultWarehouseHint}
+                  </span>
+                </>
+              ) : (
+                <span className="sp-hint">
+                  {t.settings.noWarehousesYet} <Link href="/warehouse/create">{t.settings.createWarehouse}</Link>
+                </span>
+              )}
+            </Field>
             <Field k="country" error={e.country} label={t.settings.country} required>
               {select(
                 "country",

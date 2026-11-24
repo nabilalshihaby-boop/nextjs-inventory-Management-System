@@ -38,7 +38,7 @@ function details(t: Dictionary, e: AuditRow): string {
   return parts.join(" — ");
 }
 
-// Edit Role (OWNER only) with a read-only Audit trail tab. The audit list has no edit or delete control anywhere.
+// Edit Role (OWNER or ADMIN only) with a read-only Audit trail tab. The audit list has no edit or delete control anywhere.
 export default async function EditRolePage({ params, searchParams }: PageProps<"/roles/[id]/edit">) {
   await connection();
   const session = await auth();

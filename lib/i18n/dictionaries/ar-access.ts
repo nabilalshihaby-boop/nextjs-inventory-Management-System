@@ -4,7 +4,7 @@ import type { Dictionary } from "@/lib/i18n/dictionaries/en";
 export const arAccess: Dictionary["access"] = {
   title: "الأدوار والصلاحيات",
   intro: "حدّد ما يمكن لموظفي التشغيل فعله، وعيّن دورًا واحدًا لكل مستخدم موظف، وقيّده عند الحاجة ببعض المستودعات.",
-  ownerNote: "حسابات المالك والمدير لا تتقيد بهذه الأدوار. المالك وحده يمكنه إدارة الأدوار.",
+  ownerNote: "حسابات المالك والمدير لا تتقيد بهذه الأدوار. المالك والمديرون فقط يمكنهم إدارة الأدوار.",
   list: {
     search: "ابحث في الأدوار",
     searchAria: "ابحث في الأدوار",
@@ -82,6 +82,7 @@ export const arAccess: Dictionary["access"] = {
     finance: "المالية والمصروفات والتقارير المالية",
     reports: "التقارير التشغيلية وتقارير المخزون",
     output: "الطباعة والتصدير",
+    system: "إدارة النظام",
   },
   perm: {
     dashboard_view: "عرض أرقام لوحة التحكم",
@@ -121,6 +122,7 @@ export const arAccess: Dictionary["access"] = {
     reports_operational_view: "عرض إيصالات نقطة البيع وتقارير الصندوق",
     export_use: "تصدير البيانات",
     barcode_print: "طباعة ملصقات الباركود",
+    translations_manage: "تعديل الترجمات العربية وإعادة ضبطها (النص الإنجليزي الأصلي للقراءة فقط)",
   },
   templates: {
     CASHIER: { name: "أمين الصندوق", desc: "يبيع عبر نقطة البيع ويدير الصندوق." },
@@ -145,6 +147,8 @@ export const arAccess: Dictionary["access"] = {
       USER_ROLE_CHANGED: "تغيّر دور مستخدم",
       USER_ROLE_UNASSIGNED: "أُزيل الدور من مستخدم",
       USER_WAREHOUSE_SCOPE_CHANGED: "تغيّرت مستودعات مستخدم",
+      TRANSLATION_SAVED: "تم حفظ ترجمة عربية",
+      TRANSLATION_RESET: "تمت إعادة ترجمة عربية إلى الافتراضي",
     },
     added: "المضاف: {list}",
     removed: "المحذوف: {list}",
@@ -164,7 +168,7 @@ export const arAccess: Dictionary["access"] = {
     rolesLink: "إدارة الأدوار",
   },
   err: {
-    noPermission: "المالك وحده يمكنه إدارة الأدوار والصلاحيات.",
+    noPermission: "ليست لديك صلاحية لإدارة الأدوار والصلاحيات.",
     invalid: "تحقق من النموذج: الطلب غير صالح.",
     nameRequired: "الاسم مطلوب.",
     nameLong: "الاسم طويل جدًا (80 حرفًا كحد أقصى).",
