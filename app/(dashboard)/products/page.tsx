@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
+import { describeVariant, dimensionsOf, valuesOf } from "@/lib/family-core";
 import { getLocaleInfo } from "@/lib/i18n/server";
 import { formatMoney, formatQuantity } from "@/lib/money";
 import { canManageProducts } from "@/lib/roles";
@@ -36,6 +37,10 @@ export default async function ProductsPage() {
         stockAlert: true,
         createdAt: true,
         brand: { select: { name: true } },
+        family: { select: { name: true, dimension1: true, dimension2: true, dimension3: true } },
+        variantValue1: true,
+        variantValue2: true,
+        variantValue3: true,
         productUnit: { select: { name: true } },
         images: { orderBy: { position: "asc" }, take: 1, select: { path: true } },
         // Stored barcodes (every unit) only make the list searchable by barcode; they aren't shown.
@@ -64,6 +69,8 @@ export default async function ProductsPage() {
       lowStock: !qty || qty.lte(p.stockAlert), // Decimal comparison (no floats)
       image: p.images[0]?.path ?? null,
       createdOn: formatDateTime(p.createdAt, settings?.dateFormat, locale),
+      family: p.family?.name ?? null,
+      variant: p.family ? describeVariant(dimensionsOf(p.family), valuesOf(p)) : "",
     };
   });
 

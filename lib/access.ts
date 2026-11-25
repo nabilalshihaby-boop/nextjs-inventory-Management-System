@@ -152,6 +152,7 @@ const PLATFORM_ONLY = ["/control-panel", "/platform", "/licensing", "/backup", "
 const RULES: Rule[] = [
   { match: (p) => /^\/warehouse\/[^/]+\/export$/.test(p), any: ["export.use"] },
   rule(["/products/import"], ["products.manage"]),
+  rule(["/products/families"], ["products.manage"]),
   rule(["/pos"], ["pos.use", "pos.register.manage"]),
   rule(["/reports/pos-receipt"], ["pos.use", "reports.operational.view", "sales.view"]),
   rule(["/reports/register-session"], ["pos.register.manage", "reports.operational.view"]),

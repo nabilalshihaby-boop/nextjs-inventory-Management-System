@@ -25,7 +25,7 @@ export default function ProductsTable({ rows, canManage }: { rows: ProductRow[];
   const [pageSize, setPageSize] = useState(10);
 
   const needle = q.trim().toLowerCase();
-  const filtered = needle ? rows.filter((r) => [r.name, r.code, ...r.barcodes, r.brand, r.unit].join(" ").toLowerCase().includes(needle)) : rows;
+  const filtered = needle ? rows.filter((r) => [r.name, r.code, ...r.barcodes, r.brand, r.unit, r.family ?? "", r.variant].join(" ").toLowerCase().includes(needle)) : rows;
   const p = paginate(filtered, page, pageSize);
   const soon = (m: string) => toast(m, { id: "products-soon", icon: "ℹ️" });
   const disabled = { opacity: 0.5, cursor: "not-allowed" } as const;
@@ -97,7 +97,14 @@ export default function ProductsTable({ rows, canManage }: { rows: ProductRow[];
                       <span className="sp-thumb" />
                     )}
                   </td>
-                  <td className="primary-cell">{r.name}</td>
+                  <td className="primary-cell">
+                    {r.name}
+                    {r.family && (
+                      <div className="sp-sub" data-testid="product-family" style={{ fontSize: 12, fontWeight: 400, color: "var(--text-2)" }}>
+                        {r.family} · {r.variant}
+                      </div>
+                    )}
+                  </td>
                   <td>
                     <span className="sp-code"><bdi dir="ltr">{r.code}</bdi></span>
                   </td>

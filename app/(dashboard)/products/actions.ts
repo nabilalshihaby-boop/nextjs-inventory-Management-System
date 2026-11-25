@@ -15,6 +15,7 @@ import { conversionUsed, productHasActivity } from "@/lib/product-units";
 import { trimFactor } from "@/lib/unit-math";
 import { checkBarcodes, isBarcodeRace } from "@/lib/product-barcodes";
 import { IdentifierConflict, checkSkuFree, isIdentifierRace, releaseIdentifierLinks, skuLockedReason, syncProductIdentifiers, withDeadlockRetry } from "@/lib/product-identifiers";
+import { FamilyChanged, checkVariantFree, familyColumns, isVariantRace, parseFamilyRequest } from "@/lib/product-families";
 import { tr } from "@/lib/i18n/messages";
 import { getDict } from "@/lib/i18n/server";
 import { fmt } from "@/lib/i18n/config";
@@ -47,6 +48,10 @@ class UnitRuleError extends Error {
     super(message);
   }
 }
+
+/** The duplicate-combination message for a family request (used when the unique index decided a race). */
+const famDuplicate = (fam: Awaited<ReturnType<typeof parseFamilyRequest>>, t: Dictionary) =>
+  fam.ok && fam.request?.familyId ? fmt(t.families.product.duplicate, { family: fam.request.family.name, variant: fam.request.values.join(" · ") }) : t.families.product.changed;
 
 const isUniqueViolation = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
 
@@ -167,6 +172,14 @@ export async function createProduct(formData: FormData): Promise<ProductResult> 
   });
   if (!stock.success) for (const i of stock.error.issues) errors[i.path[0] as ProductField] ??= i.message;
 
+  // Family + variant values (optional: no family = a standalone product, exactly as before).
+  const fam = await parseFamilyRequest(formData, t.families.product);
+  if (!fam.ok) errors[fam.field] ??= fam.message;
+  else if (fam.request) {
+    const dup = await checkVariantFree(fam.request, null, t.families.product);
+    if (dup) errors.variantValue1 ??= dup;
+  }
+
   const units = parseUnits(formData, errors, t);
   if (f && units) {
     const names = new Map((await db.productUnit.findMany({ where: { id: { in: [f.productUnitId, f.saleUnitId, f.purchaseUnitId, ...units.map((u) => u.unitId)] } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
@@ -199,12 +212,20 @@ export async function createProduct(formData: FormData): Promise<ProductResult> 
     for (const img of images) paths.push(await saveImage(FOLDER, img));
     // A blank Base Unit barcode on a NEW product stays blank: a barcode is never derived from the SKU.
     const rowsNew = (units ?? []).map((u) => ({ ...u, barcode: barcodesNew.get(`u:${u.unitId}`) ?? "" }));
-    const product = await withDeadlockRetry(() => db.$transaction((tx) => createProductRecord(tx, f, { ...stock.data, source: "PRODUCT_FORM" }, a.userId, paths, rowsNew, barcodesNew.has("base") ? barcodesNew.get("base") : undefined)));
+    const familyReq = fam.ok ? fam.request : undefined;
+    const product = await withDeadlockRetry(() =>
+      db.$transaction(async (tx) => {
+        const familyData = familyReq ? await familyColumns(tx, familyReq) : undefined; // locks the family row, re-checks its dimensions
+        return createProductRecord(tx, f, { ...stock.data, source: "PRODUCT_FORM" }, a.userId, paths, rowsNew, barcodesNew.has("base") ? barcodesNew.get("base") : undefined, familyData);
+      }),
+    );
     revalidatePath("/products");
     return { ok: true, message: t.products.ok.created, id: product.id };
   } catch (e) {
     for (const p of paths) await deleteImage(FOLDER, p);
     if (e instanceof IdentifierConflict) return fail({ [e.field]: tr(t, e.msg.key, e.msg.vars) } as Errors, t);
+    if (e instanceof FamilyChanged) return fail({ familyId: t.families.product.changed }, t);
+    if (isVariantRace(e)) return fail({ variantValue1: famDuplicate(fam, t) }, t);
     if (isIdentifierRace(e)) return fail({ code: E.identifierRace }, t);
     if (isBarcodeRace(e)) return fail({ baseBarcode: t.barcode.err.race }, t);
     if (isUniqueViolation(e)) return fail({ code: E.duplicate }, t);
@@ -236,6 +257,13 @@ export async function updateProduct(id: unknown, formData: FormData): Promise<Pr
 
   const errors: Errors = {};
   const f = parseFields(formData, errors, S.productFieldsSchema);
+  // Family + variant values: a request without a family field leaves the stored family untouched; an empty one makes the product standalone.
+  const fam = await parseFamilyRequest(formData, t.families.product);
+  if (!fam.ok) errors[fam.field] ??= fam.message;
+  else if (fam.request) {
+    const dup = await checkVariantFree(fam.request, existing.id, t.families.product);
+    if (dup) errors.variantValue1 ??= dup;
+  }
   // Pack units: when the form sends them they replace the current set (subject to the safety rules below);
   // a request without them leaves the conversions untouched.
   const unitsProvided = formData.has("units");
@@ -293,7 +321,8 @@ export async function updateProduct(id: unknown, formData: FormData): Promise<Pr
       if (f.code !== nowCode && (await skuLockedReason(tx, existing.id))) throw new IdentifierConflict("code", { key: "products.err.skuLocked", vars: {} });
       // Registry rows hold foreign keys to the conversions: release them before conversions are deleted / rebuilt (synced again below).
       if (baseChanged || unitsProvided) await releaseIdentifierLinks(tx, existing.id);
-      await tx.product.update({ where: { id: existing.id }, data: productFieldData(f) });
+      const familyData = fam.ok && fam.request ? await familyColumns(tx, fam.request) : {}; // locks the family row, re-checks its dimensions
+      await tx.product.update({ where: { id: existing.id }, data: { ...productFieldData(f), ...familyData } });
       if (baseChanged) {
         // Allowed only for a product nothing refers to: rebuild its conversions around the new base unit.
         await tx.productUnitConversion.deleteMany({ where: { productId: existing.id } });
@@ -325,6 +354,8 @@ export async function updateProduct(id: unknown, formData: FormData): Promise<Pr
     for (const p of paths) await deleteImage(FOLDER, p);
     if (e instanceof UnitRuleError) return fail({ [e.field]: e.message } as Errors, t);
     if (e instanceof IdentifierConflict) return fail({ [e.field]: tr(t, e.msg.key, e.msg.vars) } as Errors, t);
+    if (e instanceof FamilyChanged) return fail({ familyId: t.families.product.changed }, t);
+    if (isVariantRace(e)) return fail({ variantValue1: famDuplicate(fam, t) }, t);
     if (isIdentifierRace(e)) return fail({ code: E.identifierRace }, t);
     if (isBarcodeRace(e)) return fail({ baseBarcode: t.barcode.err.race }, t);
     if (isUniqueViolation(e)) return fail({ code: E.duplicate }, t);

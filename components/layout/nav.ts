@@ -41,6 +41,7 @@ export const NAV: NavItem[] = [
       { id: "p3", label: "Brands", href: "/products/brands", perm: ["products.view", "catalog.manage"] },
       { id: "p4", label: "Units", href: "/products/units", perm: ["products.view", "catalog.manage"] },
       { id: "p5", label: "Base Units", href: "/base-units", perm: ["products.view", "catalog.manage"] },
+      { id: "p7", label: "Product Families", href: "/products/families", perm: ["products.manage"] }, // grouping of variants: product managers only
       { id: "p6", label: "Print Barcode", href: "/print-barcode", roles: STAFF, perm: ["barcode.print"] }, // barcode labels: OWNER/ADMIN
     ],
   },

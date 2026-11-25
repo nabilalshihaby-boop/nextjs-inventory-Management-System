@@ -86,7 +86,7 @@ export const { productFieldsSchema, openingStockSchema } = makeProductSchemas();
 
 export type ProductFields = z.infer<typeof productFieldsSchema>;
 export type OpeningStock = z.infer<typeof openingStockSchema>;
-export type ProductField = keyof ProductFields | keyof OpeningStock | "images" | "currency" | "units" | "baseBarcode";
+export type ProductField = keyof ProductFields | keyof OpeningStock | "images" | "currency" | "units" | "baseBarcode" | "familyId" | "variantValue1" | "variantValue2" | "variantValue3";
 
 /** Form values (plain strings). */
 export type ProductFormValues = Record<keyof ProductFields | keyof OpeningStock, string>;
@@ -108,6 +108,9 @@ export type ProductRow = {
   lowStock: boolean;
   image: string | null;
   createdOn: string;
+  /** Family name + readable variant ("Color: Red · Size: M"); null / "" for a standalone product. */
+  family: string | null;
+  variant: string;
 };
 
 // ---------------------------------------------------------------------------------------------

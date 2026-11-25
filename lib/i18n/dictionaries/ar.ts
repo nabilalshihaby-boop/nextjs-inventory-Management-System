@@ -19,6 +19,7 @@ import { arPosTx, arPosReceipt } from "@/lib/i18n/dictionaries/ar-postx";
 import { arCurrencies } from "@/lib/i18n/dictionaries/ar-cur";
 import { arWarehouses } from "@/lib/i18n/dictionaries/ar-wh";
 import { arCatalog, arProducts } from "@/lib/i18n/dictionaries/ar-prod";
+import { arFamilies } from "@/lib/i18n/dictionaries/ar-fam";
 import { arTransfers } from "@/lib/i18n/dictionaries/ar-xfer";
 import { arAdjustments } from "@/lib/i18n/dictionaries/ar-adj";
 import { arUsers } from "@/lib/i18n/dictionaries/ar-users";
@@ -85,6 +86,7 @@ export const ar: Dictionary = {
     p4: "الوحدات",
     p5: "الوحدات الأساسية",
     p6: "طباعة الباركود",
+    p7: "عائلات المنتجات",
     adj: "التسويات",
     quo: "عروض الأسعار",
     pur: "المشتريات",
@@ -649,6 +651,7 @@ export const ar: Dictionary = {
   warehouses: arWarehouses,
   catalog: arCatalog,
   products: arProducts,
+  families: arFamilies,
   transfers: arTransfers,
   adjustments: arAdjustments,
   users: arUsers,

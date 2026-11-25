@@ -18,6 +18,7 @@ import { enPosTx, enPosReceipt } from "@/lib/i18n/dictionaries/en-postx";
 import { enCurrencies } from "@/lib/i18n/dictionaries/en-cur";
 import { enWarehouses } from "@/lib/i18n/dictionaries/en-wh";
 import { enCatalog, enProducts } from "@/lib/i18n/dictionaries/en-prod";
+import { enFamilies } from "@/lib/i18n/dictionaries/en-fam";
 import { enTransfers } from "@/lib/i18n/dictionaries/en-xfer";
 import { enAdjustments } from "@/lib/i18n/dictionaries/en-adj";
 import { enUsers } from "@/lib/i18n/dictionaries/en-users";
@@ -84,6 +85,7 @@ export const en = {
     p4: "Units",
     p5: "Base Units",
     p6: "Print Barcode",
+    p7: "Product Families",
     adj: "Adjustments",
     quo: "Quotations",
     pur: "Purchases",
@@ -649,6 +651,7 @@ export const en = {
   warehouses: enWarehouses,
   catalog: enCatalog,
   products: enProducts,
+  families: enFamilies,
   transfers: enTransfers,
   adjustments: enAdjustments,
   users: enUsers,

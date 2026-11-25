@@ -10,6 +10,7 @@ import { isValidFactor } from "@/lib/unit-math";
 import { MAX_BARCODE_LENGTH, normalizeBarcode } from "@/lib/barcode";
 import { useT } from "@/components/i18n/I18nProvider";
 import { fmt } from "@/lib/i18n/config";
+import { VARIANT_VALUE_MAX, type FamilyOption } from "@/lib/family-core";
 import { createProduct, updateProduct, type ProductResult } from "@/app/(dashboard)/products/actions";
 import {
   BARCODE_OPTIONS,
@@ -50,6 +51,8 @@ export default function ProductForm({
   usedUnits = {},
   baseLocked = false,
   skuLocked = false,
+  families = [],
+  familyInitial = { familyId: "", values: ["", "", ""] },
 }: {
   options: Options;
   currency: Currency;
@@ -67,6 +70,10 @@ export default function ProductForm({
   baseLocked?: boolean;
   /** True when the product is used anywhere (stock, documents, held POS orders…): its SKU can't change (the server enforces it too). */
   skuLocked?: boolean;
+  /** Existing product families (id, name, ordered dimension names) for the optional Family selector. */
+  families?: FamilyOption[];
+  /** The product's stored family and variant values (edit). */
+  familyInitial?: { familyId: string; values: string[] };
 }) {
   const router = useRouter();
   const T = useT();
@@ -83,6 +90,8 @@ export default function ProductForm({
   const [kept, setKept] = useState<ProductImageRow[]>(images);
   const [packs, setPacks] = useState<UnitInput[]>(unitRows);
   const [baseBarcode, setBaseBarcode] = useState(initialBase);
+  const [familyId, setFamilyId] = useState(familyInitial.familyId);
+  const [variantValues, setVariantValues] = useState<string[]>(familyInitial.values);
   const [added, setAdded] = useState<{ file: File; url: string }[]>([]);
   const [pending, startTransition] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -131,6 +140,10 @@ export default function ProductForm({
     ];
     const n: Partial<Record<ProductField, string>> = {};
     for (const [k, msg] of required) if (!f[k].trim()) n[k] = msg;
+    // Family: one value for every dimension of the chosen family (the server re-checks everything).
+    familyDims.forEach((dim, i) => {
+      if (!(variantValues[i] ?? "").trim()) n[VALUE_KEYS[i]] = fmt(FM.valueRequired, { dimension: dim });
+    });
     // Barcodes: format only (uniqueness is the server's job).
     for (const [val, setErrFor] of [[baseBarcode, "baseBarcode"], ...packs.map((p) => [p.barcode ?? "", "units"])] as [string, "baseBarcode" | "units"][]) {
       if (!val.trim()) continue;
@@ -155,6 +168,9 @@ export default function ProductForm({
     for (const [k, v] of Object.entries(f)) if (!editing || !["warehouseId", "supplierId", "quantity", "status"].includes(k)) fd.set(k, v);
     fd.set("units", JSON.stringify(packs.map((p) => ({ unitId: p.unitId, factor: p.factor.trim(), active: p.active, forSales: p.forSales, forPurchases: p.forPurchases, barcode: (p.barcode ?? "").trim() }))));
     fd.set("baseBarcode", baseBarcode.trim());
+    // Family: always sent (an empty id = standalone). Values only for the dimensions the chosen family has.
+    fd.set("familyId", familyId);
+    familyDims.forEach((_, i) => fd.set(`variantValue${i + 1}`, (variantValues[i] ?? "").trim()));
     for (const k of kept) fd.append("keepImageIds", k.id);
     for (const a of added) fd.append("images", a.file);
     startTransition(async () => {
@@ -175,6 +191,11 @@ export default function ProductForm({
       router.refresh();
     });
   }
+
+  const FM = T.families.product;
+  const family = families.find((x) => x.id === familyId);
+  const familyDims = family?.dimensions ?? [];
+  const VALUE_KEYS = ["variantValue1", "variantValue2", "variantValue3"] as const;
 
   const label = (k: string, text: string, required: boolean) => (
     <label className="sp-label" htmlFor={`pd-${k}`}>
@@ -296,6 +317,64 @@ export default function ProductForm({
                 {input("code", F.code, F.codePh)}
                 {select("categoryId", LB.category, F.categoryPh, options.categories, createLink("/products/categories", F.missingCategories))}
                 {select("brandId", LB.brand, F.brandPh, options.brands, createLink("/products/brands", F.missingBrands))}
+                {wrap("familyId", (
+                  <>
+                    {label("familyId", FM.label, false)}
+                    <select
+                      id="pd-familyId"
+                      name="familyId"
+                      className="sp-select"
+                      value={familyId}
+                      onChange={(ev) => {
+                        setFamilyId(ev.target.value);
+                        setVariantValues(["", "", ""]);
+                        setE({ ...e, familyId: "", variantValue1: "", variantValue2: "", variantValue3: "" });
+                      }}
+                      aria-invalid={!!e.familyId || undefined}
+                      aria-describedby="pd-familyId-hint"
+                    >
+                      <option value="">{FM.none}</option>
+                      {families.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.name}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="sp-hint" id="pd-familyId-hint" style={{ fontSize: 12, color: "var(--text-2)" }}>
+                      {FM.hint} <Link href="/products/families">{FM.manage}</Link>
+                    </span>
+                    {err("familyId")}
+                  </>
+                ))}
+                {family && familyDims.length === 0 && (
+                  <div className="sp-badge sp-badge--warning" role="status" data-testid="family-no-dims" style={{ height: "auto", padding: "10px 14px", whiteSpace: "normal" }}>
+                    <Icon name="info" size={16} />
+                    <span>{FM.noDims}</span>
+                  </div>
+                )}
+                {family &&
+                  familyDims.map((dim, i) =>
+                    wrap(VALUE_KEYS[i], (
+                      <>
+                        {label(VALUE_KEYS[i], dim, true)}
+                        <input
+                          id={`pd-${VALUE_KEYS[i]}`}
+                          name={VALUE_KEYS[i]}
+                          className="sp-input "
+                          placeholder={fmt(FM.valuePlaceholder, { dimension: dim })}
+                          maxLength={VARIANT_VALUE_MAX}
+                          value={variantValues[i] ?? ""}
+                          onChange={(ev) => {
+                            setVariantValues(variantValues.map((v, j) => (j === i ? ev.target.value : v)));
+                            setE({ ...e, [VALUE_KEYS[i]]: "" });
+                          }}
+                          aria-invalid={!!e[VALUE_KEYS[i]] || undefined}
+                          data-testid={`variant-${i + 1}`}
+                        />
+                        {err(VALUE_KEYS[i])}
+                      </>
+                    )),
+                  )}
                 {select("barcodeSymbology", F.barcode, F.barcodePh, BARCODE_OPTIONS)}
                 {input("cost", LB.cost, F.costPh, true, money, "decimal")}
                 {input("price", LB.price, F.pricePh, true, money, "decimal")}

@@ -278,6 +278,17 @@ model Product {
   taxType             TaxType                 @default(EXCLUSIVE)
   quantityLimitation  Decimal?                @db.Decimal(14, 3)
   notes               String?                 @db.Text
+  /// Optional grouping only: a product with no family is a plain standalone product (every legacy product). A family member
+  /// is still a normal, stock-owning product with its own SKU, barcodes, price, cost and history.
+  familyId            String?
+  family              ProductFamily?          @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  /// One value per dimension configured on the family (variantValue1 ↔ dimension1, ...); null when unused / standalone.
+  variantValue1       String?                 @db.VarChar(60)
+  variantValue2       String?                 @db.VarChar(60)
+  variantValue3       String?                 @db.VarChar(60)
+  /// Normalized combination of the values (trimmed, NFC, lowercase, joined by U+001F; lib/family-core.ts). Null when standalone.
+  /// UNIQUE together with familyId: the database refuses two members of one family with the same combination, even for racing requests.
+  variantKey          String?                 @db.VarChar(191)
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
   images              ProductImage[]
@@ -294,9 +305,33 @@ model Product {
   saleReturnItems     SaleReturnItem[]
   costBaseline        InventoryCostBaseline?
 
+  @@unique([familyId, variantKey], map: "products_family_variant_key")
   @@index([categoryId])
   @@index([brandId])
   @@map("products")
+}
+
+/// An optional grouping layer over products (e.g. "T-Shirt" with dimensions Color / Size). It owns NO stock, price or SKU: every
+/// member stays a normal Product. Up to three named dimensions, filled in order (dimension2 only with dimension1, ...). While the
+/// family has members its dimensions are frozen (their meaning is baked into the members' values) and it can't be deleted.
+model ProductFamily {
+  id         String    @id @default(cuid())
+  /// Display name, unique on a case-insensitive collation.
+  name       String    @unique @db.VarChar(120)
+  /// Stable, Shopify-compatible group identity (lowercase letters, digits, hyphens). Generated once from the name when a family is created
+  /// locally, never regenerated when the name changes, and kept EXACTLY as supplied when it comes from a future Shopify import. It is the
+  /// family-level identity; the SKU stays the variant-level identity and is never replaced by it.
+  handle     String    @db.VarChar(255)
+  /// Trimmed + lowercased handle: the case-insensitive database uniqueness guard.
+  handleKey  String    @unique @db.VarChar(255)
+  dimension1 String?   @db.VarChar(40)
+  dimension2 String?   @db.VarChar(40)
+  dimension3 String?   @db.VarChar(40)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  products   Product[]
+
+  @@map("product_families")
 }
 
 enum IdentifierKind {

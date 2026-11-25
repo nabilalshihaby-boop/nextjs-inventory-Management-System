@@ -47,9 +47,11 @@ export async function createProductRecord(
   units: UnitInput[] = [],
   /** Base Unit barcode: a normalized string = explicit; null / undefined = none. A barcode is NEVER derived from the SKU any more. */
   baseBarcode?: string | null,
+  /** Family + variant columns (lib/product-families.ts familyColumns, computed in this same transaction); omitted = standalone. */
+  familyData?: { familyId: string | null; variantValue1: string | null; variantValue2: string | null; variantValue3: string | null; variantKey: string | null },
 ): Promise<{ id: string }> {
   const p = await tx.product.create({
-    data: { ...productFieldData(f), images: { create: imagePaths.map((path, position) => ({ path, position })) } },
+    data: { ...productFieldData(f), ...(familyData ?? {}), images: { create: imagePaths.map((path, position) => ({ path, position })) } },
     select: { id: true },
   });
   // Every product has exactly one BASE unit (factor 1, = productUnitId) plus its optional pack units. Stock is kept in base units.

@@ -77,6 +77,7 @@ export default async function EditProductPage({ params }: PageProps<"/products/[
       usedUnits={usedUnits}
       baseLocked={baseLocked}
       skuLocked={skuLocked}
+      familyInitial={{ familyId: p.familyId ?? "", values: [p.variantValue1 ?? "", p.variantValue2 ?? "", p.variantValue3 ?? ""] }}
       openingStock={
         entry
           ? { warehouse: entry.warehouse.name, supplier: entry.supplier?.name ?? null, quantity: formatQuantity(entry.quantity.toFixed(3)), status: entry.status }
