@@ -49,6 +49,7 @@ export default function ProductForm({
   baseBarcode: initialBase = "",
   usedUnits = {},
   baseLocked = false,
+  skuLocked = false,
 }: {
   options: Options;
   currency: Currency;
@@ -59,11 +60,13 @@ export default function ProductForm({
   openingStock?: { warehouse: string; supplier: string | null; quantity: string; status: string } | null;
   /** The product's pack units (everything except the base row) and which of them documents already used. */
   unitRows?: UnitInput[];
-  /** The stored Base Unit barcode (edit); blank on create = defaults to the Product Code on the server. */
+  /** The stored Base Unit barcode (edit); blank on create = no barcode (a barcode is never derived from the SKU). */
   baseBarcode?: string;
   usedUnits?: Record<string, boolean>;
   /** True when stock or documents refer to the product: its base unit can't change. */
   baseLocked?: boolean;
+  /** True when the product is used anywhere (stock, documents, held POS orders…): its SKU can't change (the server enforces it too). */
+  skuLocked?: boolean;
 }) {
   const router = useRouter();
   const T = useT();
@@ -189,13 +192,18 @@ export default function ProductForm({
         {label(k, text, required)}
         {addon ? (
           <div className="sp-group">
-            <input id={`pd-${k}`} name={k} className="sp-input " placeholder={placeholder} value={f[k]} onChange={set(k)} inputMode={inputMode} dir={inputMode || k === "code" ? "ltr" : undefined} aria-invalid={!!e[k] || undefined} />
+            <input id={`pd-${k}`} name={k} className="sp-input " placeholder={placeholder} value={f[k]} onChange={set(k)} inputMode={inputMode} dir={inputMode || k === "code" ? "ltr" : undefined} aria-invalid={!!e[k] || undefined} readOnly={(k === "code" && skuLocked) || undefined} data-sku-locked={k === "code" && skuLocked ? "true" : undefined} />
             <span className="sp-addon sp-addon--r">{addon}</span>
           </div>
         ) : (
-          <input id={`pd-${k}`} name={k} className="sp-input " placeholder={placeholder} value={f[k]} onChange={set(k)} inputMode={inputMode} dir={inputMode || k === "code" ? "ltr" : undefined} aria-invalid={!!e[k] || undefined} />
+          <input id={`pd-${k}`} name={k} className="sp-input " placeholder={placeholder} value={f[k]} onChange={set(k)} inputMode={inputMode} dir={inputMode || k === "code" ? "ltr" : undefined} aria-invalid={!!e[k] || undefined} readOnly={(k === "code" && skuLocked) || undefined} data-sku-locked={k === "code" && skuLocked ? "true" : undefined} />
         )}
         {err(k)}
+        {k === "code" && skuLocked && (
+          <span className="sp-hint" data-testid="sku-locked-note">
+            {T.products.err.skuLocked}
+          </span>
+        )}
       </>
     ));
   const select = (k: keyof ProductFormValues, text: string, placeholder: string, opts: readonly Option[], emptyHint?: ReactNode, required = true) =>

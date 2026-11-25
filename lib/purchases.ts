@@ -103,7 +103,7 @@ export type PurchaseInput = z.infer<typeof purchaseInputSchema>;
 export type PurchaseField = "purchaseDate" | "warehouseId" | "supplierId" | "status" | "orderTaxRate" | "discount" | "shipping" | "notes" | "items";
 
 // ---- view models ----
-export type PurchaseProduct = { productId: string; code: string; name: string; cost: string; taxType: "EXCLUSIVE" | "INCLUSIVE"; taxRate: string; unit: string; unitInfo: ProductUnits };
+export type PurchaseProduct = { productId: string; code: string; name: string; cost: string; taxType: "EXCLUSIVE" | "INCLUSIVE"; taxRate: string; unit: string; unitInfo: ProductUnits; /** Stored barcodes (search only). */ barcodes?: string[] };
 export type PurchaseStockLevel = { productId: string; warehouseId: string; quantity: string };
 export type PurchaseOption = { value: string; label: string };
 export type PurchaseRow = {

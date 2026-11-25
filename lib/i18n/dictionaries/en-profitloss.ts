@@ -69,7 +69,7 @@ export const enProfitLoss = {
     title: "Cost of goods sold can't be fully determined for this period",
     body: "Some sales or inventory adjustments in this period use stock whose cost was never recorded, or that was bought in another currency. The system will not guess a cost, so Gross Profit and Net Profit are not shown as numbers and the cost lines above cover only the sales whose cost is known.",
     why: "A product's cost becomes known again once its on-hand quantity returns to zero and it is next received with a recorded cost. Stock recorded from now on keeps its cost automatically.",
-    code: "Code",
+    code: "SKU",
     name: "Product",
     documents: "Documents affected",
     refs: "Examples",
@@ -83,7 +83,7 @@ export const enProfitLoss = {
   baselines: {
     title: "Opening cost baselines",
     note: "Stock valued manually from the moment shown. Periods before that moment stay unavailable for these products.",
-    code: "Code",
+    code: "SKU",
     name: "Product",
     effective: "Effective from",
     cost: "Cost per Base Unit",

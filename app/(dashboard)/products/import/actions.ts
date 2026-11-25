@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { canManageProducts } from "@/lib/roles";
 import { getDefaultCurrency } from "@/lib/settings";
 import { createProductRecord } from "@/lib/product-create";
+import { withDeadlockRetry } from "@/lib/product-identifiers";
 import { readImportFile, validateImport, type ImportIssue } from "@/lib/product-import";
 import { getDict } from "@/lib/i18n/server";
 import { fmt } from "@/lib/i18n/config";
@@ -63,7 +64,7 @@ export async function confirmProductImport(formData: FormData): Promise<ConfirmR
   type Outcome = { kind: "msg"; message: string } | { kind: "issues"; issues: ImportIssue[] } | { kind: "done"; created: number };
   let outcome: Outcome;
   try {
-    outcome = await db.$transaction(
+    outcome = await withDeadlockRetry(() => db.$transaction(
       async (tx): Promise<Outcome> => {
         const v = await validateImport(tx, file.text, t);
         if (!v.ok) return { kind: "msg", message: v.message };
@@ -74,7 +75,7 @@ export async function confirmProductImport(formData: FormData): Promise<ConfirmR
         return { kind: "done", created: v.rows.length };
       },
       { timeout: 120_000, maxWait: 10_000 },
-    );
+    ));
   } catch (e) {
     // A concurrent insert of the same code (unique index) rolls the whole import back.
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") return { ok: false, message: E.conflict };

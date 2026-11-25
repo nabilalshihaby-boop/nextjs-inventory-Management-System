@@ -1,6 +1,6 @@
 import type { Prisma } from "@/app/generated/prisma/client";
 import type { ProductFields, UnitInput } from "@/lib/products";
-import { barcodeFromProductCode } from "@/lib/barcode";
+import { syncProductIdentifiers } from "@/lib/product-identifiers";
 
 // The ONE place that writes a new product with its opening stock. Used by the Create Product
 // action and by the CSV import so both produce identical records (server-only; call inside a transaction).
@@ -45,7 +45,7 @@ export async function createProductRecord(
   userId: string,
   imagePaths: string[] = [],
   units: UnitInput[] = [],
-  /** Base Unit barcode: a normalized string = explicit; null = none; undefined = derive from the Product Code when valid and free. */
+  /** Base Unit barcode: a normalized string = explicit; null / undefined = none. A barcode is NEVER derived from the SKU any more. */
   baseBarcode?: string | null,
 ): Promise<{ id: string }> {
   const p = await tx.product.create({
@@ -53,19 +53,17 @@ export async function createProductRecord(
     select: { id: true },
   });
   // Every product has exactly one BASE unit (factor 1, = productUnitId) plus its optional pack units. Stock is kept in base units.
-  // The Base Unit barcode defaults to the Product Code, but only when the code is a valid barcode and no other unit already
-  // owns that value; otherwise the unit simply has no barcode yet (it must be set before the unit can be printed or scanned).
-  let base: string | null;
-  if (baseBarcode === undefined) {
-    const derived = barcodeFromProductCode(f.code);
-    base = derived && !(await tx.productUnitConversion.findFirst({ where: { barcode: derived }, select: { id: true } })) ? derived : null;
-  } else base = baseBarcode;
+  // A stored barcode is optional and is only what the caller explicitly gave: a new product has no barcode unless one is entered
+  // (POS and the product selectors find it by SKU meanwhile; a unit without a barcode just can't be printed or scanned).
+  const base = baseBarcode ?? null;
   await tx.productUnitConversion.createMany({
     data: [
       { productId: p.id, unitId: f.productUnitId, factor: "1", isBase: true, active: true, forSales: true, forPurchases: true, barcode: base },
       ...units.map((u) => ({ productId: p.id, unitId: u.unitId, factor: u.factor, isBase: false, active: u.active, forSales: u.forSales, forPurchases: u.forPurchases, barcode: u.barcode ? u.barcode : null })),
     ],
   });
+  // The SKU and every stored barcode enter the global identifier registry in this same transaction (unique: the final concurrency guard).
+  await syncProductIdentifiers(tx, p.id);
   if (stock) {
     // Entries are immutable source records: created here, never updated or deleted.
     await tx.productStockEntry.create({

@@ -1,7 +1,7 @@
 import { warehouseFilter } from "@/lib/access-scope";
 import { db } from "@/lib/db";
 import { getDefaultCurrency } from "@/lib/settings";
-import { unitOptionsFor } from "@/lib/product-units";
+import { barcodesOf, unitOptionsFor } from "@/lib/product-units";
 import type { StockOption, WarehouseOption } from "@/lib/transfers";
 
 /**
@@ -27,7 +27,9 @@ export async function getTransferFormData(): Promise<{
     }),
     getDefaultCurrency(),
   ]);
-  const units = await unitOptionsFor(db, [...new Set(stocks.map((s) => s.product.id))]);
+  const productIds = [...new Set(stocks.map((s) => s.product.id))];
+  const units = await unitOptionsFor(db, productIds);
+  const barcodes = await barcodesOf(db, productIds);
   return {
     warehouses: warehouses.map((w) => ({ value: w.id, label: w.name })),
     stock: stocks.map((s) => ({
@@ -39,6 +41,7 @@ export async function getTransferFormData(): Promise<{
       cost: s.product.cost.toFixed(2),
       available: s.quantity.toFixed(3),
       unitInfo: units.get(s.product.id)!,
+      barcodes: barcodes.get(s.product.id) ?? [],
     })),
     currency: currency ? { code: currency.code, symbol: currency.symbol, right: currency.right } : null,
   };

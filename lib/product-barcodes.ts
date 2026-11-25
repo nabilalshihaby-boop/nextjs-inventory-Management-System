@@ -4,12 +4,12 @@ import type { Vars } from "@/lib/i18n/messages";
 
 // SERVER-ONLY barcode rules for product units. The browser only ever sends a barcode TEXT for a unit row; everything
 // else (which product/unit it belongs to, whether it is free, who owns it) is re-read here. Uniqueness is guaranteed by
-// the database (unique index on product_unit_conversions.barcode); these checks give clear messages first and
-// map a lost race to a friendly error.
+// the database (unique indexes on product_unit_conversions.barcode and on the product_identifiers registry, which also
+// covers SKUs — lib/product-identifiers.ts); these checks give clear messages first and map a lost race to a friendly error.
 
 type Client = Prisma.TransactionClient;
 
-export type BarcodeProblem = { key: `barcode.err.${"chars" | "tooLong" | "duplicateHere" | "used" | "codeOfOther"}`; vars: Vars };
+export type BarcodeProblem = { key: `barcode.err.${"chars" | "tooLong" | "duplicateHere" | "used" | "codeOfOther" | "ownSkuPack"}`; vars: Vars };
 export type BarcodeEntry = {
   /** Caller's id for the entry (a unit id, or "base"). */
   id: string;
@@ -21,10 +21,12 @@ export type BarcodeEntry = {
 
 /**
  * Validate a set of barcodes for ONE product: format, duplicates inside the set, and conflicts with every other product
- * (another unit's barcode, or another product's Product Code — a scan must never be ambiguous with a code search).
+ * (another unit's barcode, or another product's SKU — a scan must never be ambiguous with a SKU search).
+ * A barcode equal to this product's OWN SKU is allowed on the Base Unit only (an alias of the SKU, e.g. the legacy automatic value);
+ * on a pack unit it is refused. `ownSku` is the SKU the product will have after this save.
  * `productId` is null while the product is being created. Returns the normalized value per entry (null = none).
  */
-export async function checkBarcodes(client: Client, productId: string | null, entries: BarcodeEntry[]): Promise<{ values: Map<string, string | null>; problems: Map<string, BarcodeProblem> }> {
+export async function checkBarcodes(client: Client, productId: string | null, entries: BarcodeEntry[], ownSku?: string): Promise<{ values: Map<string, string | null>; problems: Map<string, BarcodeProblem> }> {
   const values = new Map<string, string | null>();
   const problems = new Map<string, BarcodeProblem>();
   const filled: { id: string; value: string; conversionId?: string }[] = [];
@@ -44,7 +46,9 @@ export async function checkBarcodes(client: Client, productId: string | null, en
   // Duplicates inside the submitted set (case-insensitive, like the database).
   for (let i = 0; i < filled.length; i++)
     for (let j = i + 1; j < filled.length; j++) if (sameBarcode(filled[i].value, filled[j].value)) problems.set(filled[j].id, { key: "barcode.err.duplicateHere", vars: { barcode: filled[j].value } });
-  const toCheck = filled.filter((f) => !problems.has(f.id));
+  for (const f of filled) if (ownSku && sameBarcode(f.value, ownSku) && f.id !== "base" && !problems.has(f.id)) problems.set(f.id, { key: "barcode.err.ownSkuPack", vars: { barcode: f.value } });
+  // The Base Unit barcode equal to the product's own SKU is an alias: nothing else can hold that value, so there is nothing more to check.
+  const toCheck = filled.filter((f) => !problems.has(f.id) && !(ownSku && f.id === "base" && sameBarcode(f.value, ownSku)));
   if (!toCheck.length) return { values, problems };
 
   const [owners, codes] = await Promise.all([

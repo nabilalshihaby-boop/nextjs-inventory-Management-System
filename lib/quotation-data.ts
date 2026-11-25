@@ -1,6 +1,7 @@
 // Server-only loaders for the Quotations pages (OWNER/ADMIN — callers check the role first).
 import { recordOutOfScope, warehouseFilter, warehouseIdFilter } from "@/lib/access-scope";
 import { db } from "@/lib/db";
+import { barcodesOf } from "@/lib/product-units";
 import { formatDateOnly, formatDateTime } from "@/lib/format";
 import { getLocale } from "@/lib/i18n/server";
 import { getDefaultCurrency, getSystemSettings } from "@/lib/settings";
@@ -23,10 +24,11 @@ export async function getQuotationFormData(): Promise<QuotationFormData> {
     db.productStock.findMany({ where: await warehouseIdFilter(), select: { productId: true, warehouseId: true, quantity: true } }),
     getDefaultCurrency(),
   ]);
+  const barcodes = await barcodesOf(db, products.map((p) => p.id));
   return {
     customers: customers.map((c) => ({ value: c.id, label: c.name })),
     warehouses: warehouses.map((w) => ({ value: w.id, label: w.name })),
-    products: products.map((p) => ({ productId: p.id, code: p.code, name: p.name, price: p.price.toFixed(2), taxType: p.taxType, taxRate: p.orderTax.toFixed(2), unit: p.productUnit.name })),
+    products: products.map((p) => ({ productId: p.id, code: p.code, name: p.name, price: p.price.toFixed(2), taxType: p.taxType, taxRate: p.orderTax.toFixed(2), unit: p.productUnit.name, barcodes: barcodes.get(p.id) ?? [] })),
     stock: stock.map((s) => ({ productId: s.productId, warehouseId: s.warehouseId, quantity: s.quantity.toFixed(3) })),
     currency: currency ? { code: currency.code, symbol: currency.symbol, right: currency.right } : null,
   };

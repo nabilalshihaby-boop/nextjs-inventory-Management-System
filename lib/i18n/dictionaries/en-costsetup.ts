@@ -14,7 +14,7 @@ export const enCostSetup = {
   currencyHint: "Amounts of different currencies are never combined. Choose the currency these costs are in.",
   chooseCurrency: "Choose a currency",
   cols: {
-    code: "Code",
+    code: "SKU",
     name: "Product",
     unit: "Base Unit",
     onHand: "On hand (all warehouses)",

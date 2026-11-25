@@ -1,5 +1,6 @@
 "use client";
 
+import { searchProducts } from "@/lib/product-lookup";
 import Link from "next/link";
 import { Fragment, useMemo, useState, useTransition, type CSSProperties, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -94,7 +95,7 @@ export default function QuotationForm({
 
   const calc = calcQuotation(lines.map(safe), { orderTaxRate: okPct(orderTaxRate) ? orderTaxRate.trim() : "0", discount: okMoney(discount) ? discount.trim() : "0", shipping: okMoney(shipping) ? shipping.trim() : "0" });
   const needle = q.trim().toLowerCase();
-  const suggestions = needle ? products.filter((p) => (p.code + " " + p.name).toLowerCase().includes(needle)).slice(0, 20) : [];
+  const suggestions = needle ? searchProducts(products, needle) : [];
 
   const patch = (productId: string, p: Partial<Line>) => {
     setLines((ls) => ls.map((l) => (l.productId === productId ? { ...l, ...p } : l)));

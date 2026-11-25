@@ -89,7 +89,7 @@ export const arTransfers: Dictionary["transfers"] = {
     to: "إلى المستودع",
     toPh: "اختر مستودع الوجهة",
     product: "المنتج",
-    productPh: "ابحث عن منتج بالرمز أو الاسم",
+    productPh: "ابحث عن منتج بالـ SKU أو الاسم أو الباركود",
     productPhNoFrom: "اختر مستودع المصدر أولًا",
     productsAria: "المنتجات",
     noMatch: "لا توجد منتجات في هذا المستودع لها مخزون تطابق “{q}”.",

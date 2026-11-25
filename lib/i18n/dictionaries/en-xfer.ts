@@ -87,7 +87,7 @@ export const enTransfers = {
     to: "To Warehouse",
     toPh: "Choose To Warehouse",
     product: "Product",
-    productPh: "Search Product by Code Name",
+    productPh: "Search Product by SKU, Name or Barcode",
     productPhNoFrom: "Choose From Warehouse first",
     productsAria: "Products",
     noMatch: "No products with stock in this warehouse match “{q}”.",

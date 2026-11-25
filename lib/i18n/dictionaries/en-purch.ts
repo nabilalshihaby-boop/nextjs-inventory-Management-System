@@ -81,7 +81,7 @@ export const enPurch = {
     chooseSupplier: "Choose Supplier",
     noneYet: "None available yet",
     product: "Product",
-    productSearch: "Search Product by Code Name",
+    productSearch: "Search Product by SKU, Name or Barcode",
     productsAria: "Products",
     noMatch: "No products match “{q}”.",
     orderItems: "Order items",

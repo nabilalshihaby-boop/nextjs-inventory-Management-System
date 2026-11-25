@@ -14,6 +14,7 @@ import { MAX_PRODUCT_IMAGES, checkUnitConfig, makeProductSchemas, makeUnitsSchem
 import { conversionUsed, productHasActivity } from "@/lib/product-units";
 import { trimFactor } from "@/lib/unit-math";
 import { checkBarcodes, isBarcodeRace } from "@/lib/product-barcodes";
+import { IdentifierConflict, checkSkuFree, isIdentifierRace, releaseIdentifierLinks, skuLockedReason, syncProductIdentifiers, withDeadlockRetry } from "@/lib/product-identifiers";
 import { tr } from "@/lib/i18n/messages";
 import { getDict } from "@/lib/i18n/server";
 import { fmt } from "@/lib/i18n/config";
@@ -101,12 +102,12 @@ function parseUnits(fd: FormData, errors: Errors, t: Dictionary): UnitInput[] | 
  * Barcodes of the unit rows (and the Base Unit) sent by the form: validated against the format and against every other
  * product. `baseRaw`/`row.barcode` undefined = not sent (the stored value is kept). Messages are localized here.
  */
-async function barcodeChecks(t: Dictionary, productId: string | null, baseRaw: string | undefined, baseConversionId: string | undefined, rows: { unitId: string; barcode?: string }[], conversionByUnit: Map<string, string>, errors: Errors) {
+async function barcodeChecks(t: Dictionary, productId: string | null, baseRaw: string | undefined, baseConversionId: string | undefined, rows: { unitId: string; barcode?: string }[], conversionByUnit: Map<string, string>, errors: Errors, ownSku: string) {
   const entries = [
     ...(baseRaw !== undefined ? [{ id: "base", raw: baseRaw, conversionId: baseConversionId }] : []),
     ...rows.flatMap((r) => (r.barcode !== undefined ? [{ id: `u:${r.unitId}`, raw: r.barcode, conversionId: conversionByUnit.get(r.unitId) }] : [])),
   ];
-  const { values, problems } = await checkBarcodes(db, productId, entries);
+  const { values, problems } = await checkBarcodes(db, productId, entries, ownSku);
   for (const [id, p] of problems) {
     const msg = tr(t, p.key, p.vars);
     if (id === "base") errors.baseBarcode ??= msg;
@@ -173,7 +174,7 @@ export async function createProduct(formData: FormData): Promise<ProductResult> 
   }
   if (f) await checkRelations(f, errors, E, (units ?? []).map((u) => u.unitId));
   const baseRawNew = formData.has("baseBarcode") ? str(formData, "baseBarcode") : undefined;
-  const barcodesNew = f && units ? await barcodeChecks(t, null, baseRawNew?.trim() ? baseRawNew : undefined, undefined, units, new Map(), errors) : new Map<string, string | null>();
+  const barcodesNew = f && units ? await barcodeChecks(t, null, baseRawNew?.trim() ? baseRawNew : undefined, undefined, units, new Map(), errors, f.code) : new Map<string, string | null>();
   if (stock.success) {
     const [warehouse, supplier] = await Promise.all([
       // Opening stock writes into a warehouse: it must be inside the user's scope (a scoped user can't stock another warehouse).
@@ -183,7 +184,11 @@ export async function createProduct(formData: FormData): Promise<ProductResult> 
     if (!warehouse) errors.warehouseId ??= E.validWarehouse;
     if (!supplier) errors.supplierId ??= E.validSupplier;
   }
-  if (f && (await db.product.findUnique({ where: { code: f.code }, select: { id: true } }))) errors.code ??= E.duplicate;
+  // The SKU must be free in the global identifier registry: no other SKU (any letter case) and no other unit's barcode.
+  if (f) {
+    const taken = await checkSkuFree(db, null, f.code);
+    if (taken) errors.code ??= tr(t, taken.key, taken.vars);
+  }
 
   const images = await readImages(formData, errors, t);
   if (images.length > MAX_PRODUCT_IMAGES) errors.images ??= fmt(E.maxImages, { max: MAX_PRODUCT_IMAGES });
@@ -192,13 +197,15 @@ export async function createProduct(formData: FormData): Promise<ProductResult> 
   const paths: string[] = [];
   try {
     for (const img of images) paths.push(await saveImage(FOLDER, img));
-    // Blank Base Unit barcode on a NEW product = default to the Product Code (createProductRecord checks it is valid and free).
+    // A blank Base Unit barcode on a NEW product stays blank: a barcode is never derived from the SKU.
     const rowsNew = (units ?? []).map((u) => ({ ...u, barcode: barcodesNew.get(`u:${u.unitId}`) ?? "" }));
-    const product = await db.$transaction((tx) => createProductRecord(tx, f, { ...stock.data, source: "PRODUCT_FORM" }, a.userId, paths, rowsNew, barcodesNew.has("base") ? barcodesNew.get("base") : undefined));
+    const product = await withDeadlockRetry(() => db.$transaction((tx) => createProductRecord(tx, f, { ...stock.data, source: "PRODUCT_FORM" }, a.userId, paths, rowsNew, barcodesNew.has("base") ? barcodesNew.get("base") : undefined)));
     revalidatePath("/products");
     return { ok: true, message: t.products.ok.created, id: product.id };
   } catch (e) {
     for (const p of paths) await deleteImage(FOLDER, p);
+    if (e instanceof IdentifierConflict) return fail({ [e.field]: tr(t, e.msg.key, e.msg.vars) } as Errors, t);
+    if (isIdentifierRace(e)) return fail({ code: E.identifierRace }, t);
     if (isBarcodeRace(e)) return fail({ baseBarcode: t.barcode.err.race }, t);
     if (isUniqueViolation(e)) return fail({ code: E.duplicate }, t);
     throw e;
@@ -223,7 +230,7 @@ export async function updateProduct(id: unknown, formData: FormData): Promise<Pr
 
   const existing = await db.product.findUnique({
     where: { id: pid.data },
-    select: { id: true, productUnitId: true, images: { select: { id: true, path: true } }, unitConversions: { select: { id: true, unitId: true, factor: true, isBase: true, active: true, forSales: true, forPurchases: true } } },
+    select: { id: true, code: true, productUnitId: true, images: { select: { id: true, path: true } }, unitConversions: { select: { id: true, unitId: true, factor: true, isBase: true, active: true, forSales: true, forPurchases: true } } },
   });
   if (!existing) return { ok: false, message: E.notFound };
 
@@ -239,14 +246,22 @@ export async function updateProduct(id: unknown, formData: FormData): Promise<Pr
     const names = new Map((await db.productUnit.findMany({ where: { id: { in: [f.productUnitId, f.saleUnitId, f.purchaseUnitId, ...rows.map((u) => u.unitId)] } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
     if (sent || !unitsProvided) Object.assign(errors, checkUnitConfig(f.productUnitId, f.saleUnitId, f.purchaseUnitId, rows, (id) => names.get(id) ?? "", t.units.val));
     await checkRelations(f, errors, E, rows.map((u) => u.unitId));
-    if (await db.product.findFirst({ where: { code: f.code, NOT: { id: existing.id } }, select: { id: true } })) errors.code ??= E.duplicate;
+    if (f.code !== existing.code) {
+      // Changing the SKU: refused once the product is used anywhere (re-checked inside the transaction), and the new SKU must be free
+      // in the global identifier registry (no other SKU in any letter case, no other unit's barcode).
+      if (await skuLockedReason(db, existing.id)) errors.code ??= E.skuLocked;
+      else {
+        const taken = await checkSkuFree(db, existing.id, f.code);
+        if (taken) errors.code ??= tr(t, taken.key, taken.vars);
+      }
+    }
   }
   // Barcodes: a field that was not sent keeps its stored value; a blank one clears it. Validated against every other product.
   const baseRaw = formData.has("baseBarcode") ? str(formData, "baseBarcode") : undefined;
   const conversionByUnit = new Map(existing.unitConversions.filter((c) => !c.isBase).map((c) => [c.unitId, c.id]));
   const baseRow = existing.unitConversions.find((c) => c.isBase);
   const baseChangedEarly = !!f && f.productUnitId !== existing.productUnitId;
-  const barcodes = f && sent ? await barcodeChecks(t, existing.id, baseRaw, baseChangedEarly ? undefined : baseRow?.id, rows, baseChangedEarly ? new Map() : conversionByUnit, errors) : f ? await barcodeChecks(t, existing.id, baseRaw, baseChangedEarly ? undefined : baseRow?.id, [], new Map(), errors) : new Map<string, string | null>();
+  const barcodes = f && sent ? await barcodeChecks(t, existing.id, baseRaw, baseChangedEarly ? undefined : baseRow?.id, rows, baseChangedEarly ? new Map() : conversionByUnit, errors, f.code) : f ? await barcodeChecks(t, existing.id, baseRaw, baseChangedEarly ? undefined : baseRow?.id, [], new Map(), errors, f.code) : new Map<string, string | null>();
   // Images to keep: only ids that really belong to this product.
   const keepRequested = new Set(formData.getAll("keepImageIds").filter((v): v is string => typeof v === "string"));
   const keep = existing.images.filter((i) => keepRequested.has(i.id));
@@ -258,7 +273,7 @@ export async function updateProduct(id: unknown, formData: FormData): Promise<Pr
   const paths: string[] = [];
   try {
     for (const img of images) paths.push(await saveImage(FOLDER, img));
-    await db.$transaction(async (tx) => {
+    await withDeadlockRetry(() => db.$transaction(async (tx) => {
       // ---- unit safety (re-read inside the transaction) ----
       const V = t.units.val;
       const nameOf = async (id: string) => (await tx.productUnit.findUnique({ where: { id }, select: { name: true } }))?.name ?? "";
@@ -273,6 +288,11 @@ export async function updateProduct(id: unknown, formData: FormData): Promise<Pr
           if (sub && trimFactor(sub.factor) !== factor && (await conversionUsed(tx, existing.id, h.unitId, factor))) throw new UnitRuleError("units", fmt(V.factorChange, { unit: await nameOf(h.unitId) }));
         }
       }
+      // The SKU is locked once the product is used (re-read here, inside the transaction, so a sale made a moment ago still counts).
+      const nowCode = (await tx.product.findUniqueOrThrow({ where: { id: existing.id }, select: { code: true } })).code;
+      if (f.code !== nowCode && (await skuLockedReason(tx, existing.id))) throw new IdentifierConflict("code", { key: "products.err.skuLocked", vars: {} });
+      // Registry rows hold foreign keys to the conversions: release them before conversions are deleted / rebuilt (synced again below).
+      if (baseChanged || unitsProvided) await releaseIdentifierLinks(tx, existing.id);
       await tx.product.update({ where: { id: existing.id }, data: productFieldData(f) });
       if (baseChanged) {
         // Allowed only for a product nothing refers to: rebuild its conversions around the new base unit.
@@ -293,15 +313,19 @@ export async function updateProduct(id: unknown, formData: FormData): Promise<Pr
       }
       // The Base Unit barcode (when this request sent one and the base unit itself did not change).
       if (!baseChanged && barcodes.has("base")) await tx.productUnitConversion.updateMany({ where: { productId: existing.id, isBase: true }, data: { barcode: barcodes.get("base") } });
+      // The SKU and every stored barcode of this product are re-registered in this same transaction (unique: the final concurrency guard).
+      await syncProductIdentifiers(tx, existing.id);
       if (removed.length) await tx.productImage.deleteMany({ where: { id: { in: removed.map((r) => r.id) }, productId: existing.id } });
       await Promise.all(keep.map((k, position) => tx.productImage.update({ where: { id: k.id }, data: { position } })));
       if (paths.length) {
         await tx.productImage.createMany({ data: paths.map((path, i) => ({ productId: existing.id, path, position: keep.length + i })) });
       }
-    });
+    }));
   } catch (e) {
     for (const p of paths) await deleteImage(FOLDER, p);
     if (e instanceof UnitRuleError) return fail({ [e.field]: e.message } as Errors, t);
+    if (e instanceof IdentifierConflict) return fail({ [e.field]: tr(t, e.msg.key, e.msg.vars) } as Errors, t);
+    if (isIdentifierRace(e)) return fail({ code: E.identifierRace }, t);
     if (isBarcodeRace(e)) return fail({ baseBarcode: t.barcode.err.race }, t);
     if (isUniqueViolation(e)) return fail({ code: E.duplicate }, t);
     throw e;

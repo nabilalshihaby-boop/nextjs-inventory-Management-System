@@ -9,6 +9,15 @@ import { toBaseQuantity, trimFactor } from "@/lib/unit-math";
 
 type Client = Prisma.TransactionClient;
 
+/** Every STORED barcode of each product's units (active or not), base unit first: lookup data for product selectors (search only). */
+export async function barcodesOf(client: Client, productIds: string[]): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  if (!productIds.length) return out;
+  const rows = await client.productUnitConversion.findMany({ where: { productId: { in: productIds }, barcode: { not: null } }, orderBy: [{ isBase: "desc" }, { createdAt: "asc" }], select: { productId: true, barcode: true } });
+  for (const r of rows) if (r.barcode) out.set(r.productId, [...(out.get(r.productId) ?? []), r.barcode]);
+  return out;
+}
+
 export type UnitView = { unitId: string; name: string; factor: string; isBase: boolean; active: boolean; forSales: boolean; forPurchases: boolean; barcode?: string | null };
 export type UnitSet = { productId: string; baseUnitId: string; saleUnitId: string; purchaseUnitId: string; units: UnitView[] };
 export type Purpose = "SALE" | "PURCHASE" | "ANY";

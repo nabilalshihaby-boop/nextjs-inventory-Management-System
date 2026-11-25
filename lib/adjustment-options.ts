@@ -1,7 +1,7 @@
 import { warehouseFilter, warehouseIdFilter } from "@/lib/access-scope";
 import { db } from "@/lib/db";
 import type { ProductPick, StockLevel } from "@/lib/adjustments";
-import { unitOptionsFor } from "@/lib/product-units";
+import { barcodesOf, unitOptionsFor } from "@/lib/product-units";
 import type { WarehouseOption } from "@/lib/transfers";
 
 /**
@@ -16,9 +16,10 @@ export async function getAdjustmentFormData(): Promise<{ warehouses: WarehouseOp
     db.productStock.findMany({ where: await warehouseIdFilter(), select: { productId: true, warehouseId: true, quantity: true } }),
   ]);
   const units = await unitOptionsFor(db, products.map((p) => p.id));
+  const barcodes = await barcodesOf(db, products.map((p) => p.id));
   return {
     warehouses: warehouses.map((w) => ({ value: w.id, label: w.name })),
-    products: products.map((p) => ({ productId: p.id, code: p.code, name: p.name, unit: p.productUnit.name, unitInfo: units.get(p.id)! })),
+    products: products.map((p) => ({ productId: p.id, code: p.code, name: p.name, unit: p.productUnit.name, unitInfo: units.get(p.id)!, barcodes: barcodes.get(p.id) ?? [] })),
     stock: stock.map((s) => ({ productId: s.productId, warehouseId: s.warehouseId, quantity: s.quantity.toFixed(3) })),
   };
 }

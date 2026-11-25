@@ -170,6 +170,9 @@ model ProductUnitConversion {
   /// The primary barcode of this PRODUCT UNIT (Code 128, printable ASCII, 1–20 chars, trimmed). Unique across every
   /// product and unit (case-insensitive); NULL = no barcode yet. Lines never copy it, so changing it can't touch history.
   barcode      String?     @unique @db.VarChar(20)
+  /// The registry row of this unit's stored barcode (a BARCODE identifier, or the SKU identifier when the barcode is this
+  /// product's own SKU on the base unit — see ProductIdentifier). Maintained with the barcode in the same transaction.
+  identifier   ProductIdentifier?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
@@ -281,6 +284,7 @@ model Product {
   stocks              ProductStock[]
   stockEntries        ProductStockEntry[]
   unitConversions     ProductUnitConversion[]
+  identifiers         ProductIdentifier[]
   transferItems       StockTransferItem[]
   adjustmentItems     StockAdjustmentItem[]
   purchaseItems       PurchaseItem[]
@@ -293,6 +297,37 @@ model Product {
   @@index([categoryId])
   @@index([brandId])
   @@map("products")
+}
+
+enum IdentifierKind {
+  SKU
+  BARCODE
+}
+
+/// Registry of every product identifier — the SKU (Product.code) and every stored unit barcode — in ONE namespace, so the database itself
+/// guarantees that no two identifiers collide: a barcode can never equal another product's SKU, a SKU can never equal another unit's
+/// barcode, and no two barcodes (or SKUs) are equal, whatever their letter case. `valueKey` is the identifier trimmed and uppercased
+/// (the same normalization everywhere, lib/product-identifiers.ts) and is unique on a case-insensitive collation.
+/// Product.code and ProductUnitConversion.barcode remain the canonical values; this table mirrors them and is written in the SAME
+/// transaction as every change to either (syncProductIdentifiers). A legacy Base Unit barcode that equals its own SKU is an ALIAS: it
+/// is the SKU row (kind SKU) that points at that conversion, not a second identifier. Rows are Restrict-linked: a product or a
+/// conversion can't disappear while a registry row refers to it (writers remove the row first).
+/// Future Shopify matching starts from the SKU only; once a link exists, Shopify IDs become the durable external reference (a mapping
+/// table added later). A barcode is POS/label data and never the sync key.
+model ProductIdentifier {
+  id           String                 @id @default(cuid())
+  valueKey     String                 @unique @db.VarChar(64)
+  kind         IdentifierKind
+  productId    String
+  product      Product                @relation(fields: [productId], references: [id], onDelete: Restrict)
+  /// The unit whose stored barcode this is (BARCODE rows, and a SKU row that is also the base unit's barcode); NULL for a plain SKU.
+  conversionId String?                @unique
+  conversion   ProductUnitConversion? @relation(fields: [conversionId], references: [id], onDelete: Restrict)
+  createdAt    DateTime               @default(now())
+
+  @@index([productId])
+  @@index([kind])
+  @@map("product_identifiers")
 }
 
 /// Product image: relative path under /uploads/products (local-development storage).

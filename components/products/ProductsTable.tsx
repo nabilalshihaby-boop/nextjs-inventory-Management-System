@@ -25,7 +25,7 @@ export default function ProductsTable({ rows, canManage }: { rows: ProductRow[];
   const [pageSize, setPageSize] = useState(10);
 
   const needle = q.trim().toLowerCase();
-  const filtered = needle ? rows.filter((r) => [r.name, r.code, r.brand, r.unit].join(" ").toLowerCase().includes(needle)) : rows;
+  const filtered = needle ? rows.filter((r) => [r.name, r.code, ...r.barcodes, r.brand, r.unit].join(" ").toLowerCase().includes(needle)) : rows;
   const p = paginate(filtered, page, pageSize);
   const soon = (m: string) => toast(m, { id: "products-soon", icon: "ℹ️" });
   const disabled = { opacity: 0.5, cursor: "not-allowed" } as const;

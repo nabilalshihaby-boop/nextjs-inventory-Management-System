@@ -8,6 +8,7 @@ import { canManageProducts } from "@/lib/roles";
 import { getProductFormData } from "@/lib/product-options";
 import { getDict } from "@/lib/i18n/server";
 import { conversionUsed, productHasActivity } from "@/lib/product-units";
+import { skuLockedReason } from "@/lib/product-identifiers";
 import { trimFactor } from "@/lib/unit-math";
 import ProductForm from "@/components/products/ProductForm";
 
@@ -44,6 +45,7 @@ export default async function EditProductPage({ params }: PageProps<"/products/[
   const usedUnits: Record<string, boolean> = {};
   for (const r of unitRows) usedUnits[r.unitId] = await conversionUsed(db, p.id, r.unitId, r.factor);
   const baseLocked = await productHasActivity(db, p.id);
+  const skuLocked = (await skuLockedReason(db, p.id)) !== null;
   return (
     <ProductForm
       {...data}
@@ -74,6 +76,7 @@ export default async function EditProductPage({ params }: PageProps<"/products/[
       baseBarcode={baseBarcode}
       usedUnits={usedUnits}
       baseLocked={baseLocked}
+      skuLocked={skuLocked}
       openingStock={
         entry
           ? { warehouse: entry.warehouse.name, supplier: entry.supplier?.name ?? null, quantity: formatQuantity(entry.quantity.toFixed(3)), status: entry.status }

@@ -1,5 +1,6 @@
 "use client";
 
+import { searchProducts } from "@/lib/product-lookup";
 import Link from "next/link";
 import { useMemo, useState, useTransition, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
@@ -109,7 +110,7 @@ export default function TransferForm({
 
   const needle = q.trim().toLowerCase();
   const suggestions = from && needle
-    ? [...available.values()].filter((s) => (s.code + " " + s.name).toLowerCase().includes(needle)).slice(0, 20)
+    ? searchProducts([...available.values()], needle)
     : [];
 
   const clearErr = (k: TransferField) => setE((x) => ({ ...x, [k]: "" }));

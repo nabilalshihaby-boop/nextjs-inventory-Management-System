@@ -119,7 +119,7 @@ export default function ProductImportModal({ onClose }: { onClose: () => void })
         </div>
         <div className="sp-hint" style={{ lineHeight: 1.5 }}>
           <b>{L.guideTitle}: </b>
-          <bdi dir="ltr">Product Code, Product Name, Category, Brand, Unit, Warehouse, Opening Stock, Cost, Selling Price, Stock Alert, Tax Rate, Tax Type</bdi>
+          <bdi dir="ltr">SKU, Product Name, Category, Brand, Unit, Warehouse, Opening Stock, Cost, Selling Price, Stock Alert, Tax Rate, Tax Type</bdi>
           <br />
           {L.guideBody}
         </div>

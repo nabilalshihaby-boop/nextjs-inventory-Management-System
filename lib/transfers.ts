@@ -133,6 +133,8 @@ export type StockOption = {
   available: string;
   /** The product's units (display only; the server resolves factor and base quantity). */
   unitInfo: ProductUnits;
+  /** Stored barcodes (search only). */
+  barcodes?: string[];
 };
 
 export type TransferFormValues = {

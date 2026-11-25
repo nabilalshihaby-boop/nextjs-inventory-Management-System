@@ -15,7 +15,7 @@ export const arCostSetup: Dictionary["costSetup"] = {
   currencyHint: "لا يتم الجمع بين مبالغ العملات المختلفة. اختر العملة التي تكون بها هذه التكاليف.",
   chooseCurrency: "اختر عملة",
   cols: {
-    code: "الكود",
+    code: "SKU",
     name: "المنتج",
     unit: "الوحدة الأساسية",
     onHand: "المتاح (كل المستودعات)",

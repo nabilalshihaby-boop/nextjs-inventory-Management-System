@@ -38,6 +38,8 @@ export default async function ProductsPage() {
         brand: { select: { name: true } },
         productUnit: { select: { name: true } },
         images: { orderBy: { position: "asc" }, take: 1, select: { path: true } },
+        // Stored barcodes (every unit) only make the list searchable by barcode; they aren't shown.
+        unitConversions: { where: { barcode: { not: null } }, select: { barcode: true } },
       },
     }),
     // "In Stock" = on-hand quantity summed over all warehouses (ProductStock only).
@@ -54,6 +56,7 @@ export default async function ProductsPage() {
       id: p.id,
       name: p.name,
       code: p.code,
+      barcodes: p.unitConversions.flatMap((c) => (c.barcode ? [c.barcode] : [])),
       brand: p.brand.name,
       price: formatMoney(p.price.toFixed(2), currency),
       unit: p.productUnit.name,

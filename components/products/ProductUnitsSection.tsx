@@ -31,12 +31,12 @@ export default function ProductUnitsSection({
   used: Record<string, boolean>;
   onChange: (rows: UnitInput[]) => void;
   error?: string;
-  /** The Product Code typed so far (the Base Unit barcode can be generated from it) and the Base Unit barcode state. */
+  /** The SKU typed so far (the Base Unit barcode can be generated from it) and the Base Unit barcode state. */
   productCode: string;
   baseBarcode: string;
   onBaseBarcode: (v: string) => void;
   baseBarcodeError?: string;
-  /** Creating a product: a blank Base Unit barcode defaults to the Product Code on the server. */
+  /** Creating a product: the Base Unit barcode is optional and stays blank unless typed (never derived from the SKU). */
   creating: boolean;
 }) {
   const T = useT();
@@ -46,7 +46,7 @@ export default function ProductUnitsSection({
   const taken = new Set([baseId, ...rows.map((r) => r.unitId)]);
   const free = options.filter((o) => !taken.has(o.value));
   const B = T.barcode.form;
-  // "Generate from Product Code" is offered only where it is deterministic: the Base Unit, and only for a valid code.
+  // "Use the SKU as the barcode" is an explicit choice on the Base Unit only (an alias of the SKU), and only for a SKU that is a valid barcode.
   const generated = barcodeFromProductCode(productCode.trim().toUpperCase());
   const barcodeInput = (value: string, onChange: (v: string) => void, testId: string, placeholder: string, label: string) => (
     <input className="sp-input " dir="ltr" maxLength={MAX_BARCODE_LENGTH + 20} aria-label={label} placeholder={placeholder} value={value} onChange={(ev) => onChange(ev.target.value)} data-testid={testId} style={{ minWidth: 150 }} />

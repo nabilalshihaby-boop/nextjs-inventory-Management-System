@@ -83,7 +83,7 @@ export const arPurch: Dictionary["purchases"] = {
     chooseSupplier: "اختر المورد",
     noneYet: "لا يوجد شيء متاح بعد",
     product: "المنتج",
-    productSearch: "ابحث عن المنتج بالرمز أو الاسم",
+    productSearch: "ابحث عن المنتج بالـ SKU أو الاسم أو الباركود",
     productsAria: "المنتجات",
     noMatch: "لا توجد منتجات تطابق «{q}».",
     orderItems: "أصناف الطلب",

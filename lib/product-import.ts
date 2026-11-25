@@ -4,6 +4,7 @@ import type { Prisma } from "@/app/generated/prisma/client";
 import { fmt } from "@/lib/i18n/config";
 import type { Dictionary } from "@/lib/i18n";
 import { makeProductSchemas, normalizeCode, type ProductFields } from "@/lib/products";
+import { identifierKey } from "@/lib/product-identifiers";
 
 // CSV product import — parsing and validation (server-only). Import is CREATE ONLY. The same module
 // validates for the preview and again inside the confirming transaction, and the rows it returns are
@@ -11,7 +12,7 @@ import { makeProductSchemas, normalizeCode, type ProductFields } from "@/lib/pro
 
 /** The fixed, ordered column contract of the template. These names are technical and not translated. */
 export const IMPORT_HEADERS = [
-  "Product Code",
+  "SKU",
   "Product Name",
   "Category",
   "Brand",
@@ -25,6 +26,10 @@ export const IMPORT_HEADERS = [
   "Tax Type",
 ] as const;
 type Header = (typeof IMPORT_HEADERS)[number];
+/** Headers an older template used for the SKU column. They are accepted as aliases of "SKU" when importing (the template itself says SKU).
+ *  The internal CSV has no barcode column: barcodes are optional and managed on the product. */
+export const LEGACY_SKU_HEADERS: readonly string[] = ["Product Code", "Code"];
+const canonicalHeader = (h: string) => (LEGACY_SKU_HEADERS.includes(h) ? "SKU" : h);
 
 export const MAX_IMPORT_MB = 5;
 export const MAX_IMPORT_BYTES = MAX_IMPORT_MB * 1024 * 1024;
@@ -83,7 +88,7 @@ export function parseImportCsv(text: string, t: Dictionary): Records {
   const data = rest.map((cells, i) => ({ row: i + 2, cells })).filter((r) => !r.cells.every((c) => c.trim() === ""));
   if (data.length === 0) return { ok: false, message: E.empty };
   if (data.length > MAX_IMPORT_ROWS) return { ok: false, message: fmt(E.tooManyRows, { max: MAX_IMPORT_ROWS }) };
-  return { ok: true, header: header.map((h) => h.trim()), data };
+  return { ok: true, header: header.map((h) => canonicalHeader(h.trim())), data };
 }
 
 /** Header issues (missing / unexpected / duplicate / wrong order); empty when the header is exactly right. */
@@ -129,7 +134,7 @@ const ZERO_QTY = /^0+(\.0{1,3})?$/;
 
 const FIELD_COLUMN: Partial<Record<keyof ProductFields, Header>> = {
   name: "Product Name",
-  code: "Product Code",
+  code: "SKU",
   cost: "Cost",
   price: "Selling Price",
   stockAlert: "Stock Alert",
@@ -160,9 +165,11 @@ export async function validateImport(db: Prisma.TransactionClient, text: string,
     bad.add(row);
   };
 
-  // Existing codes (CREATE ONLY: an existing product is never touched).
+  // Existing SKUs (CREATE ONLY: an existing product is never touched) and SKUs that are already some unit's stored BARCODE
+  // (the identifier registry holds every SKU and barcode; a SKU may never equal another unit's barcode).
   const codes = [...new Set(parsed.data.map((r) => normalizeCode(r.cells[0] ?? "")).filter(Boolean))];
   const existing = new Set((codes.length ? await db.product.findMany({ where: { code: { in: codes } }, select: { code: true } }) : []).map((p) => p.code));
+  const asBarcode = new Set((codes.length ? await db.productIdentifier.findMany({ where: { kind: "BARCODE", valueKey: { in: codes.map(identifierKey) } }, select: { valueKey: true } }) : []).map((r) => r.valueKey));
   const firstRowOf = new Map<string, number>();
 
   for (const { row, cells } of parsed.data) {
@@ -198,7 +205,7 @@ export async function validateImport(db: Prisma.TransactionClient, text: string,
     // Same schema + normalization as the form. Unresolved ids use a placeholder so only the real problem is reported.
     const f = S.productFieldsSchema.safeParse({
       name: v["Product Name"],
-      code: v["Product Code"],
+      code: v["SKU"],
       categoryId: categoryId || "x",
       brandId: brandId || "x",
       barcodeSymbology: IMPORT_BARCODE,
@@ -236,9 +243,10 @@ export async function validateImport(db: Prisma.TransactionClient, text: string,
 
     if (f.success) {
       const code = f.data.code;
-      if (firstRowOf.has(code)) add(row, "Product Code", fmt(E.dupInFile, { n: firstRowOf.get(code)! }));
+      if (firstRowOf.has(code)) add(row, "SKU", fmt(E.dupInFile, { n: firstRowOf.get(code)! }));
       else firstRowOf.set(code, row);
-      if (existing.has(code)) add(row, "Product Code", E.existsDb);
+      if (existing.has(code)) add(row, "SKU", E.existsDb);
+      else if (asBarcode.has(identifierKey(code))) add(row, "SKU", E.skuIsBarcode);
     }
 
     if (issues.length === before && f.success) base.rows.push({ row, fields: f.data, stock });

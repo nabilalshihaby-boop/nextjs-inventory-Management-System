@@ -118,7 +118,7 @@ export const enSales = {
     chooseCustomer: "Choose Customer",
     noneYet: "None available yet",
     product: "Product",
-    productSearch: "Search Product by Code Name",
+    productSearch: "Search Product by SKU, Name or Barcode",
     productsAria: "Products",
     noMatch: "No products match “{q}”.",
     orderItems: "Order items",

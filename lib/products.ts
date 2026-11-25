@@ -99,6 +99,8 @@ export type ProductRow = {
   id: string;
   name: string;
   code: string;
+  /** Stored barcodes of every unit — search only. */
+  barcodes: string[];
   brand: string;
   price: string;
   unit: string;

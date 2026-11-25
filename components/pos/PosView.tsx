@@ -1,5 +1,6 @@
 "use client";
 
+import { lookupRank } from "@/lib/product-lookup";
 import Link from "next/link";
 import { useMemo, useRef, useState, useTransition } from "react";
 import toast from "react-hot-toast";
@@ -114,7 +115,7 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
   }, [data.stock, warehouse]);
 
   const needle = q.trim().toLowerCase();
-  const list = data.products.filter((p) => (!needle || `${p.code} ${p.name}`.toLowerCase().includes(needle)) && (cat === "all" || p.category === cat) && (brand === "all" || p.brand === brand));
+  const list = data.products.filter((p) => (!needle || lookupRank(needle, { code: p.code, name: p.name, barcodes: p.unitInfo.units.flatMap((u) => (u.barcode ? [u.barcode] : [])) }) >= 0) && (cat === "all" || p.category === cat) && (brand === "all" || p.brand === brand));
 
   const totals = useMemo(
     () => calcSale(cart.map((l) => ({ quantity: String(l.qty), unitPrice: priceOf(l), taxType: l.product.taxType, taxRate: l.product.taxRate, discountType: "FIXED" as const, discountValue: "0.00" })), { orderTaxRate: "0.00", discount: "0.00", shipping: "0.00" }),
@@ -391,8 +392,9 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
   function onSearchKey(ev: React.KeyboardEvent) {
     if (ev.key !== "Enter") return;
     ev.preventDefault();
-    // Barcode scanners type the code and press Enter. An exact UNIT barcode adds that unit (qty 1); otherwise an exact
-    // Product Code match (or the only match) is added as before. Unknown or inactive barcodes add nothing.
+    // Barcode scanners type the code and press Enter. An exact stored UNIT barcode adds that unit (qty 1) FIRST; otherwise an exact SKU
+    // match (or the only match) is added. A barcode can never equal a SKU (identifier registry), so the order is never ambiguous.
+    // Unknown or inactive barcodes add nothing.
     const scanned = needle ? data.products.flatMap((p) => p.unitInfo.units.filter((u) => u.barcode && u.barcode.toLowerCase() === needle).map((u) => ({ p, u }))) : [];
     if (scanned.length === 1) {
       addUnit(scanned[0].p, scanned[0].u, true);

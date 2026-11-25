@@ -120,7 +120,7 @@ export function calcQuotation(lines: QuotationLineInput[], o: { orderTaxRate: st
 }
 
 // ---- view models ----
-export type QuotationProduct = { productId: string; code: string; name: string; price: string; taxType: "EXCLUSIVE" | "INCLUSIVE"; taxRate: string; unit: string };
+export type QuotationProduct = { productId: string; code: string; name: string; price: string; taxType: "EXCLUSIVE" | "INCLUSIVE"; taxRate: string; unit: string; /** Stored barcodes (search only). */ barcodes?: string[] };
 export type QuotationStockLevel = { productId: string; warehouseId: string; quantity: string };
 export type QuotationOption = { value: string; label: string };
 export type QuotationCurrency = { code: string; symbol: string; right: boolean };
