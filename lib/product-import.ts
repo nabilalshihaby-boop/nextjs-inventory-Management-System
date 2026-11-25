@@ -113,6 +113,8 @@ type Lookups = {
   category: Map<string, string>;
   brand: Map<string, string>;
   unit: Map<string, string>;
+  /** Ids of Base Units that are switched off: not selectable for new products (an import only creates new products). */
+  inactiveUnit: Set<string>;
   warehouse: Map<string, string>;
 };
 /** Names match case-insensitively on the trimmed value (the same names are unique in the database). */
@@ -123,10 +125,10 @@ async function loadLookups(db: Prisma.TransactionClient): Promise<Lookups> {
   const [category, brand, unit, warehouse] = await Promise.all([
     db.productCategory.findMany({ select: { id: true, name: true } }),
     db.brand.findMany({ select: { id: true, name: true } }),
-    db.productUnit.findMany({ select: { id: true, name: true } }),
+    db.productUnit.findMany({ select: { id: true, name: true, active: true } }),
     db.warehouse.findMany({ where: await warehouseFilter(), select: { id: true, name: true } }), // CSV opening stock may only target the user's own warehouses
   ]);
-  return { category: mapOf(category), brand: mapOf(brand), unit: mapOf(unit), warehouse: mapOf(warehouse) };
+  return { category: mapOf(category), brand: mapOf(brand), unit: mapOf(unit), inactiveUnit: new Set(unit.filter((u) => !u.active).map((u) => u.id)), warehouse: mapOf(warehouse) };
 }
 
 /** "0", "0.0", "0.000": a valid zero quantity, treated like a blank one. */
@@ -193,6 +195,7 @@ export async function validateImport(db: Prisma.TransactionClient, text: string,
     const categoryId = resolve("Category", L.category, E.unknownCategory);
     const brandId = resolve("Brand", L.brand, E.unknownBrand);
     const unitId = resolve("Unit", L.unit, E.unknownUnit);
+    if (unitId && L.inactiveUnit.has(unitId)) add(row, "Unit", fmt(E.inactiveUnit, { v: v["Unit"] }));
     const warehouseId = resolve("Warehouse", L.warehouse, E.unknownWarehouse);
 
     let taxType: "EXCLUSIVE" | "INCLUSIVE" = "EXCLUSIVE";

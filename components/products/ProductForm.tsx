@@ -53,6 +53,7 @@ export default function ProductForm({
   skuLocked = false,
   families = [],
   familyInitial = { familyId: "", values: ["", "", ""] },
+  inactiveUnits = [],
 }: {
   options: Options;
   currency: Currency;
@@ -74,6 +75,8 @@ export default function ProductForm({
   families?: FamilyOption[];
   /** The product's stored family and variant values (edit). */
   familyInitial?: { familyId: string; values: string[] };
+  /** Ids of deactivated Base Units that are still listed because this product already uses them (never offered for new setup). */
+  inactiveUnits?: string[];
 }) {
   const router = useRouter();
   const T = useT();
@@ -85,6 +88,10 @@ export default function ProductForm({
   const statusOptions: Option[] = (["RECEIVED", "PENDING", "ORDERED"] as const).map((v) => ({ value: v, label: T.products.options[`stock${v}`] }));
   const missLabel: Record<string, string> = { categories: F.missingCategories, brands: F.missingBrands, units: F.missingUnits, warehouses: F.missingWarehouses, suppliers: F.missingSuppliers };
   const editing = !!productId;
+  // Deactivated Base Units stay listed (marked) only where this product already uses them; they are never offered for new setup.
+  const inactiveSet = new Set(inactiveUnits);
+  const unitOptions: Option[] = options.units.map((o) => (inactiveSet.has(o.value) ? { ...o, label: fmt(T.units.form.inactiveUnit, { unit: o.label }) } : o));
+  const baseChoices = unitOptions.filter((o) => !inactiveSet.has(o.value) || o.value === initial?.productUnitId);
   const [f, setF] = useState<ProductFormValues>(initial ?? EMPTY);
   const [e, setE] = useState<Partial<Record<ProductField, string>>>({});
   const [kept, setKept] = useState<ProductImageRow[]>(images);
@@ -102,7 +109,7 @@ export default function ProductForm({
   const blocked = !currency || (!editing && missing.length > 0);
   /** Default sale/purchase unit choices: the base unit plus every ACTIVE pack unit enabled for that use. */
   const defaultOptions = (purpose: "forSales" | "forPurchases"): Option[] =>
-    options.units.filter((o) => o.value === f.productUnitId || packs.some((p) => p.unitId === o.value && p.active && p[purpose]));
+    unitOptions.filter((o) => o.value === f.productUnitId || packs.some((p) => p.unitId === o.value && p.active && p[purpose]));
   const set = (k: keyof ProductFormValues) => (ev: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setF({ ...f, [k]: ev.target.value });
     setE({ ...e, [k]: "" });
@@ -156,7 +163,7 @@ export default function ProductForm({
       else if (!isValidFactor(r.factor)) n.units ??= T.units.val.factorInvalid;
     }
     if (!n.units && !n.productUnitId && f.productUnitId) {
-      const names = (id: string) => options.units.find((o) => o.value === id)?.label ?? "";
+      const names = (id: string) => unitOptions.find((o) => o.value === id)?.label ?? "";
       Object.assign(n, checkUnitConfig(f.productUnitId, f.saleUnitId, f.purchaseUnitId, packs.map((p) => ({ ...p, factor: p.factor.trim() })), names, T.units.val));
     }
     setE(n);
@@ -394,30 +401,30 @@ export default function ProductForm({
                             setF({ ...f, productUnitId: v, saleUnitId: f.saleUnitId || v, purchaseUnitId: f.purchaseUnitId || v });
                             setE({ ...e, productUnitId: "" });
                           }}
-                          disabled={options.units.length === 0 || baseLocked}
+                          disabled={baseChoices.length === 0 || baseLocked}
                           aria-invalid={!!e.productUnitId || undefined}
                         >
                           <option value="" disabled>
-                            {options.units.length ? F.unitPh : F.noneYet}
+                            {baseChoices.length ? F.unitPh : F.noneYet}
                           </option>
-                          {options.units.map((o) => (
+                          {baseChoices.map((o) => (
                             <option key={o.value} value={o.value}>
                               {o.label}
                             </option>
                           ))}
                         </select>
                       </div>
-                      <Link href="/products/units" className="sp-btn sp-btn--primary sp-btn--icon" aria-label={F.addUnitAria} title={F.manageUnits}>
+                      <Link href="/base-units" className="sp-btn sp-btn--primary sp-btn--icon" aria-label={F.addUnitAria} title={F.manageUnits}>
                         <Icon name="plus" size={18} />
                       </Link>
                     </div>
-                    {options.units.length === 0 ? <span className="sp-hint">{createLink("/products/units", F.missingUnits)}</span> : err("productUnitId")}
+                    {baseChoices.length === 0 ? <span className="sp-hint">{createLink("/base-units", F.missingUnits)}</span> : err("productUnitId")}
                     {baseLocked && <span className="sp-hint" data-testid="base-locked">{T.units.form.baseLocked}</span>}
                   </>
                 ))}
                 {select("saleUnitId", T.units.form.defaultSale, F.saleUnitPh, defaultOptions("forSales"))}
                 {select("purchaseUnitId", T.units.form.defaultPurchase, F.purchaseUnitPh, defaultOptions("forPurchases"))}
-                <ProductUnitsSection baseId={f.productUnitId} options={options.units} rows={packs} used={usedUnits} onChange={(r) => { setPacks(r); setE({ ...e, units: "" }); }} error={e.units} productCode={f.code} baseBarcode={baseBarcode} onBaseBarcode={(v) => { setBaseBarcode(v); setE({ ...e, baseBarcode: "" }); }} baseBarcodeError={e.baseBarcode} creating={!editing} />
+                <ProductUnitsSection baseId={f.productUnitId} options={unitOptions} inactiveIds={inactiveSet} rows={packs} used={usedUnits} onChange={(r) => { setPacks(r); setE({ ...e, units: "" }); }} error={e.units} productCode={f.code} baseBarcode={baseBarcode} onBaseBarcode={(v) => { setBaseBarcode(v); setE({ ...e, baseBarcode: "" }); }} baseBarcodeError={e.baseBarcode} creating={!editing} />
                 {input("stockAlert", LB.stockAlert, "0", false, undefined, "decimal")}
                 {input("orderTax", LB.orderTax, "0", false, "%", "decimal")}
                 {select("taxType", F.taxType, F.taxTypePh, taxOptions)}

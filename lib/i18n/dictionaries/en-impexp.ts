@@ -49,6 +49,7 @@ export const enImpExp = {
     unknownCategory: "No category named “{v}”.",
     unknownBrand: "No brand named “{v}”.",
     unknownUnit: "No unit named “{v}”.",
+    inactiveUnit: "The Base Unit “{v}” is inactive and can't be used for new products.",
     unknownWarehouse: "No warehouse named “{v}”.",
     dupInFile: "This SKU is also used on row {n}.",
     existsDb: "A product with this SKU already exists.",

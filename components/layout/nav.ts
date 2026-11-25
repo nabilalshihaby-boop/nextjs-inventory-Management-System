@@ -39,9 +39,9 @@ export const NAV: NavItem[] = [
       { id: "p1", label: "Products", href: "/products", perm: ["products.view", "products.manage"] },
       { id: "p2", label: "Product Categories", href: "/products/categories", perm: ["products.view", "catalog.manage"] },
       { id: "p3", label: "Brands", href: "/products/brands", perm: ["products.view", "catalog.manage"] },
-      { id: "p4", label: "Units", href: "/products/units", perm: ["products.view", "catalog.manage"] },
-      { id: "p5", label: "Base Units", href: "/base-units", perm: ["products.view", "catalog.manage"] },
-      { id: "p7", label: "Product Families", href: "/products/families", perm: ["products.manage"] }, // grouping of variants: product managers only
+      { id: "p5", label: "Base Units", href: "/base-units", perm: ["products.view", "catalog.manage"] }, // the master list of reusable units (was split across "Units" + "Base Units")
+      { id: "p8", label: "Product Unit Conversions", href: "/products/unit-conversions", perm: ["products.view", "catalog.manage"] }, // per-product pack factors overview
+      { id: "p7", label: "Product Variants", href: "/products/families", perm: ["products.manage"] }, // grouping of variants: product managers only
       { id: "p6", label: "Print Barcode", href: "/print-barcode", roles: STAFF, perm: ["barcode.print"] }, // barcode labels: OWNER/ADMIN
     ],
   },

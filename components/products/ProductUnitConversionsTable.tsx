@@ -7,10 +7,10 @@ import { useT } from "@/components/i18n/I18nProvider";
 import Pagination, { paginate } from "@/components/ui/Pagination";
 import { fmt } from "@/lib/i18n/config";
 
-export type BaseUnitRow = { id: string; code: string; name: string; base: string; packs: { unit: string; factor: string; active: boolean }[] };
+export type ProductUnitConversionRow = { id: string; code: string; name: string; base: string; packs: { unit: string; factor: string; active: boolean }[] };
 
-// Base Units overview: product → base unit + pack units. Search/paging run over the server-loaded list.
-export default function BaseUnitsTable({ rows, canManage }: { rows: BaseUnitRow[]; canManage: boolean }) {
+// Product Unit Conversions overview: product → base unit + pack units. Search/paging run over the server-loaded list.
+export default function ProductUnitConversionsTable({ rows, canManage }: { rows: ProductUnitConversionRow[]; canManage: boolean }) {
   const T = useT();
   const L = T.units.page;
   const [q, setQ] = useState("");

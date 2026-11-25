@@ -37,7 +37,7 @@ export default async function EditProductPage({ params }: PageProps<"/products/[
   });
   if (!p) notFound();
 
-  const data = await getProductFormData();
+  const data = await getProductFormData([p.productUnitId, p.saleUnitId, p.purchaseUnitId, ...p.unitConversions.map((c) => c.unitId)]);
   const entry = p.stockEntries[0];
   // Pack units + safety flags: a unit documents used keeps its factor; a product with any activity keeps its base unit.
   const unitRows = p.unitConversions.filter((c) => !c.isBase).map((c) => ({ unitId: c.unitId, factor: trimFactor(c.factor.toFixed(6)), active: c.active, forSales: c.forSales, forPurchases: c.forPurchases, barcode: c.barcode ?? "" }));

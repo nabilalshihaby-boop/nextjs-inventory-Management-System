@@ -49,6 +49,7 @@ export const arImpExp: Dictionary["importExport"] = {
     unknownCategory: "لا توجد فئة باسم «{v}».",
     unknownBrand: "لا توجد علامة تجارية باسم «{v}».",
     unknownUnit: "لا توجد وحدة باسم «{v}».",
+    inactiveUnit: "الوحدة الأساسية «{v}» غير نشطة ولا يمكن استخدامها لمنتجات جديدة.",
     unknownWarehouse: "لا يوجد مستودع باسم «{v}».",
     dupInFile: "هذا الـ SKU مستخدم أيضًا في الصف {n}.",
     existsDb: "يوجد منتج بهذا الـ SKU بالفعل.",

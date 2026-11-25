@@ -14,6 +14,7 @@ import type { Option, UnitInput } from "@/lib/products";
 export default function ProductUnitsSection({
   baseId,
   options,
+  inactiveIds,
   rows,
   used,
   onChange,
@@ -26,6 +27,8 @@ export default function ProductUnitsSection({
 }: {
   baseId: string;
   options: Option[];
+  /** Deactivated Base Units: shown where this product already has them, never offered as a new unit. */
+  inactiveIds: ReadonlySet<string>;
   rows: UnitInput[];
   /** unit ids whose factor/row is locked because documents used them. */
   used: Record<string, boolean>;
@@ -44,7 +47,8 @@ export default function ProductUnitsSection({
   const nameOf = (id: string) => options.find((o) => o.value === id)?.label ?? "";
   const baseName = nameOf(baseId);
   const taken = new Set([baseId, ...rows.map((r) => r.unitId)]);
-  const free = options.filter((o) => !taken.has(o.value));
+  const free = options.filter((o) => !taken.has(o.value) && !inactiveIds.has(o.value));
+  const packLines = rows.filter((r) => r.unitId && isValidFactor(r.factor)).map((r) => fmt(U.meaning, { unit: nameOf(r.unitId), factor: trimFactor(r.factor.trim()), base: baseName }));
   const B = T.barcode.form;
   // "Use the SKU as the barcode" is an explicit choice on the Base Unit only (an alias of the SKU), and only for a SKU that is a valid barcode.
   const generated = barcodeFromProductCode(productCode.trim().toUpperCase());
@@ -63,12 +67,29 @@ export default function ProductUnitsSection({
       </p>
       {options.length === 0 ? (
         <div className="sp-hint">
-          <b>{U.noUnitsTitle}</b> — {U.noUnitsBody} <Link href="/products/units">{U.noUnitsLink}</Link>
+          <b>{U.noUnitsTitle}</b> — {U.noUnitsBody} <Link href="/base-units">{U.noUnitsLink}</Link>
         </div>
       ) : !baseId ? (
         <div className="sp-hint">{U.saveFirst}</div>
       ) : (
         <div className="sp-card" style={{ padding: 0, overflow: "hidden" }}>
+          <div data-testid="unit-relations" style={{ padding: "12px 12px 0", display: "grid", gap: 4 }}>
+            <p style={{ margin: 0, fontWeight: 600 }} data-testid="relation-base">
+              {fmt(U.baseLine, { unit: baseName })}
+            </p>
+            <p className="t-caption" style={{ margin: 0 }}>
+              {fmt(U.relationHelp, { base: baseName })}
+            </p>
+            {packLines.length > 0 && (
+              <ul style={{ margin: "4px 0 0", paddingInlineStart: 20 }}>
+                {packLines.map((l, i) => (
+                  <li key={i} data-testid="relation-pack">
+                    <bdi dir="ltr">{l}</bdi>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           <div className="sp-table-scroll">
             <table className="sp-table" data-testid="units-table">
               <thead>

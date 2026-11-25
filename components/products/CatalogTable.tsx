@@ -16,7 +16,15 @@ import type { CatalogEntity, CatalogField, CatalogResult } from "@/lib/catalog";
 // Pagination, Create/Edit modal (Name + optional image with preview / Choose image / Remove) and
 // ConfirmDeleteModal. Rows come from the server; mutations go through OWNER/ADMIN Server Actions.
 
-export type CatalogRow = { id: string; name: string; image: string | null };
+export type CatalogRow = {
+  id: string;
+  name: string;
+  image: string | null;
+  /** Base Units master only: status and how many products use the unit as their Base Unit / as a pack unit. */
+  active?: boolean;
+  baseUses?: number;
+  packUses?: number;
+};
 
 export type CatalogActions = {
   create: (formData: FormData) => Promise<CatalogResult>;
@@ -33,6 +41,7 @@ export default function CatalogTable({
   entity,
   idPrefix,
   actions,
+  master,
 }: {
   rows: CatalogRow[];
   canManage: boolean;
@@ -40,11 +49,14 @@ export default function CatalogTable({
   /** Prefix for element ids (e.g. "br" → #br-name, #br-image). */
   idPrefix: string;
   actions: CatalogActions;
+  /** Base Units master: adds the Status / usage columns and the activate-deactivate action. */
+  master?: { setActive: (id: string, active: boolean) => Promise<CatalogResult> };
 }) {
   const router = useRouter();
   const T = useT();
   const N = T.catalog[entity];
   const U = T.catalog.ui;
+  const M = T.units.master;
   const labels = { column: N.column, create: N.create, edit: N.edit, itemType: N.one, plural: N.plural, empty: N.empty, imageLabel: N.imageLabel };
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
@@ -134,6 +146,18 @@ export default function CatalogTable({
     });
   }
 
+  function toggleActive(row: CatalogRow) {
+    if (!master) return;
+    const next = !(row.active ?? true);
+    startTransition(async () => {
+      try {
+        handle(await master.setActive(row.id, next), () => {});
+      } catch {
+        toast.error(T.common.somethingWrong, { id: toastId });
+      }
+    });
+  }
+
   function confirmDelete() {
     const row = del;
     if (!row) return;
@@ -150,6 +174,11 @@ export default function CatalogTable({
 
   return (
     <>
+      {master && (
+        <p className="t-caption" style={{ margin: "0 0 12px", color: "var(--text-2)" }}>
+          {M.intro}
+        </p>
+      )}
       <div className="sp-toolbar">
         <div className="sp-group">
           <Icon name="search" size={18} className="sp-input-icon" />
@@ -179,6 +208,13 @@ export default function CatalogTable({
             <thead>
               <tr>
                 <th>{labels.column}</th>
+                {master && (
+                  <>
+                    <th>{M.colStatus}</th>
+                    <th>{M.colProducts}</th>
+                    <th>{M.colPacks}</th>
+                  </>
+                )}
                 {canManage && <th className="act">{U.action}</th>}
               </tr>
             </thead>
@@ -196,12 +232,28 @@ export default function CatalogTable({
                       <span style={{ fontWeight: 600 }}>{r.name}</span>
                     </span>
                   </td>
+                  {master && (
+                    <>
+                      <td>
+                        <span className={"sp-badge " + (r.active === false ? "sp-badge--neutral" : "sp-badge--success")} data-testid="unit-status">
+                          {r.active === false ? M.inactive : M.active}
+                        </span>
+                      </td>
+                      <td data-testid="unit-base-uses">
+                        <bdi dir="ltr">{r.baseUses ?? 0}</bdi>
+                      </td>
+                      <td data-testid="unit-pack-uses">
+                        <bdi dir="ltr">{r.packUses ?? 0}</bdi>
+                      </td>
+                    </>
+                  )}
                   {canManage && (
                     <td className="act">
                       <RowMenu
                         label={r.name}
                         items={[
                           { label: U.edit, icon: "pencil", onClick: () => open(r) },
+                          ...(master ? [{ label: r.active === false ? M.activate : M.deactivate, icon: r.active === false ? "circle-check" : "circle-minus", onClick: () => toggleActive(r) } as const] : []),
                           "-",
                           { label: U.delete, icon: "trash-2", danger: true, onClick: () => setDel(r) },
                         ]}
@@ -212,7 +264,7 @@ export default function CatalogTable({
               ))}
               {p.visible.length === 0 && (
                 <tr>
-                  <td colSpan={canManage ? 2 : 1} style={{ textAlign: "center", color: "var(--text-2)" }}>
+                  <td colSpan={(master ? 4 : 1) + (canManage ? 1 : 0)} style={{ textAlign: "center", color: "var(--text-2)" }}>
                     {rows.length === 0 ? (
                       <span>
                         <b style={{ color: "var(--text-1)" }}>{labels.empty}</b>

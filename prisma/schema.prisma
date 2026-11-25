@@ -140,6 +140,8 @@ model ProductUnit {
   name               String                  @unique @db.VarChar(120)
   /// Relative path under /uploads/units (local-development storage), or null.
   image              String?                 @db.VarChar(255)
+  /// Base Unit status. An inactive unit stays visible on the products and documents that already use it, but can't be chosen for new product setup.
+  active             Boolean                 @default(true)
   createdAt          DateTime                @default(now())
   updatedAt          DateTime                @updatedAt
   productsAsUnit     Product[]               @relation("ProductUnit")

@@ -3,35 +3,40 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { canManageProducts } from "@/lib/roles";
+import { canManageCatalog } from "@/lib/roles";
 import { getDict } from "@/lib/i18n/server";
-import { trimFactor } from "@/lib/unit-math";
-import BaseUnitsTable, { type BaseUnitRow } from "@/components/products/BaseUnitsTable";
+import CatalogTable from "@/components/products/CatalogTable";
+import { createUnit, deleteUnit, setUnitActive, updateUnit } from "./actions";
 
 export async function generateMetadata(): Promise<Metadata> {
-  return { title: (await getDict()).units.page.title };
+  return { title: (await getDict()).catalog.unit.title };
 }
 
 export const instant = false;
 
-// Base Units: every product's base unit (stock is always counted in it) and its pack units with their factors.
-// A product-specific view of the Unit master — units themselves are created in Units, factors are edited on the
-// product. Every signed-in role may view (like Products); only OWNER/ADMIN get the edit links.
+// Base Units: the MASTER list of reusable units (Piece, Kilogram, Meter, Carton ...), never a product list. Each product picks exactly one
+// as its Base Unit; its other units are product-specific conversions edited on the product (see /products/unit-conversions for the
+// product-wide overview). Every signed-in role with catalog access may view; only OWNER/ADMIN/catalog.manage get the management controls
+// (and every Server Action re-checks that).
 export default async function BaseUnitsPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
 
-  const products = await db.product.findMany({
+  const units = await db.productUnit.findMany({
     orderBy: { name: "asc" },
-    select: { id: true, code: true, name: true, productUnit: { select: { name: true } }, unitConversions: { where: { isBase: false }, orderBy: { createdAt: "asc" }, select: { factor: true, active: true, unit: { select: { name: true } } } } },
+    select: { id: true, name: true, image: true, active: true, _count: { select: { productsAsUnit: true, conversions: { where: { isBase: false } } } } },
   });
-  const rows: BaseUnitRow[] = products.map((p) => ({
-    id: p.id,
-    code: p.code,
-    name: p.name,
-    base: p.productUnit.name,
-    packs: p.unitConversions.map((c) => ({ unit: c.unit.name, factor: trimFactor(c.factor.toFixed(6)), active: c.active })),
-  }));
-  return <BaseUnitsTable rows={rows} canManage={canManageProducts(session.user)} />;
+  const rows = units.map((u) => ({ id: u.id, name: u.name, image: u.image, active: u.active, baseUses: u._count.productsAsUnit, packUses: u._count.conversions }));
+
+  return (
+    <CatalogTable
+      rows={rows}
+      canManage={canManageCatalog(session.user)}
+      idPrefix="un"
+      entity="unit"
+      actions={{ create: createUnit, update: updateUnit, remove: deleteUnit }}
+      master={{ setActive: setUnitActive }}
+    />
+  );
 }

@@ -121,21 +121,31 @@ async function barcodeChecks(t: Dictionary, productId: string | null, baseRaw: s
   return values;
 }
 
-/** Every related record must exist in MySQL (ids from the client only select, never trusted). */
-async function checkRelations(f: ProductFields, errors: Errors, E: Dictionary["products"]["err"], extraUnitIds: string[] = []) {
+/**
+ * Every related record must exist in MySQL (ids from the client only select, never trusted). An INACTIVE Base Unit can't be chosen for new
+ * product setup: it is accepted only where the product already uses it (`keepUnitIds`: its current base/sale/purchase unit and conversions).
+ */
+async function checkRelations(f: ProductFields, errors: Errors, E: Dictionary["products"]["err"], extraUnitIds: string[] = [], keepUnitIds: ReadonlySet<string> = new Set()) {
   const unitIds = [...new Set([f.productUnitId, f.saleUnitId, f.purchaseUnitId, ...extraUnitIds])];
   const [category, brand, units] = await Promise.all([
     db.productCategory.findUnique({ where: { id: f.categoryId }, select: { id: true } }),
     db.brand.findUnique({ where: { id: f.brandId }, select: { id: true } }),
-    db.productUnit.findMany({ where: { id: { in: unitIds } }, select: { id: true } }),
+    db.productUnit.findMany({ where: { id: { in: unitIds } }, select: { id: true, name: true, active: true } }),
   ]);
   const found = new Set(units.map((u) => u.id));
+  const inactive = new Map(units.filter((u) => !u.active && !keepUnitIds.has(u.id)).map((u) => [u.id, u.name]));
+  const refuse = (id: string) => fmt(E.unitInactive, { unit: inactive.get(id) ?? "" });
   if (!category) errors.categoryId ??= E.validCategory;
   if (!brand) errors.brandId ??= E.validBrand;
   if (!found.has(f.productUnitId)) errors.productUnitId ??= E.validProductUnit;
   if (!found.has(f.saleUnitId)) errors.saleUnitId ??= E.validSaleUnit;
   if (!found.has(f.purchaseUnitId)) errors.purchaseUnitId ??= E.validPurchaseUnit;
   if (extraUnitIds.some((id) => !found.has(id))) errors.units ??= E.validUnit;
+  if (inactive.has(f.productUnitId)) errors.productUnitId ??= refuse(f.productUnitId);
+  if (inactive.has(f.saleUnitId)) errors.saleUnitId ??= refuse(f.saleUnitId);
+  if (inactive.has(f.purchaseUnitId)) errors.purchaseUnitId ??= refuse(f.purchaseUnitId);
+  const badPack = extraUnitIds.find((id) => inactive.has(id));
+  if (badPack) errors.units ??= refuse(badPack);
 }
 
 /** New image files from FormData, validated by content. */
@@ -251,7 +261,7 @@ export async function updateProduct(id: unknown, formData: FormData): Promise<Pr
 
   const existing = await db.product.findUnique({
     where: { id: pid.data },
-    select: { id: true, code: true, productUnitId: true, images: { select: { id: true, path: true } }, unitConversions: { select: { id: true, unitId: true, factor: true, isBase: true, active: true, forSales: true, forPurchases: true } } },
+    select: { id: true, code: true, productUnitId: true, saleUnitId: true, purchaseUnitId: true, images: { select: { id: true, path: true } }, unitConversions: { select: { id: true, unitId: true, factor: true, isBase: true, active: true, forSales: true, forPurchases: true } } },
   });
   if (!existing) return { ok: false, message: E.notFound };
 
@@ -273,7 +283,7 @@ export async function updateProduct(id: unknown, formData: FormData): Promise<Pr
   if (f) {
     const names = new Map((await db.productUnit.findMany({ where: { id: { in: [f.productUnitId, f.saleUnitId, f.purchaseUnitId, ...rows.map((u) => u.unitId)] } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
     if (sent || !unitsProvided) Object.assign(errors, checkUnitConfig(f.productUnitId, f.saleUnitId, f.purchaseUnitId, rows, (id) => names.get(id) ?? "", t.units.val));
-    await checkRelations(f, errors, E, rows.map((u) => u.unitId));
+    await checkRelations(f, errors, E, rows.map((u) => u.unitId), new Set([existing.productUnitId, existing.saleUnitId, existing.purchaseUnitId, ...existing.unitConversions.map((c) => c.unitId)]));
     if (f.code !== existing.code) {
       // Changing the SKU: refused once the product is used anywhere (re-checked inside the transaction), and the new SKU must be free
       // in the global identifier registry (no other SKU in any letter case, no other unit's barcode).
