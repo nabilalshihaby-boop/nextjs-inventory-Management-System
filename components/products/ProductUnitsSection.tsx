@@ -58,7 +58,7 @@ export default function ProductUnitsSection({
   const patch = (i: number, p: Partial<UnitInput>) => onChange(rows.map((r, n) => (n === i ? { ...r, ...p } : r)));
 
   return (
-    <div className="sp-span-all" data-testid="product-units" style={{ display: "grid", gap: 12 }}>
+    <div className="sp-span-all" id="product-units" data-testid="product-units" style={{ display: "grid", gap: 12, scrollMarginTop: 80 }}>
       <h2 className="t-section-title" style={{ margin: "8px 0 0" }}>
         {U.title}
       </h2>
