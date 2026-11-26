@@ -16,6 +16,14 @@ export async function currentScope(): Promise<WarehouseScope> {
   return warehouseScopeOf(await sessionUser());
 }
 
+/** Company-wide actions (product removal / status): OWNER and ADMIN are unrestricted; a USER must be assigned to EVERY warehouse. */
+export async function coversEveryWarehouse(): Promise<boolean> {
+  const s = await currentScope();
+  if (s === null) return true;
+  const all = await db.warehouse.findMany({ select: { id: true } });
+  return all.every((w) => s.includes(w.id));
+}
+
 /** Prisma `where` for the Warehouse model itself. */
 export async function warehouseFilter(): Promise<{ id?: { in: string[] } }> {
   const s = await currentScope();

@@ -291,6 +291,9 @@ model Product {
   /// Normalized combination of the values (trimmed, NFC, lowercase, joined by U+001F; lib/family-core.ts). Null when standalone.
   /// UNIQUE together with familyId: the database refuses two members of one family with the same combination, even for racing requests.
   variantKey          String?                 @db.VarChar(191)
+  /// Product status. An inactive product keeps all its history (documents, stock, reports) but can't be used in new operational documents.
+  /// Removing a product that has any history or stock deactivates it instead of deleting it (lib/product-removal.ts).
+  active              Boolean                 @default(true)
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
   images              ProductImage[]
@@ -1388,6 +1391,8 @@ model PosHeldOrder {
   notes             String?              @db.Text
   /// Set when a POS checkout consumed this order (the resulting sale).
   consumedSaleId    String?              @unique @db.VarChar(191)
+  /// Server-owned optimistic-concurrency counter: +1 on every change (re-hold, discard, checkout). A request with another value is refused.
+  revision          Int                  @default(1)
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt
   items             PosHeldOrderItem[]
@@ -1410,8 +1415,16 @@ model PosHeldOrderItem {
   quantity    Decimal      @db.Decimal(14, 3)
   /// The selected sale unit (NULL = the product default); validated again at checkout.
   unitId      String?      @db.VarChar(191)
-  /// The unit price shown when it was held — informational; checkout always uses the live price.
-  unitPrice   Decimal      @db.Decimal(14, 2)
+  /// The financial snapshot taken on the server when the line was held: `unitPrice` (one of the selected unit), the unit's name, the base
+  /// units in ONE of it, the line's base quantity, and the tax type and rate. Paying the order uses exactly these, whatever the product says
+  /// now. The five NULLable columns are NULL together on a line held before snapshots existed (legacy): it can't be paid until it is held
+  /// again. All present only with a unitId and valid values (database CHECK).
+  unitPrice    Decimal      @db.Decimal(14, 2)
+  unitName     String?      @db.VarChar(64)
+  unitFactor   Decimal?     @db.Decimal(16, 6)
+  baseQuantity Decimal?     @db.Decimal(14, 3)
+  taxType      TaxType?
+  taxRate      Decimal?     @db.Decimal(5, 2)
 
   @@unique([heldOrderId, productId, unitId])
   @@map("pos_held_order_items")

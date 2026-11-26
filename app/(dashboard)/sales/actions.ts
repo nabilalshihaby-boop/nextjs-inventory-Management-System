@@ -14,6 +14,7 @@ import { errorMessage, tr } from "@/lib/i18n/messages";
 import type { Dictionary } from "@/lib/i18n";
 import { SaleError, deductStock } from "@/lib/sale-stock";
 import { StockHistoryError } from "@/lib/stock-history-guard";
+import { InactiveProductError, assertKeptLines, assertProductsActive, inactiveProductRefusal, sameDecimal, sameUnit } from "@/lib/product-status";
 import { lineSnapshot, loadUnitSets, resolveLine, type ResolvedUnit } from "@/lib/product-units";
 import { getDefaultCurrency } from "@/lib/settings";
 import { toUnits } from "@/lib/transfers";
@@ -70,8 +71,14 @@ function parse(input: unknown, t: Dictionary): { ok: true; data: SaleInput } | {
 
 type StockLine = { productId: string; quantity: string; productCode: string; productName: string };
 
+/** The stored lines of an edited sale: what a line of a product that is now inactive must still equal. */
+const storedLineSelect = { productId: true, unitId: true, unitName: true, unitFactor: true, baseQuantity: true, quantity: true, unitPrice: true, taxType: true, taxRate: true, discountType: true, discountValue: true } as const;
+type StoredLine = Prisma.SaleItemGetPayload<{ select: typeof storedLineSelect }>;
+const sameSaleLine = (l: SaleInput["items"][number], s: StoredLine) =>
+  sameUnit(l.unitId, s.unitId) && sameDecimal(l.quantity, s.quantity) && sameDecimal(l.unitPrice, s.unitPrice) && l.taxType === s.taxType && sameDecimal(l.taxRate, s.taxRate) && l.discountType === s.discountType && sameDecimal(l.discountValue, s.discountValue);
+
 /** Re-read references and compute the authoritative totals + line snapshots. */
-async function prepare(d: SaleInput, t: Dictionary): Promise<{ ok: true; lines: Prisma.SaleItemCreateWithoutSaleInput[]; stock: StockLine[]; totals: ReturnType<typeof calcSale> } | { ok: false; error: SaleResult }> {
+async function prepare(d: SaleInput, t: Dictionary, existing?: { lines: StoredLine[]; warehouseId: string }): Promise<{ ok: true; lines: Prisma.SaleItemCreateWithoutSaleInput[]; stock: StockLine[]; totals: ReturnType<typeof calcSale> } | { ok: false; error: SaleResult }> {
   const [customer, warehouse, products] = await Promise.all([
     db.customer.findUnique({ where: { id: d.customerId }, select: { id: true } }),
     db.warehouse.findUnique({ where: { id: d.warehouseId }, select: { id: true } }),
@@ -82,6 +89,21 @@ async function prepare(d: SaleInput, t: Dictionary): Promise<{ ok: true; lines: 
   const byId = new Map(products.map((p) => [p.id, p]));
   const missing = d.items.find((i) => !byId.has(i.productId));
   if (missing) return { ok: false, error: { ok: false, message: t.sales.err.productGone, fieldErrors: { items: t.sales.err.productGone }, itemErrors: { [missing.productId]: t.sales.err.itemGone } } };
+  // An inactive product can't start a new sale line. An edited sale may keep its existing line unchanged: its stored unit snapshot is reused.
+  const kept = new Map<string, StoredLine>();
+  if (!existing) {
+    const refused = await inactiveProductRefusal(db, d.items.map((i) => i.productId), t);
+    if (refused) return { ok: false, error: { ok: false, message: refused.message, fieldErrors: { items: refused.message }, itemErrors: { [refused.productId]: refused.message } } };
+  } else {
+    try {
+      const k = await assertKeptLines(db, d.items, existing.lines, sameSaleLine, d.warehouseId !== existing.warehouseId);
+      for (const [id, rows] of k) kept.set(id, rows[0]);
+    } catch (e) {
+      if (!(e instanceof InactiveProductError)) throw e;
+      const message = errorMessage(t, e);
+      return { ok: false, error: { ok: false, message, fieldErrors: { items: message }, itemErrors: { [e.itemId!]: message } } };
+    }
+  }
 
   // Units: every line's unit must be an active SALE conversion of THIS product; factor and base quantity come from MySQL.
   const sets = await loadUnitSets(db, d.items.map((i) => i.productId));
@@ -89,6 +111,11 @@ async function prepare(d: SaleInput, t: Dictionary): Promise<{ ok: true; lines: 
   const unitErrors: Record<string, string> = {};
   for (const i of d.items) {
     const pr = byId.get(i.productId)!;
+    const k = kept.get(i.productId);
+    if (k) {
+      lineUnit.set(i.productId, { unitId: k.unitId ?? "", unitName: k.unitName, factor: k.unitFactor.toString(), baseQuantity: k.baseQuantity.toFixed(3) });
+      continue;
+    }
     const r = resolveLine(sets.get(i.productId), i.unitId, "SALE", i.quantity, `${pr.code} ${pr.name}`);
     if (r.ok) lineUnit.set(i.productId, r.r);
     else unitErrors[i.productId] = tr(t, r.f.key, r.f.vars);
@@ -118,6 +145,7 @@ async function prepare(d: SaleInput, t: Dictionary): Promise<{ ok: true; lines: 
       productName: p.name,
       quantity: i.quantity,
       ...lineSnapshot(lineUnit.get(i.productId)!),
+      ...(kept.has(i.productId) ? { unitId: kept.get(i.productId)!.unitId } : {}), // a legacy line stays legacy
       unitPrice: i.unitPrice,
       taxType: i.taxType,
       taxRate: i.taxRate,
@@ -149,7 +177,7 @@ function revalidate(id?: string, quotationId?: string | null) {
 }
 
 function fail(e: unknown, t: Dictionary): SaleResult {
-  if (e instanceof SaleError || e instanceof StockHistoryError) {
+  if (e instanceof SaleError || e instanceof StockHistoryError || e instanceof InactiveProductError) {
     const message = errorMessage(t, e);
     return { ok: false, message, fieldErrors: e.itemId ? { items: message } : undefined, itemErrors: e.itemId ? { [e.itemId]: message } : undefined };
   }
@@ -184,6 +212,7 @@ export async function createSale(input: unknown): Promise<SaleResult> {
   try {
     const created = await withRetry(() =>
       db.$transaction(async (tx) => {
+        await assertProductsActive(tx, d.items.map((i) => i.productId));
         const at = new Date(); // the completion moment (stock-out time)
         const s0 = await tx.sale.create({
           data: {
@@ -233,7 +262,8 @@ export async function updateSale(id: unknown, input: unknown): Promise<SaleResul
   const d = v.data;
   const scopeMsg = await scopeError([d.warehouseId]);
   if (scopeMsg) return { ok: false, message: scopeMsg };
-  const p = await prepare(d, a.t);
+  const header = await db.sale.findUnique({ where: { id: sid.data }, select: { warehouseId: true, items: { select: storedLineSelect } } });
+  const p = await prepare(d, a.t, header ? { lines: header.items, warehouseId: header.warehouseId } : undefined);
   if (!p.ok) return p.error;
 
   try {
@@ -243,6 +273,8 @@ export async function updateSale(id: unknown, input: unknown): Promise<SaleResul
         const s = await lockSale(tx, sid.data);
         if (!s) throw new SaleError("sales.err.notFound");
         if (s.status !== "PENDING") throw new SaleError("sales.err.completedNoEdit", { ref: s.reference });
+        const storedNow = await tx.saleItem.findMany({ where: { saleId: s.id }, select: storedLineSelect });
+        await assertKeptLines(tx, d.items, storedNow, sameSaleLine, s.warehouseId !== d.warehouseId);
         await tx.saleItem.deleteMany({ where: { saleId: s.id } });
         await tx.sale.update({
           where: { id: s.id },
@@ -344,6 +376,7 @@ export async function convertQuotationToSale(quotationId: unknown): Promise<Sale
       if (!q) throw new SaleError("sales.err.quotationNotFound");
       if (q.status !== "ACCEPTED") throw new SaleError("sales.err.quotationNotAccepted", { ref: q.reference, status: tr(a.t, `sales.qStatus.${q.status}`) });
       if (q.sale) throw new SaleError("sales.err.alreadyConverted", { ref: q.reference, sale: q.sale.reference });
+      // No product-status check: a quotation made before a product was deactivated converts its EXISTING lines (nothing comes from the client).
       const s0 = await tx.sale.create({
         data: {
           reference: `TMP_${randomBytes(8).toString("hex")}`,

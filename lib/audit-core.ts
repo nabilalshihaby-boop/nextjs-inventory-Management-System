@@ -2,6 +2,7 @@ import { z } from "zod";
 import { isPermissionKey } from "@/lib/access";
 import { AUDIT_EVENT_TYPES, type AuditEventType, type AuditTarget } from "@/lib/audit";
 import { TEMPLATE_KEYS } from "@/lib/access-templates";
+import { REASONS } from "@/lib/product-removal-core";
 
 // Audit Log viewer — pure rules (no database, no React): the query contract (Zod, strict), the event categories and the SAFE reading of
 // an event's stored metadata. The viewer is read-only; nothing here writes.
@@ -11,8 +12,8 @@ import { TEMPLATE_KEYS } from "@/lib/access-templates";
 // other key — including anything that looks like a password, hash, token, request body, translated text or connection string — is
 // dropped, not displayed. So even a future writer that stores something it should not cannot leak it through this page.
 
-export const AUDIT_TARGETS = ["ROLE", "USER", "SYSTEM", "TRANSLATION"] as const satisfies readonly AuditTarget[];
-export const AUDIT_CATEGORIES = ["roles", "access", "translations"] as const;
+export const AUDIT_TARGETS = ["ROLE", "USER", "SYSTEM", "TRANSLATION", "PRODUCT"] as const satisfies readonly AuditTarget[];
+export const AUDIT_CATEGORIES = ["roles", "access", "translations", "products"] as const;
 export type AuditCategory = (typeof AUDIT_CATEGORIES)[number];
 
 /** Which category each recorded event type belongs to. Exhaustive (typed): a new event type must be placed here. */
@@ -31,6 +32,11 @@ export const CATEGORY_OF: Record<AuditEventType, AuditCategory> = {
   USER_WAREHOUSE_SCOPE_CHANGED: "access",
   TRANSLATION_SAVED: "translations",
   TRANSLATION_RESET: "translations",
+  PRODUCT_DELETED: "products",
+  PRODUCT_DEACTIVATED: "products",
+  PRODUCT_ACTIVATED: "products",
+  PRODUCT_BULK_REMOVED: "products",
+  PRODUCT_BULK_STATUS: "products",
 };
 export const typesOfCategory = (c: AuditCategory): AuditEventType[] => AUDIT_EVENT_TYPES.filter((t) => CATEGORY_OF[t] === c);
 
@@ -197,10 +203,11 @@ const templateKeys = (v: unknown): string[] => (Array.isArray(v) ? [...new Set(v
 
 /** A language-neutral detail: the viewer turns `id` into a label and formats the value for the active language. */
 export type SafeDetail =
-  | { id: "name" | "previousName" | "roleName" | "previousRoleName" | "userName" | "clonedFromName" | "key"; kind: "text"; value: string }
+  | { id: "name" | "previousName" | "roleName" | "previousRoleName" | "userName" | "clonedFromName" | "key" | "sku"; kind: "text"; value: string }
   | { id: "locale"; kind: "locale"; value: "ar" | "en" }
   | { id: "active" | "hadOverride"; kind: "bool"; value: boolean }
-  | { id: "previousLength" | "newLength" | "permissionCount" | "warehousesBefore" | "warehousesAfter"; kind: "number"; value: number }
+  | { id: "previousLength" | "newLength" | "permissionCount" | "warehousesBefore" | "warehousesAfter" | "requested" | "deleted" | "deactivated" | "unchanged" | "changed"; kind: "number"; value: number }
+  | { id: "reasons"; kind: "reasons"; value: string[] }
   | { id: "added" | "removed" | "permissions"; kind: "permissions"; value: string[] }
   | { id: "created" | "template"; kind: "templates"; value: string[] };
 
@@ -219,6 +226,7 @@ export function safeDetails(eventType: string, metadata: unknown): SafeDetail[] 
   text("userName", m.userName);
   text("clonedFromName", m.clonedFromName);
   text("key", m.key);
+  text("sku", m.sku);
   if (m.locale === "ar" || m.locale === "en") out.push({ id: "locale", kind: "locale", value: m.locale });
   const active = bool(m.active);
   if (active !== null) out.push({ id: "active", kind: "bool", value: active });
@@ -237,6 +245,12 @@ export function safeDetails(eventType: string, metadata: unknown): SafeDetail[] 
     out.push({ id: "permissionCount", kind: "number", value: perms.length });
     out.push({ id: "permissions", kind: "permissions", value: perms });
   }
+  for (const id of ["requested", "deleted", "deactivated", "unchanged", "changed"] as const) {
+    const n = int(m[id]);
+    if (n !== null) out.push({ id, kind: "number", value: n });
+  }
+  const why = Array.isArray(m.reasons) ? [...new Set(m.reasons.filter((x): x is string => typeof x === "string" && (REASONS as readonly string[]).includes(x)))] : [];
+  if (why.length) out.push({ id: "reasons", kind: "reasons", value: why });
   const tpl = templateKeys(m.created);
   if (tpl.length) out.push({ id: "created", kind: "templates", value: tpl });
   const one = templateKeys([m.template]);
@@ -259,5 +273,10 @@ export function targetLabel(targetType: string, targetId: string, metadata: unkn
   if (targetType === "ROLE") return cleanText(m.name) ?? cleanText(m.roleName);
   if (targetType === "USER") return cleanText(m.userName);
   if (targetType === "TRANSLATION") return keyOf(targetId) ?? keyOf(m.key);
+  if (targetType === "PRODUCT") {
+    const n = cleanText(m.name);
+    const sku = cleanText(m.sku, 64);
+    return n && sku ? `${n} (${sku})` : (n ?? sku);
+  }
   return null; // SYSTEM: the viewer translates the known references
 }

@@ -53,6 +53,7 @@ export const arImpExp: Dictionary["importExport"] = {
     unknownWarehouse: "لا يوجد مستودع باسم «{v}».",
     dupInFile: "هذا الـ SKU مستخدم أيضًا في الصف {n}.",
     existsDb: "يوجد منتج بهذا الـ SKU بالفعل.",
+    existsInactive: "يوجد منتج بهذا الـ SKU وهو غير نشط. الاستيراد ينشئ منتجات جديدة فقط: لا يحدّثه ولا يعيد تفعيله.",
     skuIsBarcode: "هذا الـ SKU هو بالفعل باركود وحدة منتج آخر.",
     stockNeedsWarehouse: "المستودع مطلوب عند تحديد المخزون الافتتاحي.",
     taxType: "يجب أن يكون نوع الضريبة Exclusive أو Inclusive.",

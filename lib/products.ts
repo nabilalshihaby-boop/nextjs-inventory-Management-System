@@ -111,6 +111,8 @@ export type ProductRow = {
   /** Family name + readable variant ("Color: Red · Size: M"); null / "" for a standalone product. */
   family: string | null;
   variant: string;
+  /** Product status: an inactive product keeps its history but can't be used in new documents. */
+  active: boolean;
 };
 
 // ---------------------------------------------------------------------------------------------

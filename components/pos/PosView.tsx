@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useMemo, useRef, useState, useTransition } from "react";
 import toast from "react-hot-toast";
 import { posCheckout } from "@/app/pos/actions";
-import { discardHeldOrder, holdPosOrder, resumeHeldOrder } from "@/app/pos/held-actions";
+import { discardHeldOrder, holdPosOrder, listHeldOrders, resumeHeldOrder } from "@/app/pos/held-actions";
 import { unlockPos, unlockPosWithPin } from "@/app/pos/lock-actions";
 import { closeRegister, getRegisters, openRegister, recordRegisterMovement } from "@/app/pos/register-actions";
 import Icon from "@/components/layout/Icon";
@@ -16,7 +16,7 @@ import { calcSale } from "@/lib/sales";
 import { fromUnits, toUnits } from "@/lib/transfers";
 import { MAX_TENDERS, type PosData, type PosProduct } from "@/lib/pos";
 import { BaseHint, LineUnitSelect } from "@/components/ui/LineUnit";
-import { baseUnits, defaultLineUnit, findLineUnit, maxWholeUnits, scalePrice, trimFactor, type LineUnit, type ProductUnits } from "@/lib/unit-math";
+import { allowedUnits, baseUnits, defaultLineUnit, findLineUnit, maxWholeUnits, scalePrice, trimFactor, type LineUnit, type ProductUnits } from "@/lib/unit-math";
 import { fmt } from "@/lib/i18n/config";
 import { useT } from "@/components/i18n/I18nProvider";
 import type { HeldOrderSummary } from "@/lib/pos-held";
@@ -33,12 +33,15 @@ import type { RegisterMovementType, RegisterOverview } from "@/lib/register";
 // and totals on the server and only receives ids, quantities, method, account, notes and the key.
 
 /** `unitId` is the line's sale unit; its factor decides the unit price and how many BASE units the line takes from stock. */
-type CartLine = { product: PosProduct; qty: number; unitId: string; missing?: boolean };
+/** `lineId` = the held line of the resumed order this cart line came from. A line added or re-added to the cart has none. */
+/** `kept` = a held line whose product has since been deactivated: read-only (keep or remove). */
+/** `pending` = no unit is chosen (unknown or no longer sellable): nothing is guessed. `blocked` = an inactive line without a snapshot (remove only). */
+type CartLine = { product: PosProduct; qty: number; unitId: string; missing?: boolean; lineId?: string; kept?: boolean; pending?: string; blocked?: boolean; oldPrice?: string };
+/** The server's held snapshot of one product unit: what a line of it is charged while the resumed order holds it. Display only. */
+type HeldTerms = { price: string; taxType: "EXCLUSIVE" | "INCLUSIVE"; taxRate: string; factor: string; unitName: string };
 const NO_UNITS: ProductUnits = { baseUnit: "", baseUnitId: "", saleUnitId: "", purchaseUnitId: "", units: [] };
-const factorOf = (l: CartLine) => (l.missing || !l.product.unitInfo.units.length ? "1" : findLineUnit(l.product.unitInfo, l.unitId).factor);
 /** A cart line is a product UNIT: the same product may appear once per unit (Water x 1 Box and Water x 2 Piece). */
-const lineKey = (l: CartLine) => `${l.product.id}|${l.unitId}`;
-const priceOf = (l: CartLine) => (l.missing ? "0.00" : scalePrice(l.product.price, factorOf(l)));
+const lineKey = (l: CartLine) => `${l.product.id}|${l.pending ?? l.unitId}`;
 type Method = (typeof PAYMENT_METHODS)[number];
 /** One payment row of the (possibly split) checkout. A single row always pays the full Grand Total. */
 type Tender = { key: string; method: Method; account: string; amount: string };
@@ -95,7 +98,34 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
   const [held, setHeld] = useState(initialHeld);
   const [showHeld, setShowHeld] = useState(false);
   const [heldId, setHeldId] = useState(""); // the held order the cart was resumed from
+  const [heldRevision, setHeldRevision] = useState(0); // its revision at that moment (the server refuses an old one)
+  const [heldStale, setHeldStale] = useState(false); // it changed elsewhere: it may be resumed again
+  const [mergeNote, setMergeNote] = useState<{ key: string; text: string } | null>(null); // a refused unit change, written on its line
+  const [heldTerms, setHeldTerms] = useState<Record<string, HeldTerms>>({}); // by held line id, complete snapshots only
+  const [heldLines, setHeldLines] = useState<{ id: string; productId: string; unitId: string; qty: string }[]>([]); // the cart as resumed
+  /** The held line this cart line IS now: its own id, only while product and unit are still the held ones. Sent to the server, which verifies it. */
+  const idOf = (l: CartLine) => (heldLines.some((h) => h.id === l.lineId && h.productId === l.product.id && h.unitId === l.unitId) ? l.lineId : undefined);
+  const termsOf = (l: CartLine): HeldTerms | undefined => {
+    const id = l.missing || l.pending ? undefined : idOf(l);
+    return id ? heldTerms[id] : undefined;
+  };
+  /** The product's units with the HELD factor for a held unit (restored even if switched off since, for an inactive product's line). */
+  const infoOf = (l: CartLine): ProductUnits => {
+    const t = termsOf(l);
+    const info = l.product.unitInfo;
+    if (!t) return info;
+    return { ...info, units: info.units.some((u) => u.unitId === l.unitId) ? info.units.map((u) => (u.unitId === l.unitId ? { ...u, factor: t.factor } : u)) : [...info.units, { unitId: l.unitId, name: t.unitName, factor: t.factor, forSales: true, forPurchases: true }] };
+  };
+  const factorOf = (l: CartLine) => (l.missing || l.pending || !infoOf(l).units.length ? "1" : findLineUnit(infoOf(l), l.unitId).factor);
+  const priceOf = (l: CartLine) => (l.missing ? "0.00" : l.blocked ? (l.oldPrice ?? "0.00") : l.pending ? "0.00" : (termsOf(l)?.price ?? scalePrice(l.product.price, factorOf(l))));
+  const taxOf = (l: CartLine) => {
+    const t = termsOf(l);
+    return t ? { taxType: t.taxType, taxRate: t.taxRate } : { taxType: l.product.taxType, taxRate: l.product.taxRate };
+  };
+  const [mustRehold, setMustRehold] = useState(false); // the resumed order can't be paid until it is held again
   const [problems, setProblems] = useState<string[]>([]);
+  const [notices, setNotices] = useState<{ lineId: string; text: string }[]>([]); // information only (current price differs from the held price charged)
+  const shownNotices = notices.filter((x) => cart.some((l) => idOf(l) === x.lineId)); // gone with its held line
   const [discard, setDiscard] = useState<HeldOrderSummary | null>(null);
   const holdKeyRef = useRef<string | null>(null);
   const [locked, setLocked] = useState(false);
@@ -115,12 +145,11 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
   }, [data.stock, warehouse]);
 
   const needle = q.trim().toLowerCase();
-  const list = data.products.filter((p) => (!needle || lookupRank(needle, { code: p.code, name: p.name, barcodes: p.unitInfo.units.flatMap((u) => (u.barcode ? [u.barcode] : [])) }) >= 0) && (cat === "all" || p.category === cat) && (brand === "all" || p.brand === brand));
+  // Deactivated products are never offered: not in the grid, the search or the scanner.
+  const sellable = data.products.filter((p) => !p.inactive);
+  const list = sellable.filter((p) => (!needle || lookupRank(needle, { code: p.code, name: p.name, barcodes: p.unitInfo.units.flatMap((u) => (u.barcode ? [u.barcode] : [])) }) >= 0) && (cat === "all" || p.category === cat) && (brand === "all" || p.brand === brand));
 
-  const totals = useMemo(
-    () => calcSale(cart.map((l) => ({ quantity: String(l.qty), unitPrice: priceOf(l), taxType: l.product.taxType, taxRate: l.product.taxRate, discountType: "FIXED" as const, discountValue: "0.00" })), { orderTaxRate: "0.00", discount: "0.00", shipping: "0.00" }),
-    [cart],
-  );
+  const totals = calcSale(cart.map((l) => ({ quantity: String(l.qty), unitPrice: priceOf(l), ...taxOf(l), discountType: "FIXED" as const, discountValue: "0.00" })), { orderTaxRate: "0.00", discount: "0.00", shipping: "0.00" });
   const qtyTotal = cart.reduce((a, l) => a + l.qty, 0);
   const grandOk = cart.length > 0 && !totals.error && toUnits(totals.grandTotal, 2) > BigInt(0);
   const setupMissing = !cur ? P.setupNoCurrency : data.customers.length === 0 ? P.setupNoCustomers : data.warehouses.length === 0 ? P.setupNoWarehouses : data.accounts.length === 0 ? fmt(P.setupNoAccount, { code: cur.code }) : data.products.length === 0 ? P.setupNoProducts : "";
@@ -164,11 +193,17 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
   const draftTenders = () => tenders.map((t, i) => ({ paymentMethod: t.method, cashBankAccountId: t.account, amount: MONEY_RE.test(amountOf(t, i)) && tenders.length > 1 ? amountOf(t, i) : "" }));
 
   const hasMissing = cart.some((l) => l.missing);
-  const canPay = !setupMissing && grandOk && !!customer && !!warehouse && !hasMissing;
-  const payReason = setupMissing || (hasMissing ? P.reasonUnavailable : !customer ? P.reasonCustomer : !warehouse ? P.reasonWarehouse : cart.length === 0 ? P.cartIsEmpty : "");
+  const unresolved = cart.some((l) => l.pending || l.blocked); // a unit to choose, or a line to remove, before holding again
+  const unitPending = cart.some((l) => l.pending && !l.blocked); // no valid unit yet: there is no total to show
+  // Any difference between the cart and the held order (the server compares the same) means: hold it again before paying.
+  const cartChanged = !!heldId && (cart.length !== heldLines.length || cart.some((l, n) => l.lineId !== heldLines[n].id || l.product.id !== heldLines[n].productId || l.unitId !== heldLines[n].unitId || String(l.qty) !== heldLines[n].qty));
+  const canPay = !setupMissing && grandOk && !!customer && !!warehouse && !hasMissing && !unresolved && !mustRehold && !cartChanged;
+  // The reason that needs the cashier's action on the held order is also written under the buttons (a tooltip is invisible on touch).
+  const heldReason = unresolved ? P.reasonResolve : mustRehold ? P.reasonRehold : cartChanged ? P.cartChanged : "";
+  const payReason = setupMissing || (hasMissing ? P.reasonUnavailable : heldReason ? heldReason : !customer ? P.reasonCustomer : !warehouse ? P.reasonWarehouse : cart.length === 0 ? P.cartIsEmpty : "");
 
   /** BASE units (thousandths) the cart already takes of one product across ALL its unit lines, optionally ignoring one line. */
-  const cartBase = (c: CartLine[], productId: string, exceptKey?: string) => c.reduce((a, l) => (l.product.id === productId && !l.missing && lineKey(l) !== exceptKey ? a + baseUnits(String(l.qty), factorOf(l)) : a), BigInt(0));
+  const cartBase = (c: CartLine[], productId: string, exceptKey?: string) => c.reduce((a, l) => (l.product.id === productId && !l.missing && !l.pending && lineKey(l) !== exceptKey ? a + baseUnits(String(l.qty), factorOf(l)) : a), BigInt(0));
   /** The most whole units of `line` that still fit in stock once the product's OTHER unit lines are counted (display-side; the server re-checks the total). */
   const roomFor = (c: CartLine[], line: CartLine) => {
     const avail = toUnits(String(stockOf.get(line.product.id) ?? 0), 3) - cartBase(c, line.product.id, lineKey(line));
@@ -177,10 +212,11 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
   /** Add ONE of a product unit. Only the line of THAT unit changes (same unit merges into one line; other units of the product are untouched). */
   function addUnit(p: PosProduct, u: LineUnit, scanned = false) {
     const B = T.barcode.pos;
+    if (p.inactive) return;
     if (!warehouse) return toast.error(P.chooseWarehouseFirst, { id: "pos" });
     if (scanned && !(u.unitId === p.unitInfo.baseUnitId || u.forSales)) return toast.error(fmt(B.notSold, { unit: u.name, name: p.name }), { id: "pos" });
     if ((stockOf.get(p.id) ?? 0) <= 0) return toast.error(fmt(P.outOfStock, { name: p.name }), { id: "pos" });
-    const line = cart.find((l) => l.product.id === p.id && l.unitId === u.unitId);
+    const line = cart.find((l) => !l.pending && l.product.id === p.id && l.unitId === u.unitId);
     const probe: CartLine = line ?? { product: p, qty: 1, unitId: u.unitId };
     if (roomFor(cart, probe) < (line ? line.qty + 1 : 1)) return scanned || !line ? toast.error(fmt(B.noStock, { name: p.name, unit: u.name }), { id: "pos" }) : undefined;
     setCart((c) => (c.some((l) => lineKey(l) === lineKey(probe)) ? c.map((l) => (lineKey(l) === lineKey(probe) ? { ...l, qty: l.qty + 1 } : l)) : [...c, { product: p, qty: 1, unitId: u.unitId }]));
@@ -189,40 +225,68 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
   const add = (p: PosProduct) => addUnit(p, defaultLineUnit(p.unitInfo, "SALE"));
   const step = (key: string, n: number) => setCart((c) => c.map((l) => (lineKey(l) === key ? { ...l, qty: Math.max(1, Math.min(roomFor(c, l) || 1, l.qty + n)) } : l)));
   /** Change a line's unit. If the product already has a line in that unit, the two lines merge into one. */
-  const setUnit = (key: string, unitId: string) =>
+  const setUnit = (key: string, unitId: string) => {
+    // A resumed held order never combines two lines (they may carry different held prices, taxes or units).
+    const from = cart.find((x) => lineKey(x) === key);
+    if (heldId && from && from.unitId !== unitId && cart.some((x) => x !== from && !x.pending && x.product.id === from.product.id && x.unitId === unitId)) {
+      return setMergeNote({ key, text: fmt(T.posTx.held.mergeBlocked, { name: from.product.name, unit: findLineUnit(from.product.unitInfo, unitId).name }) });
+    }
+    setMergeNote(null);
     setCart((c) => {
       const l = c.find((x) => lineKey(x) === key);
       if (!l || l.unitId === unitId) return c;
       const rest = c.filter((x) => lineKey(x) !== key);
-      const target = rest.find((x) => x.product.id === l.product.id && x.unitId === unitId);
+      const target = rest.find((x) => !x.pending && x.product.id === l.product.id && x.unitId === unitId);
       if (target) {
-        const merged: CartLine = { ...target, qty: target.qty + l.qty };
+        const merged: CartLine = { ...target, qty: target.qty + l.qty }; // keeps its own held identity, never the moved line's
         return rest.map((x) => (lineKey(x) === lineKey(target) ? { ...merged, qty: Math.max(1, Math.min(merged.qty, roomFor(rest, merged) || 1)) } : x));
       }
-      const nl: CartLine = { ...l, unitId };
+      const nl: CartLine = { ...l, unitId, pending: undefined }; // in another unit it counts as a new line (see idOf)
       return c.map((x) => (lineKey(x) === key ? { ...nl, qty: Math.max(1, Math.min(nl.qty, roomFor(rest, nl) || 1)) } : x));
     });
-  const remove = (key: string) => setCart((c) => c.filter((l) => lineKey(l) !== key));
+  };
+  const remove = (key: string) => {
+    setMergeNote(null);
+    setCart((c) => c.filter((l) => lineKey(l) !== key));
+  };
+  /** The server refused an out-of-date request (nothing was written): show the current held orders. */
+  const onConflict = () => {
+    setHeldStale(true);
+    void listHeldOrders().then((r) => r.ok && setHeld(r.orders));
+  };
+  const clearResume = () => {
+    setHeldId("");
+    setHeldRevision(0);
+    setHeldStale(false);
+    setMergeNote(null);
+    setHeldTerms({});
+    setHeldLines([]);
+    setMustRehold(false);
+    setProblems([]);
+    setNotices([]);
+  };
   const reset = () => {
     setCart([]);
-    setHeldId("");
-    setProblems([]);
+    clearResume();
   };
 
   function hold() {
     if (cart.length === 0) return toast.error(P.holdEmpty, { id: "pos" });
+    if (unresolved) return toast.error(P.reasonResolve, { id: "pos" });
     const key = holdKeyRef.current ?? (holdKeyRef.current = crypto.randomUUID());
     startTransition(async () => {
       try {
-        const r = await holdPosOrder({ holdKey: key, heldOrderId: heldId, customerId: customer, warehouseId: warehouse, tenders: draftTenders(), notes, items: cart.map((l) => ({ productId: l.product.id, unitId: l.unitId, quantity: String(l.qty) })) });
-        if (!r.ok) return void toast.error(r.message, { id: "pos" });
+        const r = await holdPosOrder({ holdKey: key, heldOrderId: heldId, ...(heldId ? { heldRevision } : {}), customerId: customer, warehouseId: warehouse, tenders: draftTenders(), notes, items: cart.map((l) => ({ productId: l.product.id, unitId: l.unitId, quantity: String(l.qty), ...(heldId && idOf(l) ? { heldLineId: idOf(l) } : {}) })) });
+        if (!r.ok) {
+          if (r.conflict) onConflict();
+          return void toast.error(r.message, { id: "pos" });
+        }
         holdKeyRef.current = null;
         toast.success(fmt(P.orderHeld, { ref: r.reference }), { id: "pos" });
         setHeld(r.orders);
         setCart([]);
         setTenders([]);
-        setHeldId("");
-        setProblems([]);
+        clearResume();
         setNotes("");
       } catch {
         toast.error(P.holdUnconfirmed, { id: "pos" });
@@ -241,27 +305,32 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
         const o = r.order;
         const byId = new Map(data.products.map((p) => [p.id, p]));
         const extra: string[] = [];
-        const lines: CartLine[] = o.lines.map((l) => {
+        const lines: CartLine[] = o.lines.map((l, n) => {
           const p = byId.get(l.productId);
-          // An order held before multi-unit carts may have no saved unit: that always meant the product's default sale unit.
-          if (p && !l.missing) return { product: p, qty: Number(l.quantity), unitId: l.unitId ? findLineUnit(p.unitInfo, l.unitId).unitId : defaultLineUnit(p.unitInfo, "SALE").unitId };
+          if (p && !l.missing) {
+            const base = { product: p, qty: Number(l.quantity), lineId: l.id };
+            // Without a snapshot an inactive line can only be removed; an unknown or unsellable unit is left for the cashier to choose.
+            if (l.inactive && !l.unitFactor) return { ...base, unitId: l.unitId, kept: true, pending: `?${n}`, blocked: true, oldPrice: l.heldPrice };
+            if (l.needsUnit) return { ...base, unitId: "", pending: `?${n}` };
+            return { ...base, unitId: l.unitId, ...(l.inactive ? { kept: true } : {}) };
+          }
           if (!l.missing) extra.push(`${l.code} ${l.name} isn't in this screen yet — refresh the POS.`);
-          return { product: { id: l.productId, code: l.code, name: l.name, price: "0.00", taxType: "EXCLUSIVE", taxRate: "0.00", unit: "", unitInfo: NO_UNITS, category: "", brand: "", image: null }, qty: Number(l.quantity), unitId: "", missing: true };
+          return { product: { id: l.productId, code: l.code, name: l.name, price: "0.00", taxType: "EXCLUSIVE", taxRate: "0.00", unit: "", unitInfo: NO_UNITS, category: "", brand: "", image: null }, qty: Number(l.quantity), unitId: "", lineId: l.id, missing: true };
         });
-        // One line per product unit (old orders can't contain two, but never trust the shape): merge identical units.
-        const unique: CartLine[] = [];
-        for (const l of lines) {
-          const same = unique.find((x) => lineKey(x) === lineKey(l));
-          if (same) same.qty += l.qty;
-          else unique.push({ ...l });
-        }
-        setCart(unique);
+        setCart(lines);
+        setHeldLines(lines.map((l) => ({ id: l.lineId!, productId: l.product.id, unitId: l.unitId, qty: String(l.qty) })));
+        setHeldTerms(Object.fromEntries(o.lines.flatMap((l) => (l.unitFactor && l.taxType ? [[l.id, { price: l.heldPrice, taxType: l.taxType, taxRate: l.taxRate, factor: l.unitFactor, unitName: l.unitName }]] : []))));
         setCustomer(o.customerId);
         setWarehouse(o.warehouseId);
         setTenders(o.tenders.map((t) => newTender(t.amount, (PAYMENT_METHODS as readonly string[]).includes(t.paymentMethod) ? (t.paymentMethod as Method) : "Cash", t.cashBankAccountId)));
         setNotes(o.notes);
         setHeldId(o.id);
+        setHeldRevision(o.revision);
+        setHeldStale(false);
+        setMergeNote(null);
+        setMustRehold(o.mustRehold);
         setProblems([...o.problems, ...extra]);
+        setNotices(o.notices);
         setShowHeld(false);
         toast.success(fmt(P.resumedToast, { ref: o.reference }), { id: "pos" });
       } catch {
@@ -274,17 +343,22 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
     if (!h) return;
     startTransition(async () => {
       try {
-        const r = await discardHeldOrder(h.id);
+        const r = await discardHeldOrder(h.id, h.id === heldId ? heldRevision : h.revision);
         setDiscard(null);
         if (!r.ok) {
           toast.error(r.message, { id: "pos" });
-          setHeld((l) => l.filter((x) => x.id !== h.id));
+          if (r.conflict) {
+            if (h.id === heldId) onConflict();
+            else void listHeldOrders().then((x) => x.ok && setHeld(x.orders));
+          } else setHeld((l) => l.filter((x) => x.id !== h.id));
           return;
         }
         setHeld(r.orders);
         if (heldId === h.id) {
-          setHeldId("");
-          setProblems([]);
+          // Discarding the resumed order empties its cart: it must never turn into an ordinary sale at other prices.
+          reset();
+          setTenders([]);
+          setNotes("");
         }
         toast.success(fmt(P.discarded, { ref: h.reference }), { id: "pos" });
       } catch {
@@ -395,13 +469,13 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
     // Barcode scanners type the code and press Enter. An exact stored UNIT barcode adds that unit (qty 1) FIRST; otherwise an exact SKU
     // match (or the only match) is added. A barcode can never equal a SKU (identifier registry), so the order is never ambiguous.
     // Unknown or inactive barcodes add nothing.
-    const scanned = needle ? data.products.flatMap((p) => p.unitInfo.units.filter((u) => u.barcode && u.barcode.toLowerCase() === needle).map((u) => ({ p, u }))) : [];
+    const scanned = needle ? sellable.flatMap((p) => p.unitInfo.units.filter((u) => u.barcode && u.barcode.toLowerCase() === needle).map((u) => ({ p, u }))) : [];
     if (scanned.length === 1) {
       addUnit(scanned[0].p, scanned[0].u, true);
       setQ("");
       return;
     }
-    const exact = data.products.find((p) => p.code.toLowerCase() === needle) ?? (list.length === 1 ? list[0] : undefined);
+    const exact = sellable.find((p) => p.code.toLowerCase() === needle) ?? (list.length === 1 ? list[0] : undefined);
     if (exact) {
       add(exact);
       setQ("");
@@ -426,10 +500,11 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
     const key = keyRef.current ?? (keyRef.current = crypto.randomUUID());
     startTransition(async () => {
       try {
-        const r = await posCheckout({ checkoutKey: key, customerId: customer, warehouseId: warehouse, tenders: tenders.map((t, i) => ({ paymentMethod: t.method, cashBankAccountId: t.account, amount: amountOf(t, i) })), notes, heldOrderId: heldId, walkIn: isWalkIn, items: cart.map((l) => ({ productId: l.product.id, unitId: l.unitId, quantity: String(l.qty) })) });
+        const r = await posCheckout({ checkoutKey: key, customerId: customer, warehouseId: warehouse, tenders: tenders.map((t, i) => ({ paymentMethod: t.method, cashBankAccountId: t.account, amount: amountOf(t, i) })), notes, heldOrderId: heldId, ...(heldId ? { heldRevision } : {}), walkIn: isWalkIn, items: cart.map((l) => ({ productId: l.product.id, unitId: l.unitId, quantity: String(l.qty), ...(heldId && idOf(l) ? { heldLineId: idOf(l) } : {}) })) });
         if (!r.ok) {
           setErr(r.message);
           toast.error(r.message, { id: "pos" });
+          if (r.conflict) onConflict();
           return; // definite refusal: nothing was written, the same key stays valid for a retry
         }
         toast.success(fmt(P.saleToast, { ref: r.reference }), { id: "pos" });
@@ -440,8 +515,7 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
         setTenders([]);
         setNotes("");
         if (heldId) setHeld((l) => l.filter((x) => x.id !== heldId));
-        setHeldId("");
-        setProblems([]);
+        clearResume();
         setDone({ saleId: r.saleId, reference: r.reference, replayed: r.replayed });
       } catch {
         // Outcome unknown (network): keep the key — pressing Submit again can never double-charge.
@@ -609,6 +683,13 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
               ))}
             </div>
           )}
+          {shownNotices.length > 0 && (
+            <div role="status" data-testid="pos-notices" className="t-caption" style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", marginBottom: 10 }}>
+              {shownNotices.map((x) => (
+                <div key={x.text}>{x.text}</div>
+              ))}
+            </div>
+          )}
           {heldId && (
             <div className="t-caption" data-testid="pos-resumed" style={{ marginBottom: 6 }}>
               {P.resumedNote}
@@ -634,27 +715,52 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
                   </tr>
                 )}
                 {cart.map((l, n) => (
-                  <tr key={lineKey(l)} data-code={l.product.code} data-unit={l.unitId} data-missing={l.missing ? "true" : undefined} style={l.missing ? { background: "var(--danger-50, #fef2f2)" } : undefined}>
+                  <tr key={lineKey(l)} data-code={l.product.code} data-unit={l.unitId} data-kept={l.kept ? "true" : undefined} data-missing={l.missing ? "true" : undefined} data-pending={l.pending ? "true" : undefined} data-held={termsOf(l) ? "true" : undefined} style={l.missing ? { background: "var(--danger-50, #fef2f2)" } : undefined}>
                     <td>
                       <div style={{ font: "600 15px/20px var(--font-body)", maxWidth: 190, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.product.name}</div>
                       <span className="sp-badge sp-badge--info">{l.product.code}</span>
-                      {!l.missing && <LineUnitSelect info={l.product.unitInfo} purpose="SALE" value={l.unitId} compact onChange={(unitId) => setUnit(lineKey(l), unitId)} />}
-                      {!l.missing && <BaseHint info={l.product.unitInfo} unitId={l.unitId} qty={String(l.qty)} />}
-                      {!l.missing && l.unitId !== l.product.unitInfo.baseUnitId && <span className="t-caption" data-testid="pos-factor" style={{ display: "block" }}><bdi dir="ltr">{fmt(T.units.line.perUnit, { unit: findLineUnit(l.product.unitInfo, l.unitId).name, factor: trimFactor(factorOf(l)), base: l.product.unitInfo.baseUnit })}</bdi></span>}
+                      {l.kept && (
+                        <>
+                          <span className="sp-badge sp-badge--warning" data-testid="inactive-line" style={{ marginInlineStart: 6 }}>
+                            {T.products.status.inactive}
+                          </span>
+                          <span className="t-caption" style={{ display: "block" }}>{l.blocked ? P.lineBlocked : T.products.status.keptLine}</span>
+                        </>
+                      )}
+                      {!l.missing && !l.kept && !l.pending && <LineUnitSelect info={infoOf(l)} purpose="SALE" value={l.unitId} compact onChange={(unitId) => setUnit(lineKey(l), unitId)} />}
+                      {mergeNote?.key === lineKey(l) && (
+                        <span className="sp-error" role="alert" data-testid="pos-merge-blocked" style={{ display: "block", maxWidth: 240, whiteSpace: "normal", marginTop: 4 }}>
+                          {mergeNote.text}
+                        </span>
+                      )}
+                      {l.pending && !l.blocked && (
+                        <select className="sp-select" aria-label={fmt(P.chooseUnitFor, { name: l.product.name })} aria-invalid value="" onChange={(ev) => setUnit(lineKey(l), ev.target.value)} data-testid="pos-choose-unit" style={{ display: "block", minWidth: 120, height: 34, padding: "0 8px", marginTop: 4 }}>
+                          <option value="" disabled>
+                            {P.chooseUnit}
+                          </option>
+                          {allowedUnits(l.product.unitInfo, "SALE").map((u) => (
+                            <option key={u.unitId} value={u.unitId}>
+                              {u.name} {u.factor !== "1" ? `(× ${u.factor})` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      {!l.missing && !l.pending && <BaseHint info={infoOf(l)} unitId={l.unitId} qty={String(l.qty)} />}
+                      {!l.missing && !l.pending && l.unitId !== l.product.unitInfo.baseUnitId && <span className="t-caption" data-testid="pos-factor" style={{ display: "block" }}><bdi dir="ltr">{fmt(T.units.line.perUnit, { unit: findLineUnit(infoOf(l), l.unitId).name, factor: trimFactor(factorOf(l)), base: l.product.unitInfo.baseUnit })}</bdi></span>}
                     </td>
-                    <td>
+                    <td data-label={P.colQty}>
                       <span className="pos-step">
-                        <button type="button" aria-label={fmt(P.decrease, { name: l.product.name })} onClick={() => step(lineKey(l), -1)}>
+                        <button type="button" aria-label={fmt(P.decrease, { name: l.product.name })} disabled={!!l.kept || !!l.pending} onClick={() => step(lineKey(l), -1)}>
                           −
                         </button>
                         <b data-testid="pos-qty" style={{ fontWeight: 600, minWidth: 14, textAlign: "center" }}>{l.qty}</b>
-                        <button type="button" aria-label={fmt(P.increase, { name: l.product.name })} onClick={() => step(lineKey(l), 1)}>
+                        <button type="button" aria-label={fmt(P.increase, { name: l.product.name })} disabled={!!l.kept || !!l.pending} onClick={() => step(lineKey(l), 1)}>
                           +
                         </button>
                       </span>
                     </td>
-                    <td>{l.missing ? P.unavailable : m(priceOf(l))}</td>
-                    <td>{m(totals.lines[n]?.subtotal ?? "0.00")}</td>
+                    <td data-label={P.colPrice} data-testid="pos-price">{l.missing ? P.unavailable : l.pending && !l.blocked ? "—" : m(priceOf(l))}</td>
+                    <td data-label={P.colSubTotal} data-testid="pos-line-total">{l.pending && !l.blocked ? "—" : m(totals.lines[n]?.subtotal ?? "0.00")}</td>
                     <td>
                       <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={fmt(P.removeItem, { name: l.product.name })} style={{ color: "var(--danger-500)" }} onClick={() => remove(lineKey(l))}>
                         <Icon name="trash-2" size={16} />
@@ -671,15 +777,21 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
                 {P.totalQty} : <b data-testid="pos-total-qty">{qtyTotal}</b>
               </div>
               <div>
-                {P.subTotal} : <b>{m(totals.subtotal)}</b>
+                {P.subTotal} : <b data-testid="pos-subtotal">{unitPending ? "—" : m(totals.subtotal)}</b>
               </div>
               <div style={{ fontSize: 26, marginTop: 6 }}>
-                {P.total} : <b data-testid="pos-total">{m(totals.grandTotal)}</b>
+                {unitPending ? (
+                  <span data-testid="pos-total-pending" style={{ fontSize: 18, display: "block" }}>{P.totalNeedsUnit}</span>
+                ) : (
+                  <>
+                    {P.total} : <b data-testid="pos-total">{m(totals.grandTotal)}</b>
+                  </>
+                )}
               </div>
             </div>
           </div>
           <div className="pos-acts" style={{ display: "flex", gap: 10, marginTop: 16 }}>
-            <button type="button" className="sp-btn pos-big" data-testid="pos-hold" style={{ background: "var(--tone-rose)", color: "#fff" }} onClick={hold} disabled={cart.length === 0 || pending}>
+            <button type="button" className="sp-btn pos-big" data-testid="pos-hold" style={{ background: "var(--tone-rose)", color: "#fff" }} onClick={hold} disabled={cart.length === 0 || pending || unresolved} title={unresolved ? P.reasonResolve : undefined}>
               <Icon name="clock" size={18} />
               {P.hold}
             </button>
@@ -692,6 +804,11 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
               {P.payNow}
             </button>
           </div>
+          {heldReason && (
+            <div className="sp-error" role="status" data-testid="pos-pay-blocked" style={{ marginTop: 8 }}>
+              {heldReason}
+            </div>
+          )}
         </div>
       </div>
 
@@ -783,8 +900,8 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
                   </span>
                 </span>
                 <span style={{ display: "flex", gap: 8 }}>
-                  <button type="button" className="sp-btn sp-btn--primary sp-btn--sm" disabled={pending || h.id === heldId} onClick={() => resume(h)}>
-                    {h.id === heldId ? P.inCart : P.resume}
+                  <button type="button" className="sp-btn sp-btn--primary sp-btn--sm" disabled={pending || (h.id === heldId && !heldStale)} onClick={() => resume(h)}>
+                    {h.id === heldId && !heldStale ? P.inCart : P.resume}
                   </button>
                   <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={fmt(P.discardAria, { ref: h.reference })} style={{ color: "var(--danger-500)" }} disabled={pending} onClick={() => setDiscard(h)}>
                     <Icon name="trash-2" size={16} />

@@ -135,6 +135,8 @@ export type StockOption = {
   unitInfo: ProductUnits;
   /** Stored barcodes (search only). */
   barcodes?: string[];
+  /** Deactivated: listed only so an existing transfer line stays visible; never suggested. */
+  inactive?: boolean;
 };
 
 export type TransferFormValues = {

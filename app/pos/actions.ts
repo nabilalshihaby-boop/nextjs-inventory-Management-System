@@ -1,5 +1,6 @@
 "use server";
 
+import { InactiveProductError, assertKeptLines, assertProductsActive, sameDecimal, sameUnit } from "@/lib/product-status";
 import { scopeError } from "@/lib/access-scope";
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
@@ -16,8 +17,8 @@ import { canUsePos } from "@/lib/roles";
 import { calcSale, formatSaleReference } from "@/lib/sales";
 import { SaleError, deductStock } from "@/lib/sale-stock";
 import { StockHistoryError } from "@/lib/stock-history-guard";
-import { lineSnapshot, loadUnitSets, resolveLine, type ResolvedUnit } from "@/lib/product-units";
-import { scalePrice } from "@/lib/unit-math";
+import { hasSnapshot, lineSnapshot, loadUnitSets, pickUnit, resolveLine, type ResolvedUnit } from "@/lib/product-units";
+import { scalePrice, trimFactor } from "@/lib/unit-math";
 import { getDefaultCurrency } from "@/lib/settings";
 import { fromUnits, toUnits } from "@/lib/transfers";
 
@@ -41,11 +42,12 @@ import { fromUnits, toUnits } from "@/lib/transfers";
 //   shortage rolls the whole checkout back. The account is locked and must be ACTIVE and in the
 //   sale currency. Products, prior sales/payments and ledger rows are never modified.
 // - Walk-in: the optional walkIn flag is only a claim; the configured setting is re-read in the transaction and a mismatch rejects the checkout.
-// - A held order (optional heldOrderId) is marked CONSUMED in the same transaction, so it can't be reused.
+// - A held order (optional heldOrderId) is locked, must still have the revision the cart was resumed at, and is marked CONSUMED (revision
+//   + 1) in the same transaction, so it can't be reused or paid from an out-of-date screen. The replay of a finished key comes first.
 
 export type PosCheckoutResult =
   | { ok: true; message: string; saleId: string; reference: string; replayed: boolean }
-  | { ok: false; message: string; fieldErrors?: Record<string, string> };
+  | { ok: false; message: string; fieldErrors?: Record<string, string>; /** The held order changed elsewhere. */ conflict?: boolean };
 
 const isKnown = (e: unknown, ...codes: string[]) => e instanceof Prisma.PrismaClientKnownRequestError && codes.includes(e.code);
 const MAX_TOTAL = toUnits("999999999999.99", 2);
@@ -83,6 +85,7 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
   if (!currency) return { ok: false, message: dict.posTx.checkout.noCurrency };
 
   for (let attempt = 1; ; attempt++) {
+    let stale = false;
     try {
       const created = await db.$transaction(async (tx) => {
         const [customer, warehouse, products] = await Promise.all([
@@ -99,29 +102,66 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
         if (!warehouse) return reject("posTx.checkout.chooseWarehouse", {}, "warehouseId");
         const byId = new Map(products.map((p) => [p.id, p]));
         if (d.items.some((i) => !byId.has(i.productId))) return reject("posTx.checkout.productGone", {}, "items");
-
-        // Units: each line's unit must be an active SALE conversion of THIS product (blank = the product's default sale unit).
-        // The unit price is the stored base price × the stored factor — nothing about unit, factor or price comes from the browser.
-        const sets = await loadUnitSets(tx, d.items.map((i) => i.productId));
+        // Two kinds of checkout:
+        //  * a NORMAL sale: every line is priced and taxed from the product as it is now (inactive products refused);
+        //  * a RESUMED held order: only the UNCHANGED held cart can be paid. The server compares the submitted lines with the stored ones
+        //    itself (count, order, line id, product, unit, quantity); any difference is refused until the order is held again. Every line is
+        //    then charged exactly its held snapshot: price, tax type and rate, unit, factor and base quantity.
+        // The held order is locked first (a re-hold takes the same lock), so its lines can't change under this checkout.
+        if (d.heldOrderId) await tx.$queryRaw`SELECT id FROM pos_held_orders WHERE id = ${d.heldOrderId} AND createdById = ${userId} FOR UPDATE`;
+        const held = d.heldOrderId ? await tx.posHeldOrder.findFirst({ where: { id: d.heldOrderId, createdById: userId }, select: { status: true, revision: true, warehouseId: true, items: { orderBy: { id: "asc" }, select: { id: true, productId: true, unitId: true, unitName: true, unitFactor: true, baseQuantity: true, quantity: true, unitPrice: true, taxType: true, taxRate: true } } } }) : null;
+        if (held && held.revision !== d.heldRevision) {
+          stale = true;
+          return reject("posTx.held.conflict", {}, "heldOrderId");
+        }
+        if (d.heldOrderId && held?.status !== "HELD") return reject("posTx.checkout.heldUsed", {}, "heldOrderId");
         // A line is a product UNIT, so one product may have several lines (Box + Piece); each is resolved on its own.
         const lineUnit: ResolvedUnit[] = [];
-        const seenUnit = new Set<string>();
-        for (const i of d.items) {
-          const p = byId.get(i.productId)!;
-          const r = resolveLine(sets.get(i.productId), i.unitId, "SALE", i.quantity, `${p.code} ${p.name}`);
-          if (!r.ok) return reject(r.f.key, r.f.vars, "items");
-          // Two lines that resolve to the same product unit (e.g. blank = default Box next to an explicit Box) are a tampered cart.
-          const k = `${i.productId}|${r.r.unitId}`;
-          if (seenUnit.has(k)) return reject("posTx.val.dupProduct", {}, "items");
-          seenUnit.add(k);
-          lineUnit.push(r.r);
+        const terms: { unitPrice: string; taxType: "EXCLUSIVE" | "INCLUSIVE"; taxRate: string }[] = [];
+        if (held) {
+          // Every STORED line needs a complete snapshot, and an active product's held unit must still be sellable.
+          if (held.items.some((s) => !hasSnapshot(s))) return reject("posTx.checkout.heldNoSnapshot", {}, "heldOrderId");
+          const ids = held.items.map((s) => s.productId);
+          const heldSets = await loadUnitSets(tx, ids);
+          for (const p of await tx.product.findMany({ where: { id: { in: ids }, active: true }, select: { id: true, code: true, name: true } })) {
+            const gone = held.items.find((s) => s.productId === p.id && !pickUnit(heldSets.get(p.id)!, s.unitId, "SALE"));
+            if (gone) return reject("posTx.checkout.heldUnitGone", { product: `${p.code} ${p.name}`, unit: gone.unitName ?? "" }, "heldOrderId");
+          }
+          // Inactive products (shared lock): only their existing lines, unchanged, in the held warehouse.
+          await assertKeptLines(tx, d.items, held.items, (l, s) => sameUnit(l.unitId, s.unitId) && sameDecimal(l.quantity, s.quantity), !!held.warehouseId && held.warehouseId !== d.warehouseId);
+          const unchanged =
+            d.items.length === held.items.length &&
+            d.items.every((i, n) => {
+              const s = held.items[n];
+              return i.heldLineId === s.id && i.productId === s.productId && i.unitId === s.unitId && sameDecimal(i.quantity, s.quantity);
+            });
+          if (!unchanged) return reject("posTx.checkout.heldChanged", {}, "heldOrderId");
+          for (const s of held.items) {
+            lineUnit.push({ unitId: s.unitId!, unitName: s.unitName!, factor: trimFactor(s.unitFactor!.toFixed(6)), baseQuantity: s.baseQuantity!.toFixed(3) });
+            terms.push({ unitPrice: s.unitPrice.toFixed(2), taxType: s.taxType!, taxRate: s.taxRate!.toFixed(2) });
+          }
+        } else {
+          // An inactive product can't be sold at the POS (shared lock on the product rows, so a concurrent deactivation is always seen).
+          await assertProductsActive(tx, d.items.map((i) => i.productId));
+          // Units: each line's unit must be an active SALE conversion of THIS product (blank = the product's default sale unit). The price
+          // is the stored base price x the stored factor — nothing about unit, factor, price or tax comes from the browser.
+          const sets = await loadUnitSets(tx, d.items.map((i) => i.productId));
+          const seenUnit = new Set<string>();
+          for (const i of d.items) {
+            const p = byId.get(i.productId)!;
+            const r = resolveLine(sets.get(i.productId), i.unitId, "SALE", i.quantity, `${p.code} ${p.name}`);
+            if (!r.ok) return reject(r.f.key, r.f.vars, "items");
+            // Two lines that resolve to the same product unit (e.g. blank = default Box next to an explicit Box) are a tampered cart.
+            const k = `${i.productId}|${r.r.unitId}`;
+            if (seenUnit.has(k)) return reject("posTx.val.dupProduct", {}, "items");
+            seenUnit.add(k);
+            lineUnit.push(r.r);
+            terms.push({ unitPrice: scalePrice(p.price.toFixed(2), r.r.factor), taxType: p.taxType, taxRate: p.orderTax.toFixed(2) });
+          }
         }
 
-        // Authoritative totals from the STORED product values (same exact calculation as Sales).
-        const lines = d.items.map((i, n) => {
-          const p = byId.get(i.productId)!;
-          return { quantity: i.quantity, unitPrice: scalePrice(p.price.toFixed(2), lineUnit[n].factor), taxType: p.taxType, taxRate: p.orderTax.toFixed(2), discountType: "FIXED" as const, discountValue: "0.00" };
-        });
+        // Authoritative totals from the held snapshot or the current product values (same exact calculation as Sales).
+        const lines = d.items.map((i, n) => ({ quantity: i.quantity, ...terms[n], discountType: "FIXED" as const, discountValue: "0.00" }));
         const totals = calcSale(lines, { orderTaxRate: "0.00", discount: "0.00", shipping: "0.00" });
         const bad = totals.lines.find((l) => l.error);
         if (bad || totals.error) return reject(bad?.errorKey ?? totals.errorKey ?? "posTx.checkout.invalidTotals", {}, "items");
@@ -182,7 +222,7 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
         // 1b. A resumed held order is consumed by THIS checkout (conditional update → can't be reused;
         // a second concurrent checkout of the same order blocks on the row, then fails and rolls back).
         if (d.heldOrderId) {
-          const used = await tx.posHeldOrder.updateMany({ where: { id: d.heldOrderId, createdById: userId, status: "HELD" }, data: { status: "CONSUMED", consumedSaleId: s0.id } });
+          const used = await tx.posHeldOrder.updateMany({ where: { id: d.heldOrderId, createdById: userId, status: "HELD", revision: d.heldRevision }, data: { status: "CONSUMED", consumedSaleId: s0.id, revision: { increment: 1 } } });
           if (used.count !== 1) reject("posTx.checkout.heldUsed", {}, "heldOrderId");
         }
 
@@ -261,11 +301,16 @@ export async function posCheckout(input: unknown): Promise<PosCheckoutResult> {
       revalidatePath("/products"); // In Stock
       return { ok: true, message: tr(dict, "posTx.checkout.done", { ref: created.reference, pay: created.payRef, ledger: created.ledger }), saleId: created.id, reference: created.reference, replayed: false };
     } catch (e) {
-            if (e instanceof LedgerError) {
-        const message = e.i18n ? tr(dict, e.i18n.key, e.i18n.vars) : e.message;
-        return { ok: false, message, fieldErrors: e.field ? { [e.field]: message } : undefined };
+      // A duplicate of a held-order checkout waits on the order lock and then finds it consumed: if THIS key's sale exists, replay it.
+      if (e instanceof LedgerError || e instanceof InactiveProductError) {
+        const finished = await replay();
+        if (finished) return finished;
       }
-      if (e instanceof SaleError || e instanceof StockHistoryError) {
+      if (e instanceof LedgerError) {
+        const message = e.i18n ? tr(dict, e.i18n.key, e.i18n.vars) : e.message;
+        return { ok: false, message, fieldErrors: e.field ? { [e.field]: message } : undefined, ...(stale ? { conflict: true } : {}) };
+      }
+      if (e instanceof SaleError || e instanceof StockHistoryError || e instanceof InactiveProductError) {
         const m = errorMessage(dict, e);
         return { ok: false, message: m, fieldErrors: { items: m } };
       }

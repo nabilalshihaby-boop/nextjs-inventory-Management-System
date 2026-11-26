@@ -16,6 +16,8 @@ export const holdOrderSchema = z
     holdKey: z.string({ error: "Invalid hold key" }).trim().regex(/^[A-Za-z0-9_-]{16,64}$/, "Invalid hold key"),
     /** Present when the cart was resumed from a held order: that order is updated, not duplicated. */
     heldOrderId: optId,
+    /** With heldOrderId: the order's revision as resumed (a stale one is refused). */
+    heldRevision: z.number("posTx.held.conflict").int("posTx.held.conflict").min(1, "posTx.held.conflict").max(2147483647, "posTx.held.conflict").optional(),
     customerId: optId,
     warehouseId: optId,
     /** Draft payment rows (may be half-filled). Checkout re-validates everything. */
@@ -40,6 +42,8 @@ export const holdOrderSchema = z
             productId: id("Choose a valid product"),
             /** The selected sale unit (selector only; validated against the product again at hold and at checkout). */
             unitId: z.string().trim().max(64).optional().default(""),
+            /** Re-holding a resumed cart: the id of the stored line this is (verified by the server). Absent = a new line. */
+            heldLineId: z.string().trim().min(1, "posTx.held.lineIdentity").max(64, "posTx.held.lineIdentity").optional(),
             quantity: z
               .string({ error: "Quantity is required" })
               .trim()
@@ -56,13 +60,17 @@ export const holdOrderSchema = z
 export type HoldOrderInput = z.infer<typeof holdOrderSchema>;
 
 export const heldIdSchema = z.string({ error: "Held order not found" }).trim().min(1, "Held order not found").max(64, "Held order not found");
+export const heldRevisionSchema = z.number().int().min(1).max(2147483647);
 export const unlockSchema = z.object({ password: z.string().min(1, "Enter your password").max(200) }).strict();
 
 // ---- view models ----
-export type HeldOrderSummary = { id: string; reference: string; createdOn: string; lines: number; quantity: string; customerName: string | null; total: string };
-export type ResumedLine = { productId: string; code: string; name: string; quantity: string; unitId: string; missing: boolean };
+export type HeldOrderSummary = { /** Sent back when discarding: a newer order is never discarded by an old list. */ revision: number; id: string; reference: string; createdOn: string; lines: number; quantity: string; customerName: string | null; total: string };
+/** `inactive` = the product was deactivated after the order was held: the line may be kept unchanged (at `heldPrice`) or removed. */
+export type ResumedLine = { productId: string; code: string; name: string; quantity: string; unitId: string; missing: boolean; inactive: boolean; heldPrice: string; /** The held line (compared at checkout) and its tax snapshot ("" = no complete snapshot). */ id: string; taxType: "EXCLUSIVE" | "INCLUSIVE" | ""; taxRate: string; /** The unit snapshot taken at hold time ("" = held before snapshots existed). */ unitName: string; unitFactor: string; /** The held unit is unknown or can no longer be sold: the cashier must choose one before holding again. */ needsUnit: boolean };
 export type ResumedOrder = {
   id: string;
+  /** Sent back with the re-hold / checkout / discard of this cart. */
+  revision: number;
   reference: string;
   customerId: string;
   warehouseId: string;
@@ -70,6 +78,10 @@ export type ResumedOrder = {
   tenders: { paymentMethod: string; cashBankAccountId: string; amount: string }[];
   notes: string;
   lines: ResumedLine[];
+  /** A line lacks a complete snapshot or a sellable unit: payment is blocked until the order is held again. */
+  mustRehold: boolean;
   /** Human-readable problems (deleted customer/warehouse/account/product …). Checkout stays blocked until fixed. */
   problems: string[];
+  /** Information only (e.g. the current price differs from the held one that will be charged), each about one held line. */
+  notices: { lineId: string; text: string }[];
 };

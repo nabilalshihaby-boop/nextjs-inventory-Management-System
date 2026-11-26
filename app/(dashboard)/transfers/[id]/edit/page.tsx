@@ -39,14 +39,14 @@ export default async function EditTransferPage({ params }: PageProps<"/transfers
       note: true,
       items: {
         orderBy: { id: "asc" },
-        select: { quantity: true, unitId: true, product: { select: { id: true, code: true, name: true, cost: true, productUnit: { select: { name: true } } } } },
+        select: { quantity: true, unitId: true, product: { select: { id: true, active: true, code: true, name: true, cost: true, productUnit: { select: { name: true } } } } },
       },
     },
   });
   if (!t) notFound();
   if (t.status !== "PENDING") redirect(`/transfers/${encodeURIComponent(t.id)}`);
 
-  const data = await getTransferFormData();
+  const data = await getTransferFormData(t.items.map((i) => i.product.id));
   const units = await unitOptionsFor(db, t.items.map((i) => i.product.id));
   return (
     <TransferForm
@@ -65,6 +65,7 @@ export default async function EditTransferPage({ params }: PageProps<"/transfers
       // Lines keep showing even if the product's stock has since dropped to 0 (flagged on save).
       initialLines={t.items.map((i) => ({
         productId: i.product.id,
+        ...(i.product.active ? {} : { inactive: true }),
         code: i.product.code,
         name: i.product.name,
         unit: i.product.productUnit.name,

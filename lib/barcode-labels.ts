@@ -8,9 +8,10 @@ import type { LabelRequest } from "@/lib/barcode-labels-core";
 export type SelUnit = { conversionId: string; unitName: string; factor: string; isBase: boolean; barcode: string | null };
 export type SelProduct = { id: string; code: string; name: string; units: SelUnit[] };
 
-/** Every product with its ACTIVE units (and their barcodes, if any) for the selection screen. */
+/** Every ACTIVE product with its ACTIVE units (and their barcodes, if any) for the selection screen. Deactivated products are not printable. */
 export async function getSelectionProducts(): Promise<SelProduct[]> {
   const products = await db.product.findMany({
+    where: { active: true },
     orderBy: { name: "asc" },
     select: { id: true, code: true, name: true, unitConversions: { where: { active: true }, orderBy: [{ isBase: "desc" }, { createdAt: "asc" }], select: { id: true, factor: true, isBase: true, barcode: true, unit: { select: { name: true } } } } },
   });
@@ -32,14 +33,14 @@ function money(amount: string, c: { symbol: string; right: boolean }): string {
 }
 
 /**
- * The labels of a request, in the order requested (each entry carries its repeat count). Only ACTIVE units that have a barcode
- * qualify; if any requested unit doesn't, the whole request is refused (nothing is silently dropped or invented).
+ * The labels of a request, in the order requested (each entry carries its repeat count). Only ACTIVE units of ACTIVE products that have a
+ * barcode qualify (a direct request for a deactivated product is refused like any missing unit); if any requested unit doesn't, the whole request is refused (nothing is silently dropped or invented).
  * A price is only given for a unit that can actually be sold (base unit or enabled for sales): the product's
  * sale price × the unit factor — the same default POS and Sales use. No price lists, no package discounts.
  */
 export async function loadLabels(req: LabelRequest): Promise<{ ok: true; labels: Label[]; company: string } | { ok: false; error: "errMissing" }> {
   const rows = await db.productUnitConversion.findMany({
-    where: { id: { in: req.items.map((i) => i.conversionId) }, active: true, barcode: { not: null } },
+    where: { id: { in: req.items.map((i) => i.conversionId) }, active: true, barcode: { not: null }, product: { active: true } },
     select: { id: true, factor: true, isBase: true, forSales: true, barcode: true, unit: { select: { name: true } }, product: { select: { code: true, name: true, price: true } } },
   });
   const byId = new Map(rows.map((r) => [r.id, r]));

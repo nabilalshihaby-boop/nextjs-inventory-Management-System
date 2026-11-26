@@ -35,7 +35,7 @@ export default async function EditAdjustmentPage({ params }: PageProps<"/adjustm
 
   return (
     <AdjustmentForm
-      {...await getAdjustmentFormData()}
+      {...await getAdjustmentFormData(a.items.map((i) => i.productId))}
       today={todayIso()}
       adjustmentId={a.id}
       reference={a.reference}

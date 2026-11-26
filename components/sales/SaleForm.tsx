@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Fragment, useMemo, useState, useTransition, type CSSProperties, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import InactiveLineNote from "@/components/products/InactiveLineNote";
 import Icon from "@/components/layout/Icon";
 import Modal, { ConfirmDeleteModal } from "@/components/ui/Modal";
 import { createSale, updateSale, type SaleResult } from "@/app/(dashboard)/sales/actions";
@@ -197,8 +198,8 @@ export default function SaleForm({
       {e[k as SaleField] ? <span className="sp-error" id={`sa-${k}-error`}>{e[k as SaleField]}</span> : hint ? <span className="sp-hint">{hint}</span> : null}
     </div>
   );
-  const sel = (k: SaleField, value: string, onChange: (v: string) => void, placeholder: string, opts: SaleOption[]) => (
-    <select id={`sa-${k}`} className={"sp-select " + (value ? "" : "sp-select--placeholder")} value={value} disabled={!opts.length} onChange={(ev) => { onChange(ev.target.value); setE((x) => ({ ...x, [k]: "" })); }} aria-invalid={!!e[k] || undefined}>
+  const sel = (k: SaleField, value: string, onChange: (v: string) => void, placeholder: string, opts: SaleOption[], locked = false) => (
+    <select id={`sa-${k}`} className={"sp-select " + (value ? "" : "sp-select--placeholder")} value={value} disabled={!opts.length || locked} onChange={(ev) => { onChange(ev.target.value); setE((x) => ({ ...x, [k]: "" })); }} aria-invalid={!!e[k] || undefined}>
       <option value="" disabled>
         {opts.length ? placeholder : F.noneYet}
       </option>
@@ -252,7 +253,7 @@ export default function SaleForm({
           <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
             <div className="sp-form-grid" style={{ "--cols": 3 } as CSSProperties}>
               {field("saleDate", F.date, <input id="sa-saleDate" type="date" className="sp-input " max={today} value={date} onChange={(ev) => { setDate(ev.target.value); setE((x) => ({ ...x, saleDate: "" })); }} aria-invalid={!!e.saleDate || undefined} />, true)}
-              {field("warehouseId", F.warehouse, sel("warehouseId", warehouseId, setWarehouseId, F.chooseWarehouse, warehouses), true)}
+              {field("warehouseId", F.warehouse, sel("warehouseId", warehouseId, setWarehouseId, F.chooseWarehouse, warehouses, lines.some((l) => l.inactive)), true, undefined, lines.some((l) => l.inactive) ? T.products.status.keptWarehouse : undefined)}
               {field("customerId", F.customer, sel("customerId", customerId, setCustomerId, F.chooseCustomer, customers), true)}
             </div>
 
@@ -335,10 +336,11 @@ export default function SaleForm({
                               <div style={{ fontWeight: 600, marginBottom: 4 }}>{l.code}</div>
                               <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                 <span className="sp-badge sp-badge--success">{l.name}</span>
-                                <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={fmt(F.editItem, { name: l.name })} onClick={() => setEdit({ ...l })}>
+                                <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={fmt(F.editItem, { name: l.name })} disabled={l.inactive} onClick={() => setEdit({ ...l })}>
                                   <Icon name="pencil" size={16} />
                                 </button>
                               </span>
+                              {l.inactive && <InactiveLineNote />}
                               {itemErr[l.productId] && (
                                 <div className="sp-error" style={{ marginTop: 6 }}>
                                   {itemErr[l.productId]}
@@ -353,11 +355,11 @@ export default function SaleForm({
                             </td>
                             <td>
                               <span className="sp-qty">
-                                <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={fmt(F.decrease, { name: l.name })} onClick={() => step(l, -1)}>
+                                <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={fmt(F.decrease, { name: l.name })} disabled={l.inactive} onClick={() => step(l, -1)}>
                                   <Icon name="minus" size={18} />
                                 </button>
-                                <input className="sp-input" aria-label={fmt(F.qtyOf, { name: l.name })} inputMode="decimal" value={l.quantity} onChange={(ev) => patch(l.productId, { quantity: ev.target.value })} />
-                                <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={fmt(F.increase, { name: l.name })} onClick={() => step(l, 1)}>
+                                <input className="sp-input" aria-label={fmt(F.qtyOf, { name: l.name })} inputMode="decimal" readOnly={l.inactive} value={l.quantity} onChange={(ev) => patch(l.productId, { quantity: ev.target.value })} />
+                                <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={fmt(F.increase, { name: l.name })} disabled={l.inactive} onClick={() => step(l, 1)}>
                                   <Icon name="plus" size={18} />
                                 </button>
                               </span>

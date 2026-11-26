@@ -75,6 +75,36 @@ export function resolveLine(set: UnitSet | undefined, requested: string | undefi
   return { ok: true, r: { unitId: u.unitId, unitName: u.name, factor: u.factor, baseQuantity: b.value } };
 }
 
+type Num = { toFixed(d: number): string };
+type Dec = import("@/app/generated/prisma/client").Prisma.Decimal;
+
+/**
+ * Whether a held POS order line carries a COMPLETE, VALID financial snapshot (the database enforces the same). A line without one can't be
+ * paid until the order is held again, and gives nothing to that new hold.
+ */
+export const hasSnapshot = (row: { unitId: string | null; unitName: string | null; unitFactor: Dec | null; baseQuantity: Dec | null; quantity: Dec; unitPrice: Dec; taxType: string | null; taxRate: Dec | null }) =>
+  !!row.unitId &&
+  !!row.unitName?.trim() &&
+  !!row.unitFactor?.gt(0) &&
+  !!row.baseQuantity?.gt(0) &&
+  row.quantity.times(row.unitFactor).equals(row.baseQuantity) &&
+  row.unitPrice.gte(0) &&
+  (row.taxType === "EXCLUSIVE" || row.taxType === "INCLUSIVE") &&
+  !!row.taxRate?.gte(0) &&
+  row.taxRate.lte(100);
+
+/**
+ * A held POS order line's stored unit snapshot applied to a quantity: the HELD factor (never the product's current one) decides the base
+ * quantity. Null when the line has no snapshot (held before snapshots existed).
+ */
+export function heldUnit(row: { unitId: string | null; unitName: string | null; unitFactor: Num | null }, entered: string, label: string): { ok: true; r: ResolvedUnit } | { ok: false; f: UnitFailure } | null {
+  if (!row.unitId || !row.unitName || !row.unitFactor) return null;
+  const factor = trimFactor(row.unitFactor.toFixed(6));
+  const b = toBaseQuantity(entered, factor);
+  if (!b.ok) return { ok: false, f: b.reason === "decimals" ? { key: "units.err.baseDecimals", vars: { product: label, unit: row.unitName, qty: entered, factor } } : { key: "units.err.baseRange", vars: { product: label, unit: row.unitName } } };
+  return { ok: true, r: { unitId: row.unitId, unitName: row.unitName, factor, baseQuantity: b.value } };
+}
+
 /** The immutable snapshot columns of a document line. */
 export const lineSnapshot = (r: ResolvedUnit) => ({ unitId: r.unitId, unitName: r.unitName, unitFactor: r.factor, baseQuantity: r.baseQuantity });
 

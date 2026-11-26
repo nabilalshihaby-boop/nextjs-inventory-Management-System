@@ -56,8 +56,9 @@ export async function getSaleDraft(id: string): Promise<{ status: SaleStatusValu
   ]);
   if (!s) return null;
   const ids = s.items.map((i) => i.productId);
-  const [units, prices] = await Promise.all([unitOptionsFor(db, ids), db.product.findMany({ where: { id: { in: ids } }, select: { id: true, price: true } })]);
+  const [units, prices] = await Promise.all([unitOptionsFor(db, ids), db.product.findMany({ where: { id: { in: ids } }, select: { id: true, price: true, active: true } })]);
   const basePrice = new Map(prices.map((p) => [p.id, p.price.toFixed(2)]));
+  const inactive = new Set(prices.filter((p) => !p.active).map((p) => p.id));
   return {
     status: s.status,
     reference: s.reference,
@@ -75,6 +76,7 @@ export async function getSaleDraft(id: string): Promise<{ status: SaleStatusValu
       quotationRef: s.quotation?.reference ?? null,
       lines: s.items.map((i) => ({
         productId: i.productId,
+        ...(inactive.has(i.productId) ? { inactive: true } : {}),
         code: i.productCode,
         name: i.productName,
         unit: i.unitName,

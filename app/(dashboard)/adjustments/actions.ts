@@ -1,5 +1,6 @@
 "use server";
 
+import { InactiveProductError, assertKeptLines, assertProductsActive, inactiveProductRefusal, sameDecimal, sameUnit } from "@/lib/product-status";
 import { recordScopeError, scopeError } from "@/lib/access-scope";
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
@@ -71,8 +72,13 @@ function parse(input: unknown, t: Dictionary): { ok: true; data: AdjustmentInput
   return { ok: false, error: { ok: false, message: Object.values(fieldErrors)[0] ?? t.common.checkForm, fieldErrors, itemErrors } };
 }
 
+/** The stored lines of an edited adjustment: what a line of a product that is now inactive must still equal. */
+const storedLineSelect = { productId: true, unitId: true, unitName: true, unitFactor: true, baseQuantity: true, quantity: true, type: true } as const;
+type StoredLine = Prisma.StockAdjustmentItemGetPayload<{ select: typeof storedLineSelect }>;
+const sameAdjustmentLine = (l: AdjustmentInput["items"][number], s: StoredLine) => sameUnit(l.unitId, s.unitId) && l.type === s.type && sameDecimal(l.quantity, s.quantity);
+
 /** Warehouse and every product must exist in MySQL. Returns product labels for messages. */
-async function resolve(d: AdjustmentInput, t: Dictionary): Promise<{ ok: true; labels: Map<string, string>; units: Map<string, ResolvedUnit> } | { ok: false; error: AdjustmentResult }> {
+async function resolve(d: AdjustmentInput, t: Dictionary, existing?: { lines: StoredLine[]; warehouseId: string }): Promise<{ ok: true; labels: Map<string, string>; units: Map<string, ResolvedUnit> } | { ok: false; error: AdjustmentResult }> {
   const [warehouse, products] = await Promise.all([
     db.warehouse.findUnique({ where: { id: d.warehouseId }, select: { id: true } }),
     db.product.findMany({ where: { id: { in: d.items.map((i) => i.productId) } }, select: { id: true, code: true, name: true } }),
@@ -82,11 +88,29 @@ async function resolve(d: AdjustmentInput, t: Dictionary): Promise<{ ok: true; l
   if (!warehouse) fieldErrors.warehouseId = t.adjustments.err.validWarehouse;
   const labels = new Map(products.map((p) => [p.id, `${p.code} ${p.name}`]));
   for (const i of d.items) if (!labels.has(i.productId)) itemErrors[i.productId] = t.adjustments.err.productGone;
+  // An inactive product can't be adjusted by a NEW line. An edited adjustment may keep its existing line unchanged (stored unit snapshot).
+  const kept = new Map<string, StoredLine>();
+  if (!existing) {
+    const refused = await inactiveProductRefusal(db, d.items.map((i) => i.productId), t);
+    if (refused) itemErrors[refused.productId] ??= refused.message;
+  } else {
+    try {
+      for (const [id, rows] of await assertKeptLines(db, d.items, existing.lines, sameAdjustmentLine, d.warehouseId !== existing.warehouseId)) kept.set(id, rows[0]);
+    } catch (e) {
+      if (!(e instanceof InactiveProductError)) throw e;
+      itemErrors[e.itemId!] ??= errorMessage(t, e);
+    }
+  }
   // Units: an active conversion of THIS product (blank = the base unit); stock moves by the exact BASE quantity.
   const sets = await loadUnitSets(db, d.items.map((i) => i.productId));
   const units = new Map<string, ResolvedUnit>();
   for (const i of d.items) {
     if (!labels.has(i.productId)) continue;
+    const k = kept.get(i.productId);
+    if (k) {
+      units.set(i.productId, { unitId: k.unitId ?? "", unitName: k.unitName ?? "", factor: k.unitFactor.toString(), baseQuantity: k.baseQuantity.toFixed(3) });
+      continue;
+    }
     const ru = resolveLine(sets.get(i.productId), i.unitId, "ANY", i.quantity, labels.get(i.productId)!);
     if (ru.ok) units.set(i.productId, ru.r);
     else itemErrors[i.productId] = tr(t, ru.f.key, ru.f.vars);
@@ -198,6 +222,7 @@ export async function createAdjustment(input: unknown): Promise<AdjustmentResult
   try {
     const created = await withRetry(() =>
       stockTx(async (tx) => {
+        await assertProductsActive(tx, d.items.map((i) => i.productId));
         const t0 = await tx.stockAdjustment.create({
           data: {
             reference: `TMP_${randomBytes(8).toString("hex")}`, // replaced below, inside this transaction
@@ -222,6 +247,7 @@ export async function createAdjustment(input: unknown): Promise<AdjustmentResult
   } catch (e) {
     if (e instanceof StockHistoryError) return historyFailure(e, t);
     if (e instanceof StockError) return stockFailure(e, "save", t);
+    if (e instanceof InactiveProductError) return { ok: false, message: errorMessage(t, e) };
     if (isKnown(e, "P2003")) return { ok: false, message: t.adjustments.err.refsGone };
     throw e;
   }
@@ -239,7 +265,8 @@ export async function updateAdjustment(id: unknown, input: unknown): Promise<Adj
   if (!(await db.stockAdjustment.findUnique({ where: { id: aid.data }, select: { id: true } }))) return { ok: false, message: t.adjustments.err.notFound };
   const v = parse(input, t);
   if (!v.ok) return v.error;
-  const r = await resolve(v.data, t);
+  const header = await db.stockAdjustment.findUnique({ where: { id: aid.data }, select: { warehouseId: true, items: { select: storedLineSelect } } });
+  const r = await resolve(v.data, t, header ? { lines: header.items, warehouseId: header.warehouseId } : undefined);
   if (!r.ok) return r.error;
   const d = v.data;
   const scopeMsg = await scopeError([d.warehouseId]);
@@ -249,12 +276,19 @@ export async function updateAdjustment(id: unknown, input: unknown): Promise<Adj
     const ref = await withRetry(() =>
       stockTx(async (tx) => {
         const orig = await lockOriginal(tx, aid.data);
+        const storedNow = await tx.stockAdjustmentItem.findMany({ where: { adjustmentId: orig.id }, select: storedLineSelect });
+        const keptNow = await assertKeptLines(tx, d.items, storedNow, sameAdjustmentLine, orig.warehouseId !== d.warehouseId);
         const deltas: Deltas = new Map();
         addEffect(deltas, orig.warehouseId, orig.lines, -1); // reverse the original effect
         addEffect(deltas, d.warehouseId, baseLines(d.items, r.units), 1); // apply the new one
         await tx.stockAdjustment.update({ where: { id: orig.id }, data: { warehouseId: d.warehouseId, adjustmentDate: dateOf(d.adjustmentDate) } });
         await tx.stockAdjustmentItem.deleteMany({ where: { adjustmentId: orig.id } });
-        await tx.stockAdjustmentItem.createMany({ data: d.items.map((i) => ({ adjustmentId: orig.id, ...itemData(i, r.units) })) });
+        // A kept (inactive) line keeps its stored unit snapshot exactly, legacy nulls included.
+        const snapshotOf = (productId: string) => {
+          const s = keptNow.get(productId)?.[0];
+          return s ? { unitId: s.unitId, unitName: s.unitName, unitFactor: s.unitFactor, baseQuantity: s.baseQuantity } : {};
+        };
+        await tx.stockAdjustmentItem.createMany({ data: d.items.map((i) => ({ adjustmentId: orig.id, ...itemData(i, r.units), ...snapshotOf(i.productId) })) });
         await applyDeltas(tx, deltas, new Map([...orig.labels, ...r.labels]), t.adjustments.err.aProduct);
         // Editing removes the old movements and adds the new ones: re-check every touched product + warehouse from the earliest of the old and new positions.
         const at = orig.createdAt.getTime();
@@ -270,6 +304,7 @@ export async function updateAdjustment(id: unknown, input: unknown): Promise<Adj
   } catch (e) {
     if (e instanceof StockHistoryError) return historyFailure(e, t);
     if (e instanceof StockError) return stockFailure(e, "edit", t);
+    if (e instanceof InactiveProductError) return { ok: false, message: errorMessage(t, e) };
     if (e instanceof GoneError) return { ok: false, message: t.adjustments.err.notFound };
     if (isKnown(e, "P2003")) return { ok: false, message: t.adjustments.err.refsGone };
     throw e;

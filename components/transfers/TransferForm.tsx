@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMemo, useState, useTransition, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import InactiveLineNote from "@/components/products/InactiveLineNote";
 import Icon from "@/components/layout/Icon";
 import { useT } from "@/components/i18n/I18nProvider";
 import { fmt } from "@/lib/i18n/config";
@@ -35,7 +36,7 @@ import {
 type Currency = { code: string; symbol: string; right: boolean } | null;
 /** A product line in the form; `available` is looked up from the selected source warehouse. */
 /** `cost` is per LINE unit (base cost × factor); `baseCost` is the product cost per base unit (the server recomputes it). */
-type Line = { productId: string; code: string; name: string; unit: string; cost: string; baseCost: string; quantity: string; unitId: string; unitInfo: ProductUnits };
+type Line = { productId: string; code: string; name: string; unit: string; cost: string; baseCost: string; quantity: string; unitId: string; unitInfo: ProductUnits; inactive?: boolean };
 
 export default function TransferForm({
   warehouses,
@@ -110,7 +111,7 @@ export default function TransferForm({
 
   const needle = q.trim().toLowerCase();
   const suggestions = from && needle
-    ? searchProducts([...available.values()], needle)
+    ? searchProducts([...available.values()].filter((s) => !s.inactive), needle)
     : [];
 
   const clearErr = (k: TransferField) => setE((x) => ({ ...x, [k]: "" }));
@@ -215,7 +216,7 @@ export default function TransferForm({
     </div>
   );
   const whSelect = (k: "fromWarehouseId" | "toWarehouseId", value: string, onChange: (v: string) => void, placeholder: string) => (
-    <select id={`tr-${k}`} className={"sp-select " + (value ? "" : "sp-select--placeholder")} value={value} onChange={(ev) => onChange(ev.target.value)} aria-invalid={!!e[k] || undefined}>
+    <select id={`tr-${k}`} className={"sp-select " + (value ? "" : "sp-select--placeholder")} value={value} disabled={lines.some((l) => l.inactive)} title={lines.some((l) => l.inactive) ? T.products.status.keptWarehouse : undefined} onChange={(ev) => onChange(ev.target.value)} aria-invalid={!!e[k] || undefined}>
       <option value="" disabled>
         {placeholder}
       </option>
@@ -338,6 +339,7 @@ export default function TransferForm({
                           <td style={{ padding: "12px 20px" }}>
                             <div style={{ fontWeight: 600, marginBottom: 4 }}><bdi dir="ltr">{l.code}</bdi></div>
                             <span className="sp-badge sp-badge--success">{l.name}</span>
+                            {l.inactive && <InactiveLineNote />}
                             {itemErr[l.productId] && (
                               <div className="sp-error" style={{ marginTop: 6 }}>
                                 {itemErr[l.productId]}
@@ -352,7 +354,7 @@ export default function TransferForm({
                           </td>
                           <td>
                             <span className="sp-qty">
-                              <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={fmt(F.decreaseAria, { name: l.name })} onClick={() => step(l, -1)}>
+                              <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={fmt(F.decreaseAria, { name: l.name })} disabled={l.inactive} onClick={() => step(l, -1)}>
                                 <Icon name="minus" size={18} />
                               </button>
                               <input
@@ -360,15 +362,20 @@ export default function TransferForm({
                                 aria-label={fmt(F.qtyAria, { name: l.name })}
                                 inputMode="decimal"
                                 dir="ltr"
+                                readOnly={l.inactive}
                                 value={l.quantity}
                                 aria-invalid={!!itemErr[l.productId] || undefined}
                                 onChange={(ev) => setQty(l.productId, ev.target.value)}
                               />
-                              <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={fmt(F.increaseAria, { name: l.name })} onClick={() => step(l, 1)}>
+                              <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={fmt(F.increaseAria, { name: l.name })} disabled={l.inactive} onClick={() => step(l, 1)}>
                                 <Icon name="plus" size={18} />
                               </button>
                             </span>
-                            <LineUnitSelect info={l.unitInfo} purpose="ANY" value={l.unitId} compact onChange={(unitId) => setLines((ls) => ls.map((x) => (x.productId === l.productId ? { ...x, unitId, cost: scalePrice(x.baseCost, findLineUnit(x.unitInfo, unitId).factor) } : x)))} />
+                            {l.inactive ? (
+                              <span className="t-caption" style={{ display: "block" }}>{findLineUnit(l.unitInfo, l.unitId).name}</span>
+                            ) : (
+                              <LineUnitSelect info={l.unitInfo} purpose="ANY" value={l.unitId} compact onChange={(unitId) => setLines((ls) => ls.map((x) => (x.productId === l.productId ? { ...x, unitId, cost: scalePrice(x.baseCost, findLineUnit(x.unitInfo, unitId).factor) } : x)))} />
+                            )}
                             <BaseHint info={l.unitInfo} unitId={l.unitId} qty={l.quantity} />
                           </td>
                           <td><bdi dir="ltr">{isQuantity(l.quantity) ? money(fromUnits(lineTotalCents(l.quantity, l.cost), 2)) : "—"}</bdi></td>

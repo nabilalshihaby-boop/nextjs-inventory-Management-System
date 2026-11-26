@@ -20,7 +20,7 @@ export async function getQuotationFormData(): Promise<QuotationFormData> {
   const [customers, warehouses, products, stock, currency] = await Promise.all([
     db.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.warehouse.findMany({ where: await warehouseFilter(), orderBy: { name: "asc" }, select: { id: true, name: true } }),
-    db.product.findMany({ orderBy: { name: "asc" }, select: { id: true, code: true, name: true, price: true, taxType: true, orderTax: true, productUnit: { select: { name: true } } } }),
+    db.product.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, code: true, name: true, price: true, taxType: true, orderTax: true, productUnit: { select: { name: true } } } }),
     db.productStock.findMany({ where: await warehouseIdFilter(), select: { productId: true, warehouseId: true, quantity: true } }),
     getDefaultCurrency(),
   ]);
@@ -48,6 +48,7 @@ export async function getQuotationDraft(id: string): Promise<{ status: Quotation
     getSystemSettings(),
   ]);
   if (!q) return null;
+  const inactive = new Set((await db.product.findMany({ where: { id: { in: q.items.map((i) => i.productId) }, active: false }, select: { id: true } })).map((p) => p.id));
   return {
     status: q.status,
     reference: q.reference,
@@ -64,6 +65,7 @@ export async function getQuotationDraft(id: string): Promise<{ status: Quotation
       currency: { code: q.currency.code, symbol: q.currency.symbol, right: !!settings?.currencyIconRight },
       lines: q.items.map((i) => ({
         productId: i.productId,
+        ...(inactive.has(i.productId) ? { inactive: true } : {}),
         code: i.productCode,
         name: i.productName,
         unit: i.unitName,

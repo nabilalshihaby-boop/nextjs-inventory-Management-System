@@ -1,5 +1,6 @@
 "use server";
 
+import { InactiveProductError, assertKeptLines, assertProductsActive, inactiveProductRefusal, sameDecimal, sameUnit } from "@/lib/product-status";
 import { recordScopeError, scopeError } from "@/lib/access-scope";
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
@@ -92,12 +93,17 @@ function parse(input: unknown, t: Dictionary): { ok: true; data: TransferInput }
 type Line = { productId: string; quantity: string; unitCost: string; label: string; base: string; unitId: string | null; unitName: string | null; unitFactor: string };
 const lineData = (l: Line) => ({ productId: l.productId, quantity: l.quantity, unitCost: l.unitCost, unitId: l.unitId, unitName: l.unitName, unitFactor: l.unitFactor, baseQuantity: l.base });
 
+/** The stored lines of an edited transfer: what a line of a product that is now inactive must still equal. */
+const storedLineSelect = { productId: true, unitId: true, unitName: true, unitFactor: true, baseQuantity: true, quantity: true, unitCost: true } as const;
+type StoredLine = Prisma.StockTransferItemGetPayload<{ select: typeof storedLineSelect }>;
+const sameTransferLine = (l: TransferInput["items"][number], s: StoredLine) => sameUnit(l.unitId, s.unitId) && sameDecimal(l.quantity, s.quantity);
+
 /**
  * Checks the payload against MySQL: both warehouses exist and products exist and have enough
  * stock in the source warehouse right now (friendly pre-check; the conditional update inside the
  * transaction is the real guarantee). Returns lines with server-side cost snapshots.
  */
-async function resolve(data: TransferInput, t: Dictionary): Promise<{ ok: true; lines: Line[] } | { ok: false; error: TransferResult }> {
+async function resolve(data: TransferInput, t: Dictionary, existing?: { lines: StoredLine[]; fromWarehouseId: string; toWarehouseId: string }): Promise<{ ok: true; lines: Line[] } | { ok: false; error: TransferResult }> {
   const productIds = data.items.map((i) => i.productId);
   const [warehouses, products, stocks] = await Promise.all([
     db.warehouse.findMany({ where: { id: { in: [data.fromWarehouseId, data.toWarehouseId] } }, select: { id: true } }),
@@ -112,6 +118,20 @@ async function resolve(data: TransferInput, t: Dictionary): Promise<{ ok: true; 
 
   const byId = new Map(products.map((p) => [p.id, p]));
   const onHand = new Map(stocks.map((s) => [s.productId, s.quantity]));
+  // An inactive product can't be moved by a NEW transfer line. An edited transfer may keep its existing line unchanged (stored unit and cost).
+  const kept = new Map<string, StoredLine>();
+  if (!existing) {
+    const refused = await inactiveProductRefusal(db, productIds, t);
+    if (refused) itemErrors[refused.productId] = refused.message;
+  } else {
+    try {
+      const moved = data.fromWarehouseId !== existing.fromWarehouseId || data.toWarehouseId !== existing.toWarehouseId;
+      for (const [id, rows] of await assertKeptLines(db, data.items, existing.lines, sameTransferLine, moved)) kept.set(id, rows[0]);
+    } catch (e) {
+      if (!(e instanceof InactiveProductError)) throw e;
+      itemErrors[e.itemId!] = errorMessage(t, e);
+    }
+  }
   const sets = await loadUnitSets(db, productIds);
   const lines: Line[] = [];
   for (const item of data.items) {
@@ -121,7 +141,10 @@ async function resolve(data: TransferInput, t: Dictionary): Promise<{ ok: true; 
       continue;
     }
     // Unit: an active conversion of THIS product (blank = the base unit); stock is checked and moved in BASE units.
-    const ru = resolveLine(sets.get(p.id), item.unitId, "ANY", item.quantity, `${p.code} ${p.name}`);
+    const k = kept.get(p.id);
+    const ru = k
+      ? { ok: true as const, r: { unitId: k.unitId ?? "", unitName: k.unitName ?? "", factor: k.unitFactor.toString(), baseQuantity: k.baseQuantity.toFixed(3) } }
+      : resolveLine(sets.get(p.id), item.unitId, "ANY", item.quantity, `${p.code} ${p.name}`);
     if (!ru.ok) {
       itemErrors[p.id] = tr(t, ru.f.key, ru.f.vars);
       continue;
@@ -130,7 +153,7 @@ async function resolve(data: TransferInput, t: Dictionary): Promise<{ ok: true; 
     if (new Prisma.Decimal(ru.r.baseQuantity).gt(available)) {
       itemErrors[p.id] = fmt(t.transfers.err.onlyAvailable, { qty: formatQuantity(available.toFixed(3)) });
     }
-    lines.push({ productId: p.id, quantity: item.quantity, unitCost: scalePrice(p.cost.toFixed(2), ru.r.factor), label: `${p.code} ${p.name}`, base: ru.r.baseQuantity, unitId: ru.r.unitId, unitName: ru.r.unitName, unitFactor: ru.r.factor });
+    lines.push({ productId: p.id, quantity: item.quantity, unitCost: k ? k.unitCost.toFixed(2) : scalePrice(p.cost.toFixed(2), ru.r.factor), label: `${p.code} ${p.name}`, base: ru.r.baseQuantity, unitId: k ? k.unitId : ru.r.unitId, unitName: k ? k.unitName : ru.r.unitName, unitFactor: ru.r.factor });
   }
   if (Object.keys(itemErrors).length) fieldErrors.items ??= Object.values(itemErrors)[0];
   if (Object.keys(fieldErrors).length) {
@@ -207,6 +230,7 @@ export async function createTransfer(input: unknown): Promise<TransferResult> {
   try {
     const created = await withRetry(() =>
       stockTx(async (tx) => {
+        await assertProductsActive(tx, r.lines.map((l) => l.productId));
         // `number` comes from AUTO_INCREMENT (never reused); the reference is derived from it in the
         // same transaction, so the temporary placeholder is never visible outside it.
         const t0 = await tx.stockTransfer.create({
@@ -235,6 +259,7 @@ export async function createTransfer(input: unknown): Promise<TransferResult> {
   } catch (e) {
     if (e instanceof StockHistoryError) return historyFailure(e, t);
     if (e instanceof StockError) return stockFailure(e, t);
+    if (e instanceof InactiveProductError) return { ok: false, message: errorMessage(t, e) };
     if (isKnown(e, "P2003")) return { ok: false, message: t.transfers.err.refsGone };
     throw e;
   }
@@ -255,7 +280,8 @@ export async function updateTransfer(id: unknown, input: unknown): Promise<Trans
   if (existing.status !== "PENDING") return { ok: false, message: E.onlyPending };
   const v = parse(input, t);
   if (!v.ok) return v.error;
-  const r = await resolve(v.data, t);
+  const header = await db.stockTransfer.findUnique({ where: { id: existing.id }, select: { fromWarehouseId: true, toWarehouseId: true, items: { select: storedLineSelect } } });
+  const r = await resolve(v.data, t, header ? { lines: header.items, fromWarehouseId: header.fromWarehouseId, toWarehouseId: header.toWarehouseId } : undefined);
   if (!r.ok) return r.error;
   const d = v.data;
   const scopeMsg = await scopeError([d.fromWarehouseId, d.toWarehouseId]);
@@ -264,6 +290,8 @@ export async function updateTransfer(id: unknown, input: unknown): Promise<Trans
   try {
     await withRetry(() =>
       stockTx(async (tx) => {
+        const now = await tx.stockTransfer.findUnique({ where: { id: existing.id }, select: { fromWarehouseId: true, toWarehouseId: true, items: { select: storedLineSelect } } });
+        if (now) await assertKeptLines(tx, d.items, now.items, sameTransferLine, now.fromWarehouseId !== d.fromWarehouseId || now.toWarehouseId !== d.toWarehouseId);
         // Conditional on still being PENDING (a concurrent send/complete/delete wins).
         const u = await tx.stockTransfer.updateMany({
           where: { id: existing.id, status: "PENDING" },
@@ -289,6 +317,7 @@ export async function updateTransfer(id: unknown, input: unknown): Promise<Trans
     if (e instanceof StockHistoryError) return historyFailure(e, t);
     if (e instanceof StockError) return stockFailure(e, t);
     if (e instanceof StateError) return { ok: false, message: E.onlyPending };
+    if (e instanceof InactiveProductError) return { ok: false, message: errorMessage(t, e) };
     if (isKnown(e, "P2003")) return { ok: false, message: E.refsGone };
     throw e;
   }

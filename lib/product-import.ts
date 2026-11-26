@@ -170,7 +170,9 @@ export async function validateImport(db: Prisma.TransactionClient, text: string,
   // Existing SKUs (CREATE ONLY: an existing product is never touched) and SKUs that are already some unit's stored BARCODE
   // (the identifier registry holds every SKU and barcode; a SKU may never equal another unit's barcode).
   const codes = [...new Set(parsed.data.map((r) => normalizeCode(r.cells[0] ?? "")).filter(Boolean))];
-  const existing = new Set((codes.length ? await db.product.findMany({ where: { code: { in: codes } }, select: { code: true } }) : []).map((p) => p.code));
+  const existingRows = codes.length ? await db.product.findMany({ where: { code: { in: codes } }, select: { code: true, active: true } }) : [];
+  const existing = new Set(existingRows.map((p) => p.code));
+  const inactiveCodes = new Set(existingRows.filter((p) => !p.active).map((p) => p.code));
   const asBarcode = new Set((codes.length ? await db.productIdentifier.findMany({ where: { kind: "BARCODE", valueKey: { in: codes.map(identifierKey) } }, select: { valueKey: true } }) : []).map((r) => r.valueKey));
   const firstRowOf = new Map<string, number>();
 
@@ -248,7 +250,8 @@ export async function validateImport(db: Prisma.TransactionClient, text: string,
       const code = f.data.code;
       if (firstRowOf.has(code)) add(row, "SKU", fmt(E.dupInFile, { n: firstRowOf.get(code)! }));
       else firstRowOf.set(code, row);
-      if (existing.has(code)) add(row, "SKU", E.existsDb);
+      if (inactiveCodes.has(code)) add(row, "SKU", E.existsInactive);
+      else if (existing.has(code)) add(row, "SKU", E.existsDb);
       else if (asBarcode.has(identifierKey(code))) add(row, "SKU", E.skuIsBarcode);
     }
 

@@ -53,6 +53,7 @@ export const enImpExp = {
     unknownWarehouse: "No warehouse named “{v}”.",
     dupInFile: "This SKU is also used on row {n}.",
     existsDb: "A product with this SKU already exists.",
+    existsInactive: "A product with this SKU already exists and is inactive. Import only creates new products: it never updates or reactivates it.",
     skuIsBarcode: "This SKU is already the barcode of another product's unit.",
     stockNeedsWarehouse: "Warehouse is required when Opening Stock is set.",
     taxType: "Tax Type must be Exclusive or Inclusive.",

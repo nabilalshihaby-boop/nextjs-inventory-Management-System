@@ -1,5 +1,6 @@
 "use server";
 
+import { InactiveProductError, assertKeptLines, assertProductsActive, inactiveProductRefusal, sameDecimal } from "@/lib/product-status";
 import { recordScopeError, scopeError } from "@/lib/access-scope";
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
@@ -75,8 +76,14 @@ function parse(input: unknown, t: Dictionary): { ok: true; data: QuotationInput 
   return { ok: false, error: { ok: false, message: Object.values(fieldErrors)[0] ?? t.common.checkForm, fieldErrors, itemErrors } };
 }
 
+/** The stored lines of an edited quotation: what a line of a product that is now inactive must still equal. */
+const storedLineSelect = { productId: true, unitName: true, quantity: true, unitPrice: true, taxType: true, taxRate: true, discountType: true, discountValue: true } as const;
+type StoredLine = Prisma.QuotationItemGetPayload<{ select: typeof storedLineSelect }>;
+const sameQuotationLine = (l: QuotationInput["items"][number], s: StoredLine) =>
+  sameDecimal(l.quantity, s.quantity) && sameDecimal(l.unitPrice, s.unitPrice) && l.taxType === s.taxType && sameDecimal(l.taxRate, s.taxRate) && l.discountType === s.discountType && sameDecimal(l.discountValue, s.discountValue);
+
 /** Re-read references and compute the authoritative totals + line snapshots. */
-async function prepare(d: QuotationInput, t: Dictionary): Promise<{ ok: true; data: Prisma.QuotationItemCreateWithoutQuotationInput[]; totals: ReturnType<typeof calcQuotation> } | { ok: false; error: QuotationResult }> {
+async function prepare(d: QuotationInput, t: Dictionary, existing?: { lines: StoredLine[]; warehouseId: string }): Promise<{ ok: true; data: Prisma.QuotationItemCreateWithoutQuotationInput[]; totals: ReturnType<typeof calcQuotation> } | { ok: false; error: QuotationResult }> {
   const [customer, warehouse, products] = await Promise.all([
     db.customer.findUnique({ where: { id: d.customerId }, select: { id: true } }),
     db.warehouse.findUnique({ where: { id: d.warehouseId }, select: { id: true } }),
@@ -87,6 +94,21 @@ async function prepare(d: QuotationInput, t: Dictionary): Promise<{ ok: true; da
   const byId = new Map(products.map((p) => [p.id, p]));
   const missing = d.items.find((i) => !byId.has(i.productId));
   if (missing) return { ok: false, error: { ok: false, message: t.quotations.err.productGone, fieldErrors: { items: t.quotations.err.productGone }, itemErrors: { [missing.productId]: t.quotations.err.itemGone } } };
+  // An inactive product can't start a new quotation line. An edited quotation may keep its existing line unchanged.
+  const kept = new Map<string, StoredLine>();
+  if (!existing) {
+    const refused = await inactiveProductRefusal(db, d.items.map((i) => i.productId), t);
+    if (refused) return { ok: false, error: { ok: false, message: refused.message, fieldErrors: { items: refused.message }, itemErrors: { [refused.productId]: refused.message } } };
+  } else {
+    try {
+      const k = await assertKeptLines(db, d.items, existing.lines, sameQuotationLine, d.warehouseId !== existing.warehouseId);
+      for (const [id, rows] of k) kept.set(id, rows[0]);
+    } catch (e) {
+      if (!(e instanceof InactiveProductError)) throw e;
+      const message = errorMessage(t, e);
+      return { ok: false, error: { ok: false, message, fieldErrors: { items: message }, itemErrors: { [e.itemId!]: message } } };
+    }
+  }
 
   // Quotations are Base Unit only: a line may omit unitId or send the product's own base unit id; any other (pack) unit is refused.
   const packed = d.items.find((i) => i.unitId && i.unitId !== byId.get(i.productId)!.productUnitId);
@@ -113,7 +135,7 @@ async function prepare(d: QuotationInput, t: Dictionary): Promise<{ ok: true; da
       product: { connect: { id: p.id } },
       productCode: p.code,
       productName: p.name,
-      unitName: p.productUnit.name,
+      unitName: kept.get(p.id)?.unitName ?? p.productUnit.name,
       quantity: i.quantity,
       unitPrice: i.unitPrice,
       taxType: i.taxType,
@@ -156,6 +178,7 @@ export async function createQuotation(input: unknown): Promise<QuotationResult> 
 
   try {
     const created = await db.$transaction(async (tx) => {
+      await assertProductsActive(tx, d.items.map((i) => i.productId));
       const q0 = await tx.quotation.create({
         data: {
           reference: `TMP_${randomBytes(8).toString("hex")}`, // replaced below, inside this transaction
@@ -183,6 +206,7 @@ export async function createQuotation(input: unknown): Promise<QuotationResult> 
     revalidate(created.id);
     return { ok: true, message: tr(t, "quotations.ok.created", { ref: created.reference }), id: created.id };
   } catch (e) {
+    if (e instanceof InactiveProductError) return { ok: false, message: errorMessage(t, e) };
     if (isKnown(e, "P2003", "P2025")) return { ok: false, message: t.quotations.err.refsGone };
     throw e;
   }
@@ -202,7 +226,8 @@ export async function updateQuotation(id: unknown, input: unknown): Promise<Quot
   const d = v.data;
   const scopeMsg = await scopeError([d.warehouseId]);
   if (scopeMsg) return { ok: false, message: scopeMsg };
-  const p = await prepare(d, t);
+  const header = await db.quotation.findUnique({ where: { id: qid.data }, select: { warehouseId: true, items: { select: storedLineSelect } } });
+  const p = await prepare(d, t, header ? { lines: header.items, warehouseId: header.warehouseId } : undefined);
   if (!p.ok) return p.error;
 
   try {
@@ -210,6 +235,9 @@ export async function updateQuotation(id: unknown, input: unknown): Promise<Quot
       const q = await lockQuotation(tx, qid.data);
       if (!q) throw new QuotationError("quotations.err.notFound");
       if (q.status !== "DRAFT") throw new QuotationError("quotations.err.noEdit", { ref: q.reference, status: tr(a.t, `quotations.status.${q.status}`) });
+      const storedNow = await tx.quotationItem.findMany({ where: { quotationId: q.id }, select: storedLineSelect });
+      const before = await tx.quotation.findUniqueOrThrow({ where: { id: q.id }, select: { warehouseId: true } });
+      await assertKeptLines(tx, d.items, storedNow, sameQuotationLine, before.warehouseId !== d.warehouseId);
       await tx.quotationItem.deleteMany({ where: { quotationId: q.id } });
       await tx.quotation.update({
         where: { id: q.id },
@@ -232,7 +260,7 @@ export async function updateQuotation(id: unknown, input: unknown): Promise<Quot
     revalidate(qid.data);
     return { ok: true, message: tr(t, "quotations.ok.updated", { ref }), id: qid.data };
   } catch (e) {
-    if (e instanceof QuotationError) return { ok: false, message: errorMessage(a.t, e) };
+    if (e instanceof QuotationError || e instanceof InactiveProductError) return { ok: false, message: errorMessage(a.t, e) };
     if (isKnown(e, "P2003", "P2025")) return { ok: false, message: t.quotations.err.refsGone };
     throw e;
   }
@@ -257,7 +285,7 @@ export async function deleteQuotation(id: unknown): Promise<QuotationResult> {
     revalidate();
     return { ok: true, message: tr(a.t, "quotations.ok.deleted", { ref }) };
   } catch (e) {
-    if (e instanceof QuotationError) return { ok: false, message: errorMessage(a.t, e) };
+    if (e instanceof QuotationError || e instanceof InactiveProductError) return { ok: false, message: errorMessage(a.t, e) };
     throw e;
   }
 }
@@ -284,7 +312,7 @@ export async function changeQuotationStatus(id: unknown, to: unknown): Promise<Q
     revalidate(qid.data);
     return { ok: true, message: tr(a.t, "quotations.ok.marked", { ref: r, status: tr(a.t, `quotations.status.${target.data}`) }) };
   } catch (e) {
-    if (e instanceof QuotationError) return { ok: false, message: errorMessage(a.t, e) };
+    if (e instanceof QuotationError || e instanceof InactiveProductError) return { ok: false, message: errorMessage(a.t, e) };
     throw e;
   }
 }

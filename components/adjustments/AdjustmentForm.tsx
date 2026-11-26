@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMemo, useState, useTransition, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import InactiveLineNote from "@/components/products/InactiveLineNote";
 import Icon from "@/components/layout/Icon";
 import { useT } from "@/components/i18n/I18nProvider";
 import { LineUnitSelect, BaseHint } from "@/components/ui/LineUnit";
@@ -106,7 +107,7 @@ export default function AdjustmentForm({
   }
 
   const needle = q.trim().toLowerCase();
-  const suggestions = needle ? searchProducts(products, needle) : [];
+  const suggestions = needle ? searchProducts(products.filter((p) => !p.inactive), needle) : [];
   const clearErr = (k: AdjustmentField) => setE((x) => ({ ...x, [k]: "" }));
   const patch = (productId: string, p: Partial<Line>) => {
     setLines((ls) => ls.map((l) => (l.productId === productId ? { ...l, ...p } : l)));
@@ -215,6 +216,8 @@ export default function AdjustmentForm({
                   id="ad-warehouseId"
                   className={"sp-select " + (warehouseId ? "" : "sp-select--placeholder")}
                   value={warehouseId}
+                  disabled={lines.some((l) => l.inactive)}
+                  title={lines.some((l) => l.inactive) ? T.products.status.keptWarehouse : undefined}
                   onChange={(ev) => {
                     setWarehouseId(ev.target.value);
                     clearErr("warehouseId");
@@ -314,6 +317,7 @@ export default function AdjustmentForm({
                         <tr key={l.productId} data-product={l.code}>
                           <td className="primary-cell">
                             {l.name}
+                            {l.inactive && <InactiveLineNote />}
                             {itemErr[l.productId] && (
                               <div className="sp-error" style={{ marginTop: 6, fontWeight: 400 }}>
                                 {itemErr[l.productId]}
@@ -330,19 +334,23 @@ export default function AdjustmentForm({
                           </td>
                           <td>
                             <span className="sp-qty">
-                              <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={fmt(F.decreaseAria, { name: l.name })} onClick={() => step(l, -1)}>
+                              <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={fmt(F.decreaseAria, { name: l.name })} disabled={l.inactive} onClick={() => step(l, -1)}>
                                 <Icon name="minus" size={18} />
                               </button>
-                              <input className="sp-input" aria-label={fmt(F.qtyAria, { name: l.name })} inputMode="decimal" dir="ltr" value={l.quantity} aria-invalid={!!itemErr[l.productId] || undefined} onChange={(ev) => patch(l.productId, { quantity: ev.target.value })} />
-                              <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={fmt(F.increaseAria, { name: l.name })} onClick={() => step(l, 1)}>
+                              <input className="sp-input" aria-label={fmt(F.qtyAria, { name: l.name })} inputMode="decimal" dir="ltr" readOnly={l.inactive} value={l.quantity} aria-invalid={!!itemErr[l.productId] || undefined} onChange={(ev) => patch(l.productId, { quantity: ev.target.value })} />
+                              <button type="button" className="sp-btn sp-btn--secondary sp-btn--icon" aria-label={fmt(F.increaseAria, { name: l.name })} disabled={l.inactive} onClick={() => step(l, 1)}>
                                 <Icon name="plus" size={18} />
                               </button>
                             </span>
-                            <LineUnitSelect info={l.unitInfo} purpose="ANY" value={l.unitId} compact onChange={(unitId) => patch(l.productId, { unitId })} />
+                            {l.inactive ? (
+                              <span className="t-caption" style={{ display: "block" }}>{findLineUnit(l.unitInfo, l.unitId).name}</span>
+                            ) : (
+                              <LineUnitSelect info={l.unitInfo} purpose="ANY" value={l.unitId} compact onChange={(unitId) => patch(l.productId, { unitId })} />
+                            )}
                             <BaseHint info={l.unitInfo} unitId={l.unitId} qty={l.quantity} />
                           </td>
                           <td style={{ width: 260 }}>
-                            <select className="sp-select " aria-label={fmt(F.typeAria, { name: l.name })} value={l.type} onChange={(ev) => patch(l.productId, { type: ev.target.value as AdjustmentTypeValue })}>
+                            <select className="sp-select " aria-label={fmt(F.typeAria, { name: l.name })} disabled={l.inactive} value={l.type} onChange={(ev) => patch(l.productId, { type: ev.target.value as AdjustmentTypeValue })}>
                               {ADJUSTMENT_TYPES.map((t) => (
                                 <option key={t} value={t}>
                                   {T.adjustments.type[t]}

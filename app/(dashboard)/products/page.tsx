@@ -1,4 +1,4 @@
-import { warehouseIdFilter } from "@/lib/access-scope";
+import { coversEveryWarehouse, warehouseIdFilter } from "@/lib/access-scope";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
@@ -33,6 +33,7 @@ export default async function ProductsPage() {
         id: true,
         name: true,
         code: true,
+        active: true,
         price: true,
         stockAlert: true,
         createdAt: true,
@@ -71,8 +72,11 @@ export default async function ProductsPage() {
       createdOn: formatDateTime(p.createdAt, settings?.dateFormat, locale),
       family: p.family?.name ?? null,
       variant: p.family ? describeVariant(dimensionsOf(p.family), valuesOf(p)) : "",
+      active: p.active,
     };
   });
 
-  return <ProductsTable rows={rows} canManage={canManageProducts(session.user)} />;
+  const canManage = canManageProducts(session.user);
+  // Remove / Activate / Deactivate affect every warehouse: shown disabled (with the reason) to a manager who doesn't have them all.
+  return <ProductsTable rows={rows} canManage={canManage} canRemove={canManage && (await coversEveryWarehouse())} />;
 }

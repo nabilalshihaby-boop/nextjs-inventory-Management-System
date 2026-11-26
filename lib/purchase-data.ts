@@ -18,7 +18,7 @@ export async function getPurchaseFormData(): Promise<PurchaseFormData> {
   const [suppliers, warehouses, products, stock, currency] = await Promise.all([
     db.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.warehouse.findMany({ where: await warehouseFilter(), orderBy: { name: "asc" }, select: { id: true, name: true } }),
-    db.product.findMany({ orderBy: { name: "asc" }, select: { id: true, code: true, name: true, cost: true, taxType: true, orderTax: true, purchaseUnit: { select: { name: true } } } }),
+    db.product.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, code: true, name: true, cost: true, taxType: true, orderTax: true, purchaseUnit: { select: { name: true } } } }),
     db.productStock.findMany({ where: await warehouseIdFilter(), select: { productId: true, warehouseId: true, quantity: true } }),
     getDefaultCurrency(),
   ]);

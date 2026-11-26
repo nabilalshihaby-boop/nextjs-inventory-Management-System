@@ -9,7 +9,7 @@ import type { StockOption, WarehouseOption } from "@/lib/transfers";
  * every warehouse, and every product with positive on-hand stock per warehouse. The client only
  * uses this for display; the server re-checks warehouses, products, stock and cost on save.
  */
-export async function getTransferFormData(): Promise<{
+export async function getTransferFormData(keepProductIds: string[] = []): Promise<{
   warehouses: WarehouseOption[];
   stock: StockOption[];
   currency: { code: string; symbol: string; right: boolean } | null;
@@ -17,12 +17,13 @@ export async function getTransferFormData(): Promise<{
   const [warehouses, stocks, currency] = await Promise.all([
     db.warehouse.findMany({ where: await warehouseFilter(), orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.productStock.findMany({
-      where: { quantity: { gt: 0 } },
+      // `keepProductIds`: products already on the transfer being edited stay listed even if deactivated (marked, never suggested).
+      where: { quantity: { gt: 0 }, OR: [{ product: { active: true } }, { productId: { in: keepProductIds } }] },
       orderBy: { product: { name: "asc" } },
       select: {
         warehouseId: true,
         quantity: true,
-        product: { select: { id: true, code: true, name: true, cost: true, productUnit: { select: { name: true } } } },
+        product: { select: { id: true, active: true, code: true, name: true, cost: true, productUnit: { select: { name: true } } } },
       },
     }),
     getDefaultCurrency(),
@@ -35,6 +36,7 @@ export async function getTransferFormData(): Promise<{
     stock: stocks.map((s) => ({
       warehouseId: s.warehouseId,
       productId: s.product.id,
+      ...(s.product.active ? {} : { inactive: true }),
       code: s.product.code,
       name: s.product.name,
       unit: s.product.productUnit.name,

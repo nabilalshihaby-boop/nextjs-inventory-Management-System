@@ -1,5 +1,6 @@
 "use server";
 
+import { InactiveProductError, assertProductsActive, inactiveProductRefusal } from "@/lib/product-status";
 import { recordScopeError, scopeError } from "@/lib/access-scope";
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
@@ -14,7 +15,7 @@ import { calcOrder } from "@/lib/purchase-calc";
 import { formatPurchaseReference, makePurchaseSchema, type PurchaseField, type PurchaseInput } from "@/lib/purchases";
 import { getDict } from "@/lib/i18n/server";
 import { lineSnapshot, loadUnitSets, resolveLine, type ResolvedUnit } from "@/lib/product-units";
-import { tr } from "@/lib/i18n/messages";
+import { errorMessage, tr } from "@/lib/i18n/messages";
 import type { Dictionary } from "@/lib/i18n";
 
 // Purchases. Integrity rules (server-side):
@@ -110,6 +111,9 @@ export async function createPurchase(input: unknown): Promise<PurchaseResult> {
   const known = new Set(products.map((p) => p.id));
   const missing = d.items.find((i) => !known.has(i.productId));
   if (missing) return { ok: false, message: t.purchases.err.productGone, fieldErrors: { items: t.purchases.err.productGone }, itemErrors: { [missing.productId]: t.purchases.err.itemGone } };
+  // An inactive product can't be bought in a NEW purchase (its past purchases and returns are unaffected).
+  const refused = await inactiveProductRefusal(db, d.items.map((i) => i.productId), t);
+  if (refused) return { ok: false, message: refused.message, fieldErrors: { items: refused.message }, itemErrors: { [refused.productId]: refused.message } };
 
   // Units: every line's unit must be an active PURCHASE conversion of THIS product; the factor and the base quantity
   // come from MySQL, never from the browser. Stock is added in base units.
@@ -144,6 +148,7 @@ export async function createPurchase(input: unknown): Promise<PurchaseResult> {
   try {
     const created = await withRetry(() =>
       db.$transaction(async (tx) => {
+        await assertProductsActive(tx, d.items.map((i) => i.productId));
         const p0 = await tx.purchase.create({
           data: {
             reference: `TMP_${randomBytes(8).toString("hex")}`, // replaced below, inside this transaction
@@ -190,6 +195,7 @@ export async function createPurchase(input: unknown): Promise<PurchaseResult> {
     revalidate(created.id);
     return { ok: true, message: tr(t, d.status === "RECEIVED" ? "purchases.ok.createdReceived" : "purchases.ok.createdPending", { ref: created.reference }), id: created.id };
   } catch (e) {
+    if (e instanceof InactiveProductError) return { ok: false, message: errorMessage(t, e), fieldErrors: { items: errorMessage(t, e) } };
     if (isKnown(e, "P2003")) return { ok: false, message: t.purchases.err.refsGone };
     throw e;
   }

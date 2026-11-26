@@ -73,7 +73,7 @@ export const signedUnits = (quantity: string, type: AdjustmentTypeValue) => (typ
 
 // ---- View-model types ---------------------------------------------------------------------------
 
-export type ProductPick = { productId: string; code: string; name: string; unit: string; unitInfo: ProductUnits; /** Stored barcodes (search only). */ barcodes?: string[] };
+export type ProductPick = { productId: string; code: string; name: string; unit: string; unitInfo: ProductUnits; /** Stored barcodes (search only). */ barcodes?: string[]; /** Deactivated: only an existing line of an edited adjustment uses it; never suggested. */ inactive?: boolean };
 export type StockLevel = { productId: string; warehouseId: string; quantity: string };
 
 export type AdjustmentFormValues = {

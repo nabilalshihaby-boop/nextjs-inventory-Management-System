@@ -12,12 +12,15 @@ export async function getPosData(userName: string, role: string | undefined, use
   const [currency, settings] = await Promise.all([getDefaultCurrency(), getSystemSettings()]);
   const registers = await getRegisterOverview();
   const denominations = currency ? await db.currencyDenomination.findMany({ where: { currencyId: currency.id, active: true }, orderBy: { value: "desc" }, select: { id: true, value: true, label: true } }) : [];
+  // Products on this user's open held orders stay available to those lines even if they were deactivated since.
+  const heldIds = (await db.posHeldOrderItem.findMany({ where: { heldOrder: { createdById: userId, status: "HELD" } }, select: { productId: true }, distinct: ["productId"] })).map((i) => i.productId);
   const [customers, warehouses, products, stock, accounts, categories, brands] = await Promise.all([
     db.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.warehouse.findMany({ where: await warehouseFilter(), orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.product.findMany({
+      where: { OR: [{ active: true }, { id: { in: heldIds } }] },
       orderBy: { name: "asc" },
-      select: { id: true, code: true, name: true, price: true, taxType: true, orderTax: true, saleUnit: { select: { name: true } }, category: { select: { name: true } }, brand: { select: { name: true } }, images: { orderBy: { position: "asc" }, take: 1, select: { path: true } } },
+      select: { id: true, active: true, code: true, name: true, price: true, taxType: true, orderTax: true, saleUnit: { select: { name: true } }, category: { select: { name: true } }, brand: { select: { name: true } }, images: { orderBy: { position: "asc" }, take: 1, select: { path: true } } },
     }),
     db.productStock.findMany({ where: await warehouseIdFilter(), select: { productId: true, warehouseId: true, quantity: true } }),
     currency ? db.cashBankAccount.findMany({ where: { status: "ACTIVE", currencyId: currency.id }, orderBy: { name: "asc" }, select: { id: true, name: true, type: true } }) : Promise.resolve([]),
@@ -40,6 +43,7 @@ export async function getPosData(userName: string, role: string | undefined, use
       category: p.category.name,
       brand: p.brand.name,
       image: p.images[0]?.path ?? null,
+      ...(p.active ? {} : { inactive: true }),
     })),
     stock: stock.map((s) => ({ productId: s.productId, warehouseId: s.warehouseId, quantity: s.quantity.toFixed(3) })),
     accounts,

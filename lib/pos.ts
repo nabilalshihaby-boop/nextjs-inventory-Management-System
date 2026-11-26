@@ -33,6 +33,8 @@ export const posCheckoutSchema = z
     notes: z.string().trim().max(2000, "Notes are too long").optional().default(""),
     /** The held order this cart was resumed from (consumed by this checkout); optional. */
     heldOrderId: z.string().trim().max(64).optional().default(""),
+    /** The revision of that held order when it was resumed; any other value than the stored one is refused. */
+    heldRevision: z.number("posTx.held.conflict").int("posTx.held.conflict").min(1, "posTx.held.conflict").max(2147483647, "posTx.held.conflict").optional(),
     /** The cashier chose the configured Walk-in Customer. NOT a value: the server re-reads the setting and
      *  refuses the checkout if it no longer names exactly this customer (stale/changed configuration). */
     walkIn: z.boolean().optional().default(false),
@@ -43,6 +45,8 @@ export const posCheckoutSchema = z
             productId: id("Choose a valid product"),
             /** The selected sale unit (selector only): factor, base quantity and price are resolved on the server. */
             unitId: z.string().trim().max(64).optional().default(""),
+            /** Resumed carts: the id of the held line this is. The server only COMPARES it with the stored lines (it grants nothing). */
+            heldLineId: z.string().trim().max(64).optional(),
             quantity: z
               .string({ error: "Quantity is required" })
               .trim()
@@ -97,6 +101,8 @@ export type PosProduct = {
   category: string;
   brand: string;
   image: string | null;
+  /** Deactivated, but still on one of this user's held orders: only that held line can use it (never the grid, search or scanner). */
+  inactive?: boolean;
 };
 export type PosData = {
   customers: { id: string; name: string }[];
