@@ -5,7 +5,7 @@ import { auth } from "@/auth";
 import { getDict } from "@/lib/i18n/server";
 import { getPosData } from "@/lib/pos-data";
 import { getHeldOrders } from "@/lib/pos-held-data";
-import { canUsePos } from "@/lib/roles";
+import { canCreateCustomers, canUsePos } from "@/lib/roles";
 import PosView from "@/components/pos/PosView";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -22,5 +22,5 @@ export default async function PosPage() {
   if (!session?.user?.id) redirect("/");
   if (!canUsePos(session.user)) redirect("/dashboard");
   const [data, held] = await Promise.all([getPosData(session.user.name?.trim() || session.user.email || "User", session.user.role, session.user.id), getHeldOrders(session.user.id)]);
-  return <PosView data={data} initialHeld={held} />;
+  return <PosView data={data} initialHeld={held} canAddCustomer={canCreateCustomers(session.user)} />;
 }

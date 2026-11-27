@@ -9,6 +9,8 @@ import { discardHeldOrder, holdPosOrder, listHeldOrders, resumeHeldOrder } from 
 import { unlockPos, unlockPosWithPin } from "@/app/pos/lock-actions";
 import { closeRegister, getRegisters, openRegister, recordRegisterMovement } from "@/app/pos/register-actions";
 import Icon from "@/components/layout/Icon";
+import AddCustomerModal from "@/components/pos/AddCustomerModal";
+import CustomerCombobox from "@/components/pos/CustomerCombobox";
 import Modal, { ConfirmDeleteModal } from "@/components/ui/Modal";
 import { PAYMENT_METHODS } from "@/lib/cash-bank";
 import { formatMoney } from "@/lib/money";
@@ -47,15 +49,19 @@ type Method = (typeof PAYMENT_METHODS)[number];
 type Tender = { key: string; method: Method; account: string; amount: string };
 const MONEY_RE = /^\d{1,12}(\.\d{1,2})?$/;
 
-export default function PosView({ data, initialHeld }: { data: PosData; initialHeld: HeldOrderSummary[] }) {
+export default function PosView({ data, initialHeld, canAddCustomer }: { data: PosData; initialHeld: HeldOrderSummary[]; canAddCustomer: boolean }) {
   const T = useT();
   const P = T.pos;
   const methodLabel = (x: string) => (P.methods as Record<string, string>)[x] ?? x;
   const cur = data.currency;
   const m = (v: string) => formatMoney(v, cur ?? { code: "", symbol: "", right: false });
   const walkInId = data.walkInCustomerId;
-  const [customer, setCustomer] = useState(walkInId ?? ""); // the configured Walk-in Customer is pre-selected
+  // The selection is one record (id + name): customers are searched on the server, never all loaded here.
+  const [selected, setSelected] = useState(data.walkInCustomer); // the configured Walk-in Customer is pre-selected
+  const customer = selected?.id ?? "";
   const isWalkIn = !!walkInId && customer === walkInId;
+  const [addingCustomer, setAddingCustomer] = useState(false);
+  const addCustomerRef = useRef<HTMLButtonElement>(null); // focus returns here when the Add Customer dialog closes
   const [warehouse, setWarehouse] = useState(data.warehouses.length === 1 ? data.warehouses[0].id : "");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [q, setQ] = useState("");
@@ -152,7 +158,7 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
   const totals = calcSale(cart.map((l) => ({ quantity: String(l.qty), unitPrice: priceOf(l), ...taxOf(l), discountType: "FIXED" as const, discountValue: "0.00" })), { orderTaxRate: "0.00", discount: "0.00", shipping: "0.00" });
   const qtyTotal = cart.reduce((a, l) => a + l.qty, 0);
   const grandOk = cart.length > 0 && !totals.error && toUnits(totals.grandTotal, 2) > BigInt(0);
-  const setupMissing = !cur ? P.setupNoCurrency : data.customers.length === 0 ? P.setupNoCustomers : data.warehouses.length === 0 ? P.setupNoWarehouses : data.accounts.length === 0 ? fmt(P.setupNoAccount, { code: cur.code }) : data.products.length === 0 ? P.setupNoProducts : "";
+  const setupMissing = !cur ? P.setupNoCurrency : !data.hasCustomers && !selected ? P.setupNoCustomers : data.warehouses.length === 0 ? P.setupNoWarehouses : data.accounts.length === 0 ? fmt(P.setupNoAccount, { code: cur.code }) : data.products.length === 0 ? P.setupNoProducts : "";
   // ---- split payment preview (the server re-validates everything and only trusts ids + exact amounts) ----
   const amountOf = (t: Tender, i: number) => (tenders.length === 1 && i === 0 ? totals.grandTotal : t.amount);
   const grandUnits = grandOk ? toUnits(totals.grandTotal, 2) : BigInt(0);
@@ -320,7 +326,7 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
         setCart(lines);
         setHeldLines(lines.map((l) => ({ id: l.lineId!, productId: l.product.id, unitId: l.unitId, qty: String(l.qty) })));
         setHeldTerms(Object.fromEntries(o.lines.flatMap((l) => (l.unitFactor && l.taxType ? [[l.id, { price: l.heldPrice, taxType: l.taxType, taxRate: l.taxRate, factor: l.unitFactor, unitName: l.unitName }]] : []))));
-        setCustomer(o.customerId);
+        setSelected(o.customerId ? { id: o.customerId, name: o.customerName } : null);
         setWarehouse(o.warehouseId);
         setTenders(o.tenders.map((t) => newTender(t.amount, (PAYMENT_METHODS as readonly string[]).includes(t.paymentMethod) ? (t.paymentMethod as Method) : "Cash", t.cashBankAccountId)));
         setNotes(o.notes);
@@ -587,36 +593,41 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
   return (
     <div className="pos">
       <div className="pos-col">
-        <div className="pos-top" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 15 }}>
-          <div className="pos-panel" style={{ display: "flex", alignItems: "center", gap: 10, height: 74 }}>
-            <Icon name="user" size={20} />
-            <select aria-label={P.customer} className="sp-select" style={{ border: 0, boxShadow: "none", fontSize: 16 }} value={customer} onChange={(e) => setCustomer(e.target.value)}>
-              <option value="">{P.selectCustomer}</option>
-              {data.customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                  {c.id === walkInId ? ` ${P.walkInSuffix}` : ""}
-                </option>
-              ))}
-            </select>
-            {isWalkIn && (
-              <span className="sp-badge sp-badge--info" data-testid="pos-walkin-badge" style={{ whiteSpace: "nowrap" }}>
-                {P.walkInBadge}
+        <div className="pos-top" style={{ display: "grid", gridTemplateColumns: "minmax(0,3fr) minmax(0,2fr)", gap: 15 }}>
+          <div className="pos-panel pos-customer">
+            <div className="pos-customer-row">
+              <Icon name="search" size={20} />
+              <CustomerCombobox walkIn={data.walkInCustomer} onSelect={setSelected} canAdd={canAddCustomer} onAdd={() => setAddingCustomer(true)} />
+            </div>
+            <div className="pos-customer-row" data-testid="pos-customer-selected" data-customer-id={customer}>
+              <Icon name="user" size={20} />
+              <span className="pos-sr">{T.posTx.customerSearch.selected}</span>
+              {/* A long name is cut with an ellipsis; screen readers and the tooltip get the full name. */}
+              <span className="pos-customer-name" dir="auto" title={selected?.name}>
+                {selected?.name ?? P.selectCustomer}
               </span>
-            )}
-            {walkInId && !isWalkIn && (
-              <button type="button" className="sp-btn sp-btn--secondary sp-btn--sm" data-testid="pos-use-walkin" style={{ whiteSpace: "nowrap" }} onClick={() => setCustomer(walkInId)}>
-                <Icon name="user" size={16} />
-                {P.useWalkIn}
+            </div>
+            <div className="pos-customer-row pos-customer-acts">
+              <button ref={addCustomerRef} type="button" className="sp-btn sp-btn--secondary sp-btn--sm" data-testid="pos-add-customer" disabled={!canAddCustomer} title={canAddCustomer ? undefined : T.posTx.quickCustomer.noPermission} onClick={() => setAddingCustomer(true)}>
+                <Icon name="user-plus" size={16} />
+                {P.addCustomer}
               </button>
-            )}
-            <Link href="/customers/create" aria-label={P.addCustomer} title={P.addCustomer} style={{ color: "var(--primary-600)", display: "grid", placeItems: "center" }}>
-              <Icon name="plus" size={20} />
-            </Link>
+              {isWalkIn && (
+                <span className="sp-badge sp-badge--info" data-testid="pos-walkin-badge">
+                  {P.walkInBadge}
+                </span>
+              )}
+              {walkInId && !isWalkIn && (
+                <button type="button" className="sp-btn sp-btn--secondary sp-btn--sm" data-testid="pos-use-walkin" onClick={() => setSelected(data.walkInCustomer)}>
+                  <Icon name="user" size={16} />
+                  {P.useWalkIn}
+                </button>
+              )}
+            </div>
           </div>
-          <div className="pos-panel" style={{ display: "flex", alignItems: "center", gap: 10, height: 74 }}>
+          <div className="pos-panel pos-wh">
             <Icon name="warehouse" size={20} />
-            <select aria-label={P.warehouse} className="sp-select" style={{ border: 0, boxShadow: "none", fontSize: 16 }} value={warehouse} onChange={(e) => { setWarehouse(e.target.value); reset(); }}>
+            <select title={data.warehouses.find((w) => w.id === warehouse)?.name} aria-label={P.warehouse} className="sp-select" style={{ border: 0, boxShadow: "none", fontSize: 16 }} value={warehouse} onChange={(e) => { setWarehouse(e.target.value); reset(); }}>
               <option value="">{P.selectWarehouse}</option>
               {data.warehouses.map((w) => (
                 <option key={w.id} value={w.id}>
@@ -665,7 +676,7 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
               {setupMissing}
             </div>
           )}
-          {!walkInId && data.customers.length > 0 && (
+          {!walkInId && data.hasCustomers && (
             <div className="t-caption" data-testid="pos-walkin-hint" style={{ marginBottom: 8 }}>
               {data.canConfigureWalkIn ? (
                 <>
@@ -1153,7 +1164,7 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
                         <td>
                           <Link href={`/reports/register-session/${encodeURIComponent(h.id)}`} className="sp-btn sp-btn--ghost sp-btn--sm" data-testid="pos-reg-report">
                             <Icon name="file-text" size={16} />
-                            {T.common.viewReport}
+                            {h.status === "CLOSED" ? T.registerReport.link : T.common.viewReport}
                           </Link>
                         </td>
                       </tr>
@@ -1166,6 +1177,19 @@ export default function PosView({ data, initialHeld }: { data: PosData; initialH
         </Modal>
       )}
       {discard && <ConfirmDeleteModal itemType={P.heldOrders.toLowerCase()} itemName={discard.reference} busy={pending} onCancel={() => setDiscard(null)} onConfirm={confirmDiscard} />}
+
+      {addingCustomer && (
+        <AddCustomerModal
+          returnFocusRef={addCustomerRef}
+          onClose={() => setAddingCustomer(false)}
+          onCreated={(c) => {
+            // Only the customer changes: the cart, a resumed held order's prices and the warehouse stay as they are.
+            setSelected(c);
+            setAddingCustomer(false);
+            toast.success(fmt(T.posTx.quickCustomer.selected, { name: c.name }), { id: "pos" });
+          }}
+        />
+      )}
 
       {pay && (
         <Modal

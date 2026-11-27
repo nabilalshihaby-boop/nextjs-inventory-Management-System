@@ -1,9 +1,52 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import Icon from "@/components/layout/Icon";
 import { fmt } from "@/lib/i18n/config";
 import { useT } from "@/components/i18n/I18nProvider";
+
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const focusables = (root: Element) => [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((e) => e.getClientRects().length > 0);
+const stack: HTMLElement[] = []; // open modals: only the top one keeps Tab inside
+
+/**
+ * Focus management: the first control is focused on open, Tab / Shift+Tab stay inside, and focus goes back to what opened the
+ * modal (or `returnFocusRef`) on close, unless the closing code has already moved it somewhere else.
+ */
+function useModalFocus(returnFocusRef?: RefObject<HTMLElement | null>) {
+  const ref = useRef<HTMLDivElement>(null);
+  // Read during the first render: by effect time an autoFocus field inside the modal already has the focus.
+  const [opener] = useState(() => (typeof document === "undefined" ? null : (document.activeElement as HTMLElement | null)));
+  useEffect(() => {
+    const box = ref.current!;
+    const back = returnFocusRef?.current; // the trigger is on the page before the modal opens
+    stack.push(box);
+    if (!box.contains(document.activeElement)) {
+      // Body first, then footer (Cancel comes first there), then the close button.
+      const target = [".sp-modal-body", ".sp-modal-foot", ".sp-modal-head"].flatMap((s) => [...box.querySelectorAll(`:scope > ${s}`)].flatMap(focusables))[0];
+      (target ?? box).focus();
+    }
+    const onTab = (e: KeyboardEvent) => {
+      if (e.key !== "Tab" || stack[stack.length - 1] !== box) return;
+      const list = focusables(box);
+      const at = list.indexOf(document.activeElement as HTMLElement);
+      const next = !list.length ? box : at < 0 ? list[e.shiftKey ? list.length - 1 : 0] : e.shiftKey && at === 0 ? list[list.length - 1] : !e.shiftKey && at === list.length - 1 ? list[0] : null;
+      if (!next) return;
+      e.preventDefault();
+      next.focus();
+    };
+    document.addEventListener("keydown", onTab);
+    return () => {
+      document.removeEventListener("keydown", onTab);
+      stack.splice(stack.indexOf(box), 1);
+      const now = document.activeElement;
+      if (now && now !== document.body && !box.contains(now)) return;
+      const to = back ?? opener;
+      if (to?.isConnected) to.focus();
+    };
+  }, [opener, returnFocusRef]);
+  return ref;
+}
 
 // Design Modal (.sp-overlay / .sp-modal): title bar with close button, body, optional footer.
 // Escape and a click on the backdrop close it.
@@ -12,23 +55,33 @@ export default function Modal({
   onClose,
   footer,
   size = "sm",
+  returnFocusRef,
   children,
 }: {
   title: string;
   onClose: () => void;
   footer?: ReactNode;
   size?: "sm" | "md" | "lg";
+  returnFocusRef?: RefObject<HTMLElement | null>;
   children: ReactNode;
 }) {
   const t = useT();
+  const ref = useModalFocus(returnFocusRef);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
-    <div className="sp-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`sp-modal sp-modal--${size}`} role="dialog" aria-modal="true" aria-label={title}>
+    <div
+      className="sp-overlay"
+      onMouseDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        e.preventDefault(); // or the click would move the focus to <body> after it is handed back
+        onClose();
+      }}
+    >
+      <div ref={ref} tabIndex={-1} className={`sp-modal sp-modal--${size}`} role="dialog" aria-modal="true" aria-label={title}>
         <div className="sp-modal-head">
           <div className="t-section-title">{title}</div>
           <button type="button" className="sp-btn sp-btn--ghost sp-btn--sm sp-btn--icon" aria-label={t.common.close} onClick={onClose}>

@@ -20,8 +20,8 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export const instant = false;
 
-// Register session report (opened by "View Report" in the POS Register Details). OWNER/ADMIN only —
-// anyone else is redirected before any session is read. Everything is re-read from the stored
+// Register Shift Report (a Register Session is a shift), opened from the POS Register Details. POS users whose route access includes
+// register reports (see lib/access.ts) — anyone else is redirected before any session is read. Everything is re-read from the stored
 // session and its linked POS CASH tenders; the URL only carries the session id. Read-only.
 // A CLOSED session shows its stored final snapshot; an OPEN one shows live figures (clearly marked).
 export default async function RegisterSessionReportPage({ params }: PageProps<"/reports/register-session/[sessionId]">) {
@@ -30,7 +30,7 @@ export default async function RegisterSessionReportPage({ params }: PageProps<"/
   if (!session?.user?.id) redirect("/");
   if (!canUsePos(session.user)) redirect("/dashboard");
 
-    const { sessionId } = await params;
+  const { sessionId } = await params;
   const { dict: T, locale } = await getLocaleInfo();
   const RR = T.registerReport;
   if (typeof sessionId !== "string" || sessionId.length > 64) notFound();
@@ -41,7 +41,7 @@ export default async function RegisterSessionReportPage({ params }: PageProps<"/
       counts: { orderBy: { value: "desc" }, select: { id: true, value: true, label: true, count: true, lineTotal: true } },
       movements: {
         orderBy: { number: "asc" },
-        select: { reference: true, type: true, amount: true, notes: true, createdAt: true, createdById: true, fromAccount: { select: { name: true } }, toAccount: { select: { name: true } }, transaction: { select: { reference: true } } },
+        select: { reference: true, type: true, amount: true, notes: true, createdAt: true, createdById: true, createdByName: true, fromAccount: { select: { name: true } }, toAccount: { select: { name: true } }, transaction: { select: { reference: true } } },
       },
       tenders: {
         where: { paymentMethod: "Cash" },
@@ -58,9 +58,21 @@ export default async function RegisterSessionReportPage({ params }: PageProps<"/
     db.user.findMany({ where: { id: { in: [rs.openedById, ...(rs.closedById ? [rs.closedById] : []), ...rs.movements.map((x) => x.createdById)] } }, select: { id: true, firstName: true, lastName: true } }),
     db.user.findUnique({ where: { id: session.user.id }, select: { firstName: true, lastName: true } }),
   ]);
-  const uname = (id: string | null) => {
+  // The name stored when the person acted wins (a later rename or deletion changes nothing). The live name only serves a row
+  // without a snapshot, and "Former user" a row whose user is gone too.
+  const uname = (id: string | null, snapshot: string | null) => {
+    if (snapshot) return snapshot;
+    if (!id) return "—";
     const u = users.find((x) => x.id === id);
-    return u ? `${u.firstName} ${u.lastName}` : "—";
+    return u ? `${u.firstName} ${u.lastName}` : RR.formerUser;
+  };
+  // Whole minutes between the two stored instants (not wall-clock text, so a daylight-saving change can't distort it).
+  const duration = () => {
+    const ms = rs.closedAt ? rs.closedAt.getTime() - rs.openedAt.getTime() : -1;
+    if (ms < 0) return "—";
+    const total = Math.floor(ms / 60_000);
+    const d = Math.floor(total / 1440), h = Math.floor((total % 1440) / 60), min = total % 60;
+    return total === 0 ? RR.durationUnder : fmt2(d ? RR.durationDays : h ? RR.durationHours : RR.durationMinutes, { d, h, m: min });
   };
   const cur = { code: rs.cashBankAccount.currency.code, symbol: rs.cashBankAccount.currency.symbol, right: !!settings?.currencyIconRight };
   const m = (v: Prisma.Decimal | { toFixed: (n: number) => string }) => formatMoney(v.toFixed(2), cur);
@@ -68,6 +80,17 @@ export default async function RegisterSessionReportPage({ params }: PageProps<"/
   const sales = rs.tenders.reduce((n, t) => n.plus(t.amount), new Prisma.Decimal(0));
   const cashIn = rs.movements.filter((x) => x.type === "CASH_IN").reduce((n, x) => n.plus(x.amount), new Prisma.Decimal(0));
   const cashOut = rs.movements.filter((x) => x.type === "CASH_OUT").reduce((n, x) => n.plus(x.amount), new Prisma.Decimal(0));
+  // A typed note keeps its own writing direction inside the label's sentence (an English note on an Arabic report, and vice versa).
+  const note = (template: string, value: string) => {
+    const [before, after = ""] = template.split("{notes}");
+    return (
+      <p>
+        {before}
+        <bdi dir="auto">{value}</bdi>
+        {after}
+      </p>
+    );
+  };
   const closed = rs.status === "CLOSED";
   const live = rs.openingCash.plus(sales).plus(cashIn).minus(cashOut);
   const expected = closed ? (rs.expectedCash ?? live) : live;
@@ -76,7 +99,7 @@ export default async function RegisterSessionReportPage({ params }: PageProps<"/
     <>
       <ReportActions backHref="/pos" backLabel={T.report.backToPos} />
       <ReportDocument
-                title={RR.title}
+        title={RR.title}
         company={company}
         generatedAt={generatedAt}
         generatedBy={creator ? `${creator.firstName} ${creator.lastName}` : undefined}
@@ -85,8 +108,11 @@ export default async function RegisterSessionReportPage({ params }: PageProps<"/
           { label: RR.register, value: rs.reference },
           { label: RR.cashAccount, value: rs.cashBankAccount.name },
           { label: RR.status, value: closed ? RR.closedStatus : RR.openStatus },
-          { label: RR.opened, value: `${fmt(rs.openedAt)} · ${uname(rs.openedById)}` },
-          { label: RR.closed, value: rs.closedAt ? `${fmt(rs.closedAt)} · ${uname(rs.closedById)}` : "—" },
+          { label: RR.opened, value: fmt(rs.openedAt) },
+          { label: RR.closed, value: rs.closedAt ? fmt(rs.closedAt) : RR.notClosedYet },
+          { label: RR.duration, value: duration() },
+          { label: RR.openedBy, value: <bdi dir="auto">{uname(rs.openedById, rs.openedByName)}</bdi> },
+          { label: RR.closedBy, value: <bdi dir="auto">{closed ? uname(rs.closedById, rs.closedByName) : RR.notClosedYet}</bdi> },
         ]}
       >
         <ReportSummary
@@ -101,6 +127,16 @@ export default async function RegisterSessionReportPage({ params }: PageProps<"/
             { label: RR.difference, value: rs.difference ? m(rs.difference) : "—", strong: true },
           ]}
         />
+        {/* Only cash tenders carry a link to a register session; nothing else is inferred from times or users. */}
+        <p className="bp-report-note bp-keep" data-testid="register-noncash-note" style={{ margin: "0 0 14px" }}>
+          {RR.nonCashNote}
+        </p>
+        {(rs.openingNotes || rs.closingNotes) && (
+          <div className="bp-report-notes bp-keep" data-testid="register-notes">
+            {rs.closingNotes && note(RR.closingNotes, rs.closingNotes)}
+            {rs.openingNotes && note(RR.openingNotes, rs.openingNotes)}
+          </div>
+        )}
         <table className="bp-report-table" data-testid="register-tenders">
           <thead>
             <tr>
@@ -135,7 +171,7 @@ export default async function RegisterSessionReportPage({ params }: PageProps<"/
           </tfoot>
         </table>
         <h2 className="t-section-title" style={{ margin: "14px 0 6px" }}>{RR.movementsTitle}</h2>
-        <table className="bp-report-table" data-testid="register-movements">
+        <table className="bp-report-table bp-shift-moves" data-testid="register-movements">
           <thead>
             <tr>
               <th>{RR.colTime}</th>
@@ -156,21 +192,25 @@ export default async function RegisterSessionReportPage({ params }: PageProps<"/
             )}
             {rs.movements.map((x) => (
               <tr key={x.reference} data-ref={x.reference}>
-                <td style={{ whiteSpace: "nowrap" }}>{fmt(x.createdAt)}</td>
-                <td>{x.reference}<span className="bp-report-muted" style={{ display: "block" }}>{x.transaction.reference}</span></td>
-                <td>{T.register.movement[x.type]}</td>
+                <td>{fmt(x.createdAt)}</td>
+                <td className="nb">{x.reference}<span className="bp-report-muted" style={{ display: "block" }}>{x.transaction.reference}</span></td>
+                <td className="nb">{T.register.movement[x.type]}</td>
                 <td>{x.fromAccount.name}</td>
                 <td>{x.toAccount.name}</td>
                 <td>{x.notes}</td>
-                <td>{uname(x.createdById)}</td>
-                <td className="num">{x.type === "CASH_IN" ? "+" : "-"}{m(x.amount)}</td>
+                <td>{uname(x.createdById, x.createdByName)}</td>
+                <td className="num">
+                  <bdi dir="ltr">{(x.type === "CASH_IN" ? "+" : "-") + m(x.amount)}</bdi>
+                </td>
               </tr>
             ))}
           </tbody>
           <tfoot>
             <tr data-testid="register-move-totals">
               <td colSpan={7}>{fmt2(RR.moveTotals, { in: m(cashIn), out: m(cashOut) })}</td>
-              <td className="num">{m(cashIn.minus(cashOut))}</td>
+              <td className="num">
+                <bdi dir="ltr">{m(cashIn.minus(cashOut))}</bdi>
+              </td>
             </tr>
           </tfoot>
         </table>
@@ -204,12 +244,6 @@ export default async function RegisterSessionReportPage({ params }: PageProps<"/
               </tfoot>
             </table>
           </>
-        )}
-        {(rs.openingNotes || rs.closingNotes) && (
-          <p className="bp-report-note">
-                        {rs.openingNotes ? fmt2(RR.openingNotes, { notes: rs.openingNotes }) : ""}
-            {rs.closingNotes ? fmt2(RR.closingNotes, { notes: rs.closingNotes }) : ""}
-          </p>
         )}
         <p className="bp-report-note">{RR.footnote}</p>
       </ReportDocument>

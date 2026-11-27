@@ -25,9 +25,10 @@ export const AUDIT_EVENT_TYPES = [
   "PRODUCT_ACTIVATED",
   "PRODUCT_BULK_REMOVED",
   "PRODUCT_BULK_STATUS",
+  "CUSTOMER_CREATED",
 ] as const;
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
-export type AuditTarget = "ROLE" | "USER" | "SYSTEM" | "TRANSLATION" | "PRODUCT";
+export type AuditTarget = "ROLE" | "USER" | "SYSTEM" | "TRANSLATION" | "PRODUCT" | "CUSTOMER";
 
 export async function recordAudit(tx: Prisma.TransactionClient, e: { actorId: string; eventType: AuditEventType; targetType: AuditTarget; targetId: string; metadata?: Record<string, unknown> }) {
   // Round-trip through JSON so only plain data can ever be stored.

@@ -105,7 +105,9 @@ export type PosProduct = {
   inactive?: boolean;
 };
 export type PosData = {
-  customers: { id: string; name: string }[];
+  /** Only what the screen needs up front; other customers are found through the search. */
+  walkInCustomer: { id: string; name: string } | null;
+  hasCustomers: boolean;
   warehouses: { id: string; name: string }[];
   products: PosProduct[];
   /** product × warehouse stock (display only; checkout re-reads it under the transaction). */

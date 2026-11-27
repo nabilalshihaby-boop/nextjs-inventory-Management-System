@@ -190,7 +190,7 @@ export async function loadDashboard(user: DashUser, plan: DashboardPlan): Promis
           where: { status: "OPEN", ...(admin ? {} : { openedById: user.id ?? "" }) },
           orderBy: { number: "desc" },
           take: 20,
-          select: { id: true, reference: true, openingCash: true, openedById: true, cashBankAccount: { select: { name: true, currency: true } } },
+          select: { id: true, reference: true, openingCash: true, openedById: true, openedByName: true, cashBankAccount: { select: { name: true, currency: true } } },
         });
         const totals = await totalsBySession(sessions.map((s) => s.id));
         const openers = admin ? await db.user.findMany({ where: { id: { in: sessions.map((s) => s.openedById) } }, select: { id: true, firstName: true, lastName: true } }) : [];
@@ -198,7 +198,7 @@ export async function loadDashboard(user: DashUser, plan: DashboardPlan): Promis
         data.registers = sessions.map((s) => {
           const c = s.cashBankAccount.currency;
           const f = (v: Prisma.Decimal) => formatMoney(v.toFixed(2), { code: c.code, symbol: c.symbol, right });
-          return { id: s.id, reference: s.reference, account: s.cashBankAccount.name, opening: f(s.openingCash), expected: f(expectedOf(s.openingCash, totals.get(s.id)!)), mine: s.openedById === user.id, openedBy: admin ? (nameOf.get(s.openedById) ?? null) : null };
+          return { id: s.id, reference: s.reference, account: s.cashBankAccount.name, opening: f(s.openingCash), expected: f(expectedOf(s.openingCash, totals.get(s.id)!)), mine: s.openedById === user.id, openedBy: admin ? (s.openedByName ?? nameOf.get(s.openedById) ?? null) : null };
         });
       })(),
     );

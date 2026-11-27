@@ -426,7 +426,7 @@ export const en = {
   pos: {
     customer: "Customer",
     selectCustomer: "Select customer",
-    addCustomer: "Add customer",
+    addCustomer: "Add Customer",
     walkInBadge: "Walk-in Customer",
     walkInSuffix: "(Walk-in Customer)",
     useWalkIn: "Use Walk-in Customer",

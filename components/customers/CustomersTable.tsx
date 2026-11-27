@@ -112,7 +112,7 @@ export default function CustomersTable({ rows, canManage, canViewStatement }: { 
                       <div style={{ color: "var(--primary-700)", fontWeight: 600 }}>{r.name}</div>
                       <div style={{ color: "var(--text-2)" }}><bdi dir="ltr">{r.email}</bdi></div>
                       <div style={{ color: "var(--text-3)", fontSize: 12.5 }} data-testid="customer-place">
-                        {r.city}, {r.countryName}
+                        {[r.city, r.countryName].filter(Boolean).join(", ")}
                       </div>
                     </div>
                   </td>

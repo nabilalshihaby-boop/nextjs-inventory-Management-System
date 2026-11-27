@@ -2,7 +2,8 @@
 import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
-import { getLocale } from "@/lib/i18n/server";
+import { getDict, getLocale } from "@/lib/i18n/server";
+import { fullName } from "@/lib/actor-name";
 import { getSystemSettings } from "@/lib/settings";
 import type { OpenRegister, RegisterHistoryRow, RegisterMovementRow, RegisterOverview } from "@/lib/register";
 
@@ -39,9 +40,11 @@ export async function getRegisterOverview(): Promise<RegisterOverview> {
     include: { session: { select: { reference: true } }, fromAccount: { select: { name: true } }, toAccount: { select: { name: true } }, transaction: { select: { reference: true } } },
   });
   const userIds = [...new Set([...sessions.flatMap((s) => [s.openedById, s.closedById]), ...moves.map((x) => x.createdById)].filter((x): x is string => !!x))];
-  const users = new Map((await db.user.findMany({ where: { id: { in: userIds } }, select: { id: true, firstName: true, lastName: true } })).map((u) => [u.id, `${u.firstName} ${u.lastName}`]));
+  const users = new Map((await db.user.findMany({ where: { id: { in: userIds } }, select: { id: true, firstName: true, lastName: true } })).map((u) => [u.id, fullName(u)]));
   const totals = await totalsBySession(sessions.map((s) => s.id));
-  const name = (uid: string | null) => (uid ? (users.get(uid) ?? "—") : "—");
+  // The stored snapshot wins; the live name only serves rows that have none.
+  const former = (await getDict()).registerReport.formerUser;
+  const name = (uid: string | null, snapshot: string | null) => snapshot ?? (uid ? (users.get(uid) ?? former) : "—");
   const fmt = (d: Date) => formatDateTime(d, settings?.dateFormat, locale);
   const open: OpenRegister[] = [];
   const history: RegisterHistoryRow[] = [];
@@ -49,14 +52,14 @@ export async function getRegisterOverview(): Promise<RegisterOverview> {
     const t = totals.get(s.id)!;
     const live = expectedOf(s.openingCash, t);
     if (s.status === "OPEN") {
-      open.push({ id: s.id, reference: s.reference, accountId: s.cashBankAccountId, accountName: s.cashBankAccount.name, openingCash: s.openingCash.toFixed(2), cashSales: t.cashSales.toFixed(2), cashIn: t.cashIn.toFixed(2), cashOut: t.cashOut.toFixed(2), expected: live.toFixed(2), openedAt: fmt(s.openedAt), openedBy: name(s.openedById) });
+      open.push({ id: s.id, reference: s.reference, accountId: s.cashBankAccountId, accountName: s.cashBankAccount.name, openingCash: s.openingCash.toFixed(2), cashSales: t.cashSales.toFixed(2), cashIn: t.cashIn.toFixed(2), cashOut: t.cashOut.toFixed(2), expected: live.toFixed(2), openedAt: fmt(s.openedAt), openedBy: name(s.openedById, s.openedByName) });
     }
     history.push({
       id: s.id,
       reference: s.reference,
       accountName: s.cashBankAccount.name,
       status: s.status,
-      openedBy: name(s.openedById),
+      openedBy: name(s.openedById, s.openedByName),
       openedAt: fmt(s.openedAt),
       closedAt: s.closedAt ? fmt(s.closedAt) : null,
       openingCash: s.openingCash.toFixed(2),
@@ -76,7 +79,7 @@ export async function getRegisterOverview(): Promise<RegisterOverview> {
     to: x.toAccount.name,
     amount: x.amount.toFixed(2),
     notes: x.notes,
-    user: name(x.createdById),
+    user: name(x.createdById, x.createdByName),
     transferReference: x.transaction.reference,
   }));
   return { open, history, movements };

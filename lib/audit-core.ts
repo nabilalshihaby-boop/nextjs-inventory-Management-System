@@ -12,8 +12,8 @@ import { REASONS } from "@/lib/product-removal-core";
 // other key — including anything that looks like a password, hash, token, request body, translated text or connection string — is
 // dropped, not displayed. So even a future writer that stores something it should not cannot leak it through this page.
 
-export const AUDIT_TARGETS = ["ROLE", "USER", "SYSTEM", "TRANSLATION", "PRODUCT"] as const satisfies readonly AuditTarget[];
-export const AUDIT_CATEGORIES = ["roles", "access", "translations", "products"] as const;
+export const AUDIT_TARGETS = ["ROLE", "USER", "SYSTEM", "TRANSLATION", "PRODUCT", "CUSTOMER"] as const satisfies readonly AuditTarget[];
+export const AUDIT_CATEGORIES = ["roles", "access", "translations", "products", "customers"] as const;
 export type AuditCategory = (typeof AUDIT_CATEGORIES)[number];
 
 /** Which category each recorded event type belongs to. Exhaustive (typed): a new event type must be placed here. */
@@ -37,6 +37,7 @@ export const CATEGORY_OF: Record<AuditEventType, AuditCategory> = {
   PRODUCT_ACTIVATED: "products",
   PRODUCT_BULK_REMOVED: "products",
   PRODUCT_BULK_STATUS: "products",
+  CUSTOMER_CREATED: "customers",
 };
 export const typesOfCategory = (c: AuditCategory): AuditEventType[] => AUDIT_EVENT_TYPES.filter((t) => CATEGORY_OF[t] === c);
 
@@ -205,6 +206,7 @@ const templateKeys = (v: unknown): string[] => (Array.isArray(v) ? [...new Set(v
 export type SafeDetail =
   | { id: "name" | "previousName" | "roleName" | "previousRoleName" | "userName" | "clonedFromName" | "key" | "sku"; kind: "text"; value: string }
   | { id: "locale"; kind: "locale"; value: "ar" | "en" }
+  | { id: "source"; kind: "source"; value: "POS" }
   | { id: "active" | "hadOverride"; kind: "bool"; value: boolean }
   | { id: "previousLength" | "newLength" | "permissionCount" | "warehousesBefore" | "warehousesAfter" | "requested" | "deleted" | "deactivated" | "unchanged" | "changed"; kind: "number"; value: number }
   | { id: "reasons"; kind: "reasons"; value: string[] }
@@ -228,6 +230,7 @@ export function safeDetails(eventType: string, metadata: unknown): SafeDetail[] 
   text("key", m.key);
   text("sku", m.sku);
   if (m.locale === "ar" || m.locale === "en") out.push({ id: "locale", kind: "locale", value: m.locale });
+  if (m.source === "POS") out.push({ id: "source", kind: "source", value: m.source });
   const active = bool(m.active);
   if (active !== null) out.push({ id: "active", kind: "bool", value: active });
   const had = bool(m.hadOverride);
@@ -278,5 +281,6 @@ export function targetLabel(targetType: string, targetId: string, metadata: unkn
     const sku = cleanText(m.sku, 64);
     return n && sku ? `${n} (${sku})` : (n ?? sku);
   }
+  if (targetType === "CUSTOMER") return cleanText(m.name);
   return null; // SYSTEM: the viewer translates the known references
 }

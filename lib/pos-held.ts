@@ -73,6 +73,7 @@ export type ResumedOrder = {
   revision: number;
   reference: string;
   customerId: string;
+  customerName: string;
   warehouseId: string;
   /** Saved payment rows; an account that is gone/inactive/in another currency comes back blank. */
   tenders: { paymentMethod: string; cashBankAccountId: string; amount: string }[];

@@ -96,6 +96,8 @@ function detailValue(t: Dictionary, d: SafeDetail): string {
       return d.value;
     case "locale":
       return d.value === "ar" ? D.ar : D.en;
+    case "source":
+      return D.sourcePos;
     case "bool":
       return d.value ? D.yes : D.no;
     case "reasons":

@@ -8,6 +8,7 @@ import type { Dictionary } from "@/lib/i18n";
 import { auth } from "@/auth";
 import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
+import { insertCustomer, isUniqueViolation } from "@/lib/customer-create";
 import { canManageCustomers } from "@/lib/roles";
 import { makeCustomerSchema, type CustomerField, type CustomerInput } from "@/lib/customers";
 
@@ -35,17 +36,20 @@ function validate(input: unknown, t: Dictionary): Validated {
   return { ok: false, error: { ok: false, message: Object.values(fieldErrors)[0] ?? t.common.checkForm, fieldErrors } };
 }
 
-const toData = (d: CustomerInput) => ({
+const toDate = (v: string) => (v ? new Date(`${v}T00:00:00.000Z`) : null);
+/** A new row stores "" for anything not given (the columns are NOT NULL). */
+const toCreate = (d: CustomerInput) => ({
   name: d.name,
-  email: d.email,
-  phoneNumber: d.phoneNumber,
-  countryCode: d.countryCode,
-  city: d.city,
-  address: d.address,
-  dateOfBirth: d.dateOfBirth ? new Date(`${d.dateOfBirth}T00:00:00.000Z`) : null,
+  email: d.email ?? "",
+  phoneNumber: d.phoneNumber ?? "",
+  countryCode: d.countryCode ?? "",
+  city: d.city ?? "",
+  address: d.address ?? "",
+  dateOfBirth: toDate(d.dateOfBirth ?? ""),
 });
+/** An update writes only what was sent: Prisma leaves an `undefined` column unchanged. */
+const toUpdate = ({ dateOfBirth, ...d }: CustomerInput) => ({ ...d, dateOfBirth: dateOfBirth === undefined ? undefined : toDate(dateOfBirth) });
 
-const isUniqueViolation = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
 const duplicate = (t: Dictionary): CustomerResult => ({ ok: false, message: t.customers.duplicate, fieldErrors: { name: t.customers.duplicate } });
 
 export async function createCustomer(input: unknown): Promise<CustomerResult> {
@@ -55,14 +59,7 @@ export async function createCustomer(input: unknown): Promise<CustomerResult> {
   const v = validate(input, t);
   if (!v.ok) return v.error;
 
-  // Name is unique regardless of case (column collation); checked here for a clean message.
-  if (await db.customer.findUnique({ where: { name: v.data.name }, select: { id: true } })) return duplicate(t);
-  try {
-    await db.customer.create({ data: toData(v.data) });
-  } catch (e) {
-    if (isUniqueViolation(e)) return duplicate(t);
-    throw e;
-  }
+  if (!(await insertCustomer(toCreate(v.data))).ok) return duplicate(t);
   revalidatePath("/customers");
   return { ok: true, message: t.customers.ok.created };
 }
@@ -82,7 +79,7 @@ export async function updateCustomer(id: unknown, input: unknown): Promise<Custo
   if (await db.customer.findFirst({ where: { name: v.data.name, NOT: { id: existing.id } }, select: { id: true } })) return duplicate(t);
 
   try {
-    await db.customer.update({ where: { id: existing.id }, data: toData(v.data) });
+    await db.customer.update({ where: { id: existing.id }, data: toUpdate(v.data) });
   } catch (e) {
     if (isUniqueViolation(e)) return duplicate(t);
     throw e;

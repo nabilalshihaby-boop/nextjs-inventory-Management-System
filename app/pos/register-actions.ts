@@ -13,6 +13,7 @@ import { getDict } from "@/lib/i18n/server";
 import { tr } from "@/lib/i18n/messages";
 import type { Dictionary } from "@/lib/i18n";
 import { canManagePosRegister, canUsePos } from "@/lib/roles";
+import { actorName } from "@/lib/actor-name";
 import { getDefaultCurrency } from "@/lib/settings";
 
 // Register sessions (cash-drawer shifts). NOT an accounting system:
@@ -77,7 +78,7 @@ export async function openRegister(input: unknown): Promise<RegisterResult> {
       const open = await tx.cashRegisterSession.findFirst({ where: { cashBankAccountId: acc.id, status: "OPEN" }, select: { reference: true } });
       if (open) reject("register.err.alreadyOpenNamed", { name: acc.name, reference: open.reference }, "cashBankAccountId");
       const s0 = await tx.cashRegisterSession.create({
-        data: { reference: `TMP_${randomBytes(8).toString("hex")}`, cashBankAccountId: acc.id, status: "OPEN", openAccountKey: acc.id, openingCash: d.openingCash, openedById: a.userId, openingNotes: d.notes || null },
+        data: { reference: `TMP_${randomBytes(8).toString("hex")}`, cashBankAccountId: acc.id, status: "OPEN", openAccountKey: acc.id, openingCash: d.openingCash, openedById: a.userId, openedByName: await actorName(tx, a.userId), openingNotes: d.notes || null },
         select: { id: true, number: true },
       });
       const reference = formatRegisterReference(s0.number);
@@ -162,7 +163,7 @@ export async function closeRegister(input: unknown): Promise<RegisterResult> {
 
       const r = await tx.cashRegisterSession.updateMany({
         where: { id: s.id, status: "OPEN" },
-        data: { status: "CLOSED", openAccountKey: null, closedAt: new Date(), closedById: a.userId, closingCash: actual, expectedCash: expected, difference, closingNotes: d.notes || null },
+        data: { status: "CLOSED", openAccountKey: null, closedAt: new Date(), closedById: a.userId, closedByName: await actorName(tx, a.userId), closingCash: actual, expectedCash: expected, difference, closingNotes: d.notes || null },
       });
       if (r.count !== 1) return reject("register.err.alreadyClosed", { ref: s.reference });
       // Immutable cash-count snapshot (values/labels copied: later denomination edits never change it).
@@ -222,7 +223,7 @@ export async function recordRegisterMovement(input: unknown): Promise<RegisterRe
         const note = `${MOVEMENT_LABEL[d.type]} · ${s.reference} · ${d.notes}`; // stored ledger note (English, never translated)
         const transfer = await appendLedgerRow(tx, "TRANSFER", { transactionDate: today, accountId: from.id, destinationAccountId: to.id, amount: d.amount, notes: note, createdById: a.userId });
         const mv = await tx.cashRegisterMovement.create({
-          data: { reference: `TMP_${randomBytes(8).toString("hex")}`, sessionId: s.id, type: d.type, amount: d.amount, fromAccountId: from.id, toAccountId: to.id, transactionId: transfer.id, notes: d.notes, createdById: a.userId },
+          data: { reference: `TMP_${randomBytes(8).toString("hex")}`, sessionId: s.id, type: d.type, amount: d.amount, fromAccountId: from.id, toAccountId: to.id, transactionId: transfer.id, notes: d.notes, createdById: a.userId, createdByName: await actorName(tx, a.userId) },
           select: { id: true, number: true },
         });
         const reference = formatMovementReference(mv.number);

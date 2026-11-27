@@ -31,6 +31,8 @@ export const canManageWarehouses = needs("warehouses.manage");
 export const canManageCatalog = needs("catalog.manage");
 export const canManageSuppliers = needs("suppliers.manage");
 export const canManageCustomers = needs("customers.manage");
+/** Create a customer (POS quick add): the narrow customers.create permission, or the broader customers.manage that already includes creating. */
+export const canCreateCustomers = (who: Who) => hasPermission(who, "customers.create") || hasPermission(who, "customers.manage");
 /** Inventory Reports (stock balance, product movement, low stock): read-only. */
 export const canViewInventoryReports = needs("reports.inventory.view");
 /** Profit & Loss, Cash Flow and Aging expose costs, margins, expenses and every unpaid balance: read-only. */

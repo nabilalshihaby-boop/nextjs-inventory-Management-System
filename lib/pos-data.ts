@@ -14,8 +14,10 @@ export async function getPosData(userName: string, role: string | undefined, use
   const denominations = currency ? await db.currencyDenomination.findMany({ where: { currencyId: currency.id, active: true }, orderBy: { value: "desc" }, select: { id: true, value: true, label: true } }) : [];
   // Products on this user's open held orders stay available to those lines even if they were deactivated since.
   const heldIds = (await db.posHeldOrderItem.findMany({ where: { heldOrder: { createdById: userId, status: "HELD" } }, select: { productId: true }, distinct: ["productId"] })).map((i) => i.productId);
-  const [customers, warehouses, products, stock, accounts, categories, brands] = await Promise.all([
-    db.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+  const [anyCustomer, walkInCustomer, warehouses, products, stock, accounts, categories, brands] = await Promise.all([
+    db.customer.findFirst({ select: { id: true } }),
+    // The FK (onDelete: Restrict) guarantees the configured customer exists; it is re-checked on the server at checkout.
+    settings?.posWalkInCustomerId ? db.customer.findUnique({ where: { id: settings.posWalkInCustomerId }, select: { id: true, name: true } }) : null,
     db.warehouse.findMany({ where: await warehouseFilter(), orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.product.findMany({
       where: { OR: [{ active: true }, { id: { in: heldIds } }] },
@@ -29,7 +31,8 @@ export async function getPosData(userName: string, role: string | undefined, use
   ]);
   const units = await unitOptionsFor(db, products.map((p) => p.id), true); // with barcodes: the POS scanner looks them up
   return {
-    customers,
+    walkInCustomer,
+    hasCustomers: !!anyCustomer,
     warehouses,
     products: products.map((p) => ({
       unitInfo: units.get(p.id)!,
@@ -55,8 +58,7 @@ export async function getPosData(userName: string, role: string | undefined, use
     denominations: denominations.map((x) => ({ id: x.id, value: x.value.toFixed(2), label: x.label ?? "" })),
     isOwner: canManageSystemSettings(role),
     hasPin: !!(await db.user.findUnique({ where: { id: userId }, select: { posPinHash: true } }))?.posPinHash,
-    // The FK (onDelete: Restrict) guarantees this customer exists; it is re-checked on the server at checkout.
-    walkInCustomerId: settings?.posWalkInCustomerId && customers.some((c) => c.id === settings.posWalkInCustomerId) ? settings.posWalkInCustomerId : null,
+    walkInCustomerId: walkInCustomer?.id ?? null,
     canConfigureWalkIn: canManageSystemSettings(role),
   };
 }

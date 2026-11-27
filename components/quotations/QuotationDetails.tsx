@@ -170,9 +170,9 @@ export default function QuotationDetails({ quotation: q, customer, company }: { 
             <div className="sp-band">{D.customerInfo}</div>
             <div className="sp-info">
               <L i="user">{customer.name}</L>
-              <L i="mail" d="ltr">{customer.email}</L>
-              <L i="smartphone" d="ltr">{customer.phone}</L>
-              <L i="map-pin">{customer.address}</L>
+              {customer.email && <L i="mail" d="ltr">{customer.email}</L>}
+              {customer.phone && <L i="smartphone" d="ltr">{customer.phone}</L>}
+              {customer.address && <L i="map-pin">{customer.address}</L>}
             </div>
           </div>
           <div data-testid="company-info">

@@ -1470,9 +1470,12 @@ model CashRegisterSession {
   openingCash       Decimal                @db.Decimal(14, 2)
   openedAt          DateTime               @default(now())
   openedById        String                 @db.VarChar(191)
+  /// Name of the opener as it was then: reports show this, so a later rename or deletion changes nothing. NULL only on legacy rows whose user was already gone.
+  openedByName      String?                @db.VarChar(400)
   openingNotes      String?                @db.Text
   closedAt          DateTime?
   closedById        String?                @db.VarChar(191)
+  closedByName      String?                @db.VarChar(400)
   /// Final snapshot, written once at close.
   closingCash       Decimal?               @db.Decimal(14, 2)
   expectedCash      Decimal?               @db.Decimal(14, 2)
@@ -1516,6 +1519,8 @@ model CashRegisterMovement {
   notes         String                   @db.Text
   createdAt     DateTime                 @default(now())
   createdById   String                   @db.VarChar(191)
+  /// Same rule as the session's actor names.
+  createdByName String?                  @db.VarChar(400)
 
   @@index([sessionId])
   @@map("cash_register_movements")

@@ -20,6 +20,7 @@ const DEFINITIONS = [
   ["sales", "quotations.manage", true],
   ["customers", "customers.view", false],
   ["customers", "customers.manage", false],
+  ["customers", "customers.create", false],
   ["customers", "customers.payments.manage", false],
   ["customers", "customers.statement.view", false],
   ["purchases", "purchases.view", true],

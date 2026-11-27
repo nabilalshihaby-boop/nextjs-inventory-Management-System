@@ -237,7 +237,7 @@ export async function resumeHeldOrder(id: unknown): Promise<ResumeResult> {
   // Saved tender rows; an order held BEFORE split payments has none and carries one legacy account/method: it resumes as ONE tender.
   const saved = o.tenders.length ? o.tenders.map((t) => ({ paymentMethod: t.paymentMethod ?? "", cashBankAccountId: t.cashBankAccountId ?? "", amount: t.amount ? t.amount.toFixed(2) : "" })) : o.cashBankAccountId || o.paymentMethod ? [{ paymentMethod: o.paymentMethod ?? "", cashBankAccountId: o.cashBankAccountId ?? "", amount: "" }] : [];
   const [customer, warehouse, accountRows, products, currency] = await Promise.all([
-    o.customerId ? db.customer.findUnique({ where: { id: o.customerId }, select: { id: true } }) : null,
+    o.customerId ? db.customer.findUnique({ where: { id: o.customerId }, select: { id: true, name: true } }) : null,
     o.warehouseId ? db.warehouse.findUnique({ where: { id: o.warehouseId }, select: { id: true } }) : null,
     saved.some((t) => t.cashBankAccountId) ? db.cashBankAccount.findMany({ where: { id: { in: saved.map((t) => t.cashBankAccountId).filter(Boolean) } }, select: { id: true, name: true, status: true, currencyId: true } }) : [],
     db.product.findMany({ where: { id: { in: o.items.map((i) => i.productId) } }, select: { id: true, active: true, price: true, taxType: true, orderTax: true } }), // an inactive product's existing line resumes, marked inactive
@@ -292,7 +292,7 @@ export async function resumeHeldOrder(id: unknown): Promise<ResumeResult> {
     }
   }
   const mustRehold = o.items.some((i) => !hasSnapshot(i)) || lines.some((l) => l.needsUnit);
-  return { ok: true, order: { id: o.id, revision: o.revision, reference: o.reference, customerId: customer ? (o.customerId ?? "") : "", warehouseId: warehouse ? (o.warehouseId ?? "") : "", tenders, notes: o.notes ?? "", lines, mustRehold, problems, notices } };
+  return { ok: true, order: { id: o.id, revision: o.revision, reference: o.reference, customerId: customer?.id ?? "", customerName: customer?.name ?? "", warehouseId: warehouse ? (o.warehouseId ?? "") : "", tenders, notes: o.notes ?? "", lines, mustRehold, problems, notices } };
 }
 
 export async function discardHeldOrder(id: unknown, revision: unknown): Promise<DiscardResult> {

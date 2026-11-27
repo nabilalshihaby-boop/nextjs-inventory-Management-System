@@ -17,30 +17,52 @@ function isRealDate(v: string) {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v && d.getUTCFullYear() >= 1900;
 }
 
-/** Customer schema with dictionary messages (English by default). */
+/**
+ * Customer schema with dictionary messages (English by default). Only the name is required, here and in the POS quick add.
+ * A field that is not sent stays `undefined`, so an update leaves the stored value alone; "" is an explicitly emptied field.
+ */
 export function makeCustomerSchema(m: Dictionary["customers"]["val"] = en.customers.val) {
   return z.object({
     name: z.string().trim().min(1, m.nameRequired).max(120, m.nameLong),
-    email: z.string().trim().toLowerCase().min(1, m.emailRequired).max(191, m.emailLong).pipe(z.email(m.emailInvalid)),
+    email: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .max(191, m.emailLong)
+      .refine((v) => v === "" || z.email().safeParse(v).success, m.emailInvalid)
+      .optional(),
     phoneNumber: z
       .string()
       .trim()
-      .min(1, m.phoneRequired)
-      .regex(/^[0-9+()\-.\s]{6,32}$/, m.phoneInvalid),
-    countryCode: z.string().trim().refine(isCountryCode, m.countryRequired),
-    city: z.string().trim().min(1, m.cityRequired).max(120, m.cityLong),
-    address: z.string().trim().min(1, m.addressRequired).max(500, m.addressLong),
-    /** Optional: "" (none) or a real YYYY-MM-DD date that isn't in the future. */
+      .refine((v) => v === "" || /^[0-9+()\-.\s]{6,32}$/.test(v), m.phoneInvalid)
+      .optional(),
+    countryCode: z
+      .string()
+      .trim()
+      .refine((v) => v === "" || isCountryCode(v), m.countryRequired)
+      .optional(),
+    city: z.string().trim().max(120, m.cityLong).optional(),
+    address: z.string().trim().max(500, m.addressLong).optional(),
+    /** "" (none) or a real YYYY-MM-DD date that isn't in the future. */
     dateOfBirth: z
       .string()
       .trim()
-      .optional()
-      .default("")
       .refine((v) => v === "" || isRealDate(v), m.dobInvalid)
-      .refine((v) => v === "" || !isRealDate(v) || v <= todayLocalIso(), m.dobFuture),
+      .refine((v) => v === "" || !isRealDate(v) || v <= todayLocalIso(), m.dobFuture)
+      .optional(),
   });
 }
 export const customerInputSchema = makeCustomerSchema();
+
+/**
+ * POS quick add: the same name, phone and email rules as the Customers form. Strict: any other field (an id, a role, cart data...)
+ * refuses the whole request.
+ */
+export function makeQuickCustomerSchema(m: Dictionary["customers"]["val"] = en.customers.val) {
+  const { name, email, phoneNumber } = makeCustomerSchema(m).shape;
+  return z.strictObject({ name, email, phoneNumber });
+}
+export type QuickCustomerField = "name" | "email" | "phoneNumber";
 
 export type CustomerInput = z.infer<typeof customerInputSchema>;
 export type CustomerField = keyof CustomerInput;

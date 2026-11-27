@@ -12,10 +12,8 @@ import type { CountryOption } from "@/lib/countries";
 
 // DOB starts empty (the design's temporary default date is intentionally not used).
 const EMPTY: CustomerFormValues = { name: "", email: "", phoneNumber: "", dateOfBirth: "", countryCode: "", city: "", address: "" };
-const REQUIRED: Exclude<CustomerField, "dateOfBirth">[] = ["name", "email", "phoneNumber", "countryCode", "city", "address"];
-
 // Port of design/Create Customer.html: PageHeader (+ Back), FormCard (2 columns, Cancel / Save):
-// Name, Email, Phone Number, DOB (optional), Country (ISO select, stores the code), City, Address.
+// Name (required); Email, Phone Number, DOB, Country (ISO select, stores the code), City and Address are optional.
 export default function CustomerForm({
   customerId,
   initial,
@@ -39,18 +37,14 @@ export default function CustomerForm({
     setF({ ...f, [k]: ev.target.value });
     setE({ ...e, [k]: "" });
   };
-  const ok = REQUIRED.every((k) => f[k].trim());
+  const ok = !!f.name.trim();
 
   function save() {
-    // Same checks as the design (+ DOB); the server action validates everything again with zod.
+    // Quick checks only; the server action validates everything again with zod.
     const n: Partial<Record<CustomerField, string>> = {};
     if (!f.name.trim()) n.name = V.nameRequired;
-    if (!/^\S+@\S+\.\S+$/.test(f.email.trim())) n.email = V.emailInvalid;
-    if (!f.phoneNumber.trim()) n.phoneNumber = V.phoneRequired;
+    if (f.email.trim() && !/^\S+@\S+\.\S+$/.test(f.email.trim())) n.email = V.emailInvalid;
     if (f.dateOfBirth && f.dateOfBirth > todayLocalIso()) n.dateOfBirth = V.dobFuture;
-    if (!f.countryCode) n.countryCode = V.countryRequired;
-    if (!f.city.trim()) n.city = V.cityRequired;
-    if (!f.address.trim()) n.address = V.addressRequired;
     setE(n);
     if (Object.keys(n).length) {
       toast.error(Object.values(n)[0]!, { id: "customer" });
@@ -75,7 +69,7 @@ export default function CustomerForm({
     });
   }
 
-  const label = (k: CustomerField, text: string, required = true) => (
+  const label = (k: CustomerField, text: string, required = false) => (
     <label className="sp-label" htmlFor={`cu-${k}`}>
       {text}
       {required && <i>*</i>}
@@ -85,7 +79,7 @@ export default function CustomerForm({
   const wrap = (k: CustomerField, children: React.ReactNode, className = "") => (
     <div className={"sp-field" + (className ? " " + className : "") + (e[k] ? " sp-field--error" : "")}>{children}</div>
   );
-  const input = (k: CustomerField, text: string, placeholder: string, type = "text", required = true) =>
+  const input = (k: CustomerField, text: string, placeholder: string, type = "text", required = false) =>
     wrap(k, (
       <>
         {label(k, text, required)}
@@ -118,10 +112,10 @@ export default function CustomerForm({
       >
         <div className="sp-card sp-form-card">
           <div className="sp-form-grid" style={{ "--cols": 2 } as CSSProperties}>
-            {input("name", F.name, F.namePh)}
+            {input("name", F.name, F.namePh, "text", true)}
             {input("email", F.email, F.emailPh, "email")}
             {input("phoneNumber", F.phone, F.phonePh, "tel")}
-            {input("dateOfBirth", F.dob, "", "date", false)}
+            {input("dateOfBirth", F.dob, "", "date")}
             {wrap("countryCode", (
               <>
                 {label("countryCode", F.country)}
@@ -133,7 +127,7 @@ export default function CustomerForm({
                   onChange={set("countryCode")}
                   aria-invalid={!!e.countryCode || undefined}
                 >
-                  <option value="" disabled>
+                  <option value="">
                     {F.countryPh}
                   </option>
                   {countries.map((c) => (

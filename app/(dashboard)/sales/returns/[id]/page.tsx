@@ -85,9 +85,9 @@ export default async function SaleReturnDetailsPage({ params }: PageProps<"/sale
             <div className="sp-band">{D.customerInfo}</div>
             <div className="sp-info">
               <L i="user">{r.customer.name}</L>
-              <L i="mail" d="ltr">{r.customer.email}</L>
-              <L i="smartphone" d="ltr">{r.customer.phoneNumber}</L>
-              <L i="map-pin">{[r.customer.address, r.customer.city, country.get(r.customer.countryCode) ?? r.customer.countryCode].filter(Boolean).join(", ")}</L>
+              {r.customer.email && <L i="mail" d="ltr">{r.customer.email}</L>}
+              {r.customer.phoneNumber && <L i="smartphone" d="ltr">{r.customer.phoneNumber}</L>}
+              {(r.customer.address || r.customer.city || r.customer.countryCode) && <L i="map-pin">{[r.customer.address, r.customer.city, country.get(r.customer.countryCode) ?? r.customer.countryCode].filter(Boolean).join(", ")}</L>}
             </div>
           </div>
           <div data-testid="company-info">
