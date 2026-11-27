@@ -2,6 +2,7 @@
 
 import type { IconName } from "./Icon";
 import { canOpenRoute, hasAnyPermission, roleOf, type PermissionKey } from "@/lib/access";
+import { HUB_PERMISSIONS } from "@/lib/report-hub";
 
 export type NavLeaf = {
   id: string;
@@ -81,6 +82,8 @@ export const NAV: NavItem[] = [
       { id: "e1", label: "Expenses", href: "/expenses", perm: ["expenses.manage"] },
       { id: "e2", label: "Expense Categories", href: "/expenses/categories", perm: ["expenses.categories.manage"] },
       { id: "f3", label: "Profit & Loss", href: "/profit-loss", perm: ["reports.financial.view"] },
+      // id = the existing nav.costSetup title. A USER sees it only under the full rule (canOpenRoute -> canManageCostBaseline).
+      { id: "costSetup", label: "Opening Inventory Cost Setup", href: "/profit-loss/setup", perm: ["cost.baseline.manage"] },
       { id: "f4", label: "Cash Flow", href: "/cash-flow", perm: ["reports.financial.view"] },
       { id: "f5", label: "Receivables & Payables Aging", href: "/receivables-payables-aging", perm: ["reports.financial.view"] },
     ],
@@ -108,23 +111,16 @@ export const NAV: NavItem[] = [
       { id: "ir3", label: "Low Stock Items", href: "/inventory-reports/low-stock", perm: ["reports.inventory.view"] },
     ],
   },
-  { id: "re", label: "Reports", icon: "chart-column", href: "/reports" },
+  { id: "re", label: "Reports", icon: "chart-column", href: "/reports", perm: HUB_PERMISSIONS }, // Report Hub: a USER sees it only with a report permission
+  // Not built yet: always disabled and never a link, shown to whoever sees Reports. `href` is only used for that visibility rule.
+  { id: "fc", label: "Forecasting & Insights", icon: "clock", href: "/reports", perm: HUB_PERMISSIONS, disabled: "Coming soon" },
   { id: "cu", label: "Currencies", icon: "circle-dollar-sign", href: "/currencies", perm: ["finance.view"] },
   { id: "la", label: "Languages", icon: "languages", href: "/settings/languages", roles: STAFF_ADMIN, perm: ["translations.manage"] },
   { id: "au", label: "Audit Log", icon: "history", href: "/audit-log", roles: STAFF_ADMIN, perm: ["audit.view"] },
-  {
-    id: "te",
-    label: "Templates",
-    icon: "file",
-    children: [
-      { id: "t1", label: "Email Templates", href: "/email-templates" },
-      { id: "t2", label: "SMS Templates", href: "/sms-templates" },
-    ],
-  },
   { id: "se", label: "Settings", icon: "settings", href: "/settings", roles: STAFF_ADMIN },
 ];
 
-export type NavUser = { role?: string | null; permissions?: readonly string[] | null };
+export type NavUser = { role?: string | null; permissions?: readonly string[] | null; coversAllWarehouses?: boolean | null };
 
 /**
  * The sidebar items a user may see. OWNER / ADMIN: by `roles` (unchanged). USER: only entries whose `perm` they hold (a group shows
@@ -146,7 +142,8 @@ export function visibleNav(user: NavUser | string | undefined): NavItem[] {
   });
 }
 
-const LEAVES: NavLeaf[] = NAV.flatMap((it) => (it.children ? it.children : [it]));
+// Disabled entries are never the current page and never give a topbar title.
+const LEAVES: NavLeaf[] = NAV.flatMap((it) => (it.children ? it.children : [it])).filter((l) => !l.disabled);
 
 const matches = (pathname: string, href: string) =>
   pathname === href || pathname.startsWith(href + "/");

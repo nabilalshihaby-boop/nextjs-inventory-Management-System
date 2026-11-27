@@ -147,6 +147,11 @@ export default function RoleForm({ initial }: { initial?: RoleFormInitial }) {
               );
             })}
           </div>
+          {sel.has("cost.baseline.manage") && (
+            <p className="t-caption" style={{ marginTop: 12 }} data-testid="perm-baseline-note">
+              {F.baselineNote}
+            </p>
+          )}
           {err.permissions && (
             <div className="sp-error" style={{ marginTop: 12 }} role="alert">
               {err.permissions}

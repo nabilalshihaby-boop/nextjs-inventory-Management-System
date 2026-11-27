@@ -25,7 +25,7 @@ const cents = (qty: string, cost: string) => {
 };
 const fromCents = (v: bigint) => `${v / BigInt(100)}.${String(v % BigInt(100)).padStart(2, "0")}`;
 
-export default function CostSetupForm({ currencies, currencyId, iconRight, rows, existing }: { currencies: Cur[]; currencyId: string; iconRight: boolean; rows: Row[]; existing: Existing[] }) {
+export default function CostSetupForm({ canOpenPl, currencies, currencyId, iconRight, rows, existing }: { canOpenPl: boolean; currencies: Cur[]; currencyId: string; iconRight: boolean; rows: Row[]; existing: Existing[] }) {
   const T = useT();
   const S = T.costSetup;
   const router = useRouter();
@@ -69,10 +69,12 @@ export default function CostSetupForm({ currencies, currencyId, iconRight, rows,
         <h1 className="t-page-title" style={{ margin: 0 }}>
           {S.title}
         </h1>
-        <Link href="/profit-loss" className="sp-btn sp-btn--secondary">
-          <Icon name="arrow-left" size={18} />
-          {S.backToPl}
-        </Link>
+        {canOpenPl && (
+          <Link href="/profit-loss" className="sp-btn sp-btn--secondary">
+            <Icon name="arrow-left" size={18} />
+            {S.backToPl}
+          </Link>
+        )}
       </div>
       <p className="t-caption" style={{ margin: "0 0 16px" }}>
         {S.intro}
@@ -184,7 +186,7 @@ export default function CostSetupForm({ currencies, currencyId, iconRight, rows,
                   <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} data-testid="cs-ack" />
                   {S.confirm}
                 </label>
-                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
                   <span>
                     {S.totalAll}: <b data-testid="cs-total"><bdi dir="ltr">{money(fromCents(total))}</bdi></b>
                   </span>

@@ -12,7 +12,7 @@ import { useT } from "@/components/i18n/I18nProvider";
 // `brand` and `logo` come from System Settings (company name/logo), with Bluepiller as fallback.
 // `role` (from the server session) decides which role-restricted items appear: Users/Settings for
 // the OWNER, Finance for OWNER/ADMIN. UX only — routes are protected server-side.
-export default function Sidebar({ brand = siteConfig.name, logo = null, user }: { brand?: string; logo?: string | null; user?: { role?: string; permissions?: readonly string[] } }) {
+export default function Sidebar({ brand = siteConfig.name, logo = null, user }: { brand?: string; logo?: string | null; user?: { role?: string; permissions?: readonly string[]; coversAllWarehouses?: boolean } }) {
   const items = visibleNav(user);
   const [logoFailed, setLogoFailed] = useState(false);
   const [logoSrc, setLogoSrc] = useState(logo);
@@ -83,6 +83,19 @@ function NavItems({ pathname, items }: { pathname: string | null; items: NavItem
   return (
     <>
       {items.map((it) => {
+        if (!it.children && it.disabled) {
+          // Not built yet: focusable so its "Coming soon" label can be read, but not a link (no navigation, no prefetch).
+          // The wording is the Report Hub's, so both places always read (and translate) the same.
+          const title = t.reportHub.forecasting;
+          const hint = `${title} — ${t.common.comingSoon}`;
+          return (
+            <span key={it.id} className="sp-nav-item" role="link" aria-disabled="true" tabIndex={0} title={hint} aria-label={hint} data-testid="nav-forecasting">
+              <Icon name={it.icon} size={20} />
+              <span className="sp-nav-label">{title}</span>
+            </span>
+          );
+        }
+
         if (!it.children) {
           const active = it.id === activeId;
           return (

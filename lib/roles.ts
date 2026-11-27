@@ -1,5 +1,5 @@
 import type { Role } from "@/app/generated/prisma/client";
-import { hasPermission, isOwner, isOwnerOrAdmin, type PermissionKey, type Who } from "@/lib/access";
+import { canManageCostBaseline, hasPermission, isOwner, isOwnerOrAdmin, type PermissionKey, type Who } from "@/lib/access";
 
 // Human-readable labels for the Role enum (shared by the topbar and the profile page).
 export const ROLE_LABELS: Record<Role, string> = {
@@ -18,7 +18,7 @@ export function roleLabel(role: string) {
 //   OWNER  → always allowed.
 //   ADMIN  → allowed exactly where it was allowed before this module existed (all of the operational helpers below).
 //   USER   → allowed only with the matching permission of its assigned, ACTIVE access role.
-// Owner-only capabilities (users, roles, system settings, opening cost baseline) are not permissions and can't be granted.
+// Administration (users, roles, system settings) is not a permission and can't be granted.
 const needs = (key: PermissionKey) => (who: Who) => hasPermission(who, key);
 const adminOnly = (who: Who) => isOwnerOrAdmin(who);
 const ownerOnly = (who: Who) => isOwner(who);
@@ -39,8 +39,8 @@ export const canViewInventoryReports = needs("reports.inventory.view");
 export const canViewProfitLoss = (who: Who) => hasPermission(who, "reports.financial.view") && hasPermission(who, "cost.view");
 export const canViewCashFlow = needs("reports.financial.view");
 export const canViewAging = needs("reports.financial.view");
-/** Opening Inventory Cost Setup (Profit & Loss cutover): the business administrator (OWNER / ADMIN). */
-export const canSetCostBaseline = adminOnly;
+/** Opening Inventory Cost Setup (Profit & Loss cutover): OWNER / ADMIN, or a USER meeting the full rule in canManageCostBaseline. */
+export const canSetCostBaseline = canManageCostBaseline;
 export const canManageProducts = needs("products.manage");
 /** Inventory transfers: create, edit/delete pending ones, send or complete them. */
 export const canManageTransfers = needs("transfers.manage");

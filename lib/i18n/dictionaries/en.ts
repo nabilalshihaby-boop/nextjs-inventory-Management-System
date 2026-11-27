@@ -32,6 +32,7 @@ import { enAccess } from "@/lib/i18n/dictionaries/en-access";
 import { enAuditLog } from "@/lib/i18n/dictionaries/en-auditlog";
 import { enUnits } from "@/lib/i18n/dictionaries/en-units";
 import { enBarcode } from "@/lib/i18n/dictionaries/en-barcode";
+import { enReportHub } from "@/lib/i18n/dictionaries/en-reporthub";
 export const en = {
   common: {
     save: "Save",
@@ -117,9 +118,6 @@ export const en = {
     cu: "Currencies",
     la: "Languages",
     au: "Audit Log",
-    te: "Templates",
-    t1: "Email Templates",
-    t2: "SMS Templates",
     se: "Settings",
     /** Page titles of routes that have no sidebar entry. */
     profile: "Profile",
@@ -674,6 +672,7 @@ export const en = {
   stockGuard: enStockGuard,
   units: enUnits,
   barcode: enBarcode,
+  reportHub: enReportHub,
   langAdmin: {
     title: "Languages",
     sections: { nav: "Dashboard & Navigation", auth: "Authentication & Account", settings: "Settings & Preferences", pos: "POS & Register", shared: "Shared UI & Reports", sales: "Sales", purchases: "Purchases", finance: "Finance", products: "Products & Inventory", people: "Customers & Suppliers", users: "Users & Roles", reports: "Reports" },

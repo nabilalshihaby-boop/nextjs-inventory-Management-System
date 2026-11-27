@@ -20,6 +20,8 @@ declare module "next-auth" {
       permissions: string[];
       /** USER: assigned warehouses; OWNER / ADMIN: null (unrestricted). */
       warehouseIds: string[] | null;
+      /** No warehouse is outside the assignment (OWNER / ADMIN: always). */
+      coversAllWarehouses: boolean;
       accessRole: { id: string; name: string } | null;
     } & DefaultSession["user"];
   }
@@ -144,9 +146,10 @@ export const {
       if (token.role) session.user.role = token.role;
       // Operational permissions and warehouse scope are read from MySQL on every session read (never from the cookie, never from the
       // client), so assigning / deactivating a role or changing a scope applies on the very next request.
-      const access = token.id ? await loadAccess(token.id) : { permissions: [], warehouseIds: [] as string[] | null, accessRole: null };
+      const access = token.id ? await loadAccess(token.id) : { permissions: [], warehouseIds: [] as string[] | null, accessRole: null, coversAllWarehouses: false };
       session.user.permissions = access.permissions;
       session.user.warehouseIds = access.warehouseIds;
+      session.user.coversAllWarehouses = access.coversAllWarehouses;
       session.user.accessRole = access.accessRole;
       session.user.name = token.name ?? null;
       session.user.email = token.email ?? "";

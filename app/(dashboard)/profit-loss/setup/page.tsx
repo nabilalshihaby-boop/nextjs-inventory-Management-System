@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 import { getUncostedStock, hasLaterCostedActivity } from "@/lib/opening-cost";
 import { getActiveCurrencies } from "@/lib/profit-loss";
-import { canSetCostBaseline } from "@/lib/roles";
+import { canSetCostBaseline, canViewProfitLoss } from "@/lib/roles";
 import { getLocaleInfo } from "@/lib/i18n/server";
 import { getReportCompany } from "@/lib/report-company";
 import CostSetupForm from "@/components/reports/CostSetupForm";
@@ -17,14 +17,14 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export const instant = false;
 
-// Opening Inventory Cost Setup (OWNER or ADMIN only). The role is re-read BEFORE any stock, cost or baseline is loaded: ADMIN is sent
-// back to Profit & Loss, USER to the dashboard, signed-out visitors to sign-in. The page only reads; the one write is the
-// server action in ./actions.ts.
+// Opening Inventory Cost Setup (OWNER / ADMIN, or a USER meeting the full rule in canManageCostBaseline). Access is re-read BEFORE any
+// stock, cost or baseline is loaded: anyone else is sent to the dashboard, signed-out visitors to sign-in. The page only reads; the one
+// write is the server action in ./actions.ts.
 export default async function Page({ searchParams }: PageProps<"/profit-loss/setup">) {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canSetCostBaseline(session.user)) redirect(session.user.role === "ADMIN" ? "/profit-loss" : "/dashboard");
+  if (!canSetCostBaseline(session.user)) redirect("/dashboard");
 
   const { locale } = await getLocaleInfo();
   const sp = await searchParams;
@@ -54,6 +54,7 @@ export default async function Page({ searchParams }: PageProps<"/profit-loss/set
 
   return (
     <CostSetupForm
+      canOpenPl={canViewProfitLoss(session.user)}
       currencies={active.currencies.map((c) => ({ id: c.id, label: `${c.code} (${c.symbol}) — ${c.name}`, code: c.code, symbol: c.symbol }))}
       currencyId={chosen?.id ?? ""}
       iconRight={active.iconRight}

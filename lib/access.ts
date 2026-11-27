@@ -45,6 +45,8 @@ const DEFINITIONS = [
   ["finance", "expenses.manage", false],
   ["finance", "expenses.categories.manage", false],
   ["finance", "reports.financial.view", false],
+  // Company-wide (one baseline for all stock): marked scoped so the user can be assigned warehouses, and EVERY one is required.
+  ["finance", "cost.baseline.manage", true],
   ["reports", "reports.inventory.view", true],
   ["reports", "reports.operational.view", true],
   ["output", "export.use", true],
@@ -93,7 +95,7 @@ export const needsWarehouseScope = (keys: readonly string[]) => keys.some((k) =>
 // ---------------------------------------------------------------------------------------------
 
 /** What helpers accept: a bare platform role (legacy call sites) or the session user, which also carries the resolved permissions. */
-export type Who = string | null | undefined | { role?: string | null; permissions?: readonly string[] | null };
+export type Who = string | null | undefined | { role?: string | null; permissions?: readonly string[] | null; coversAllWarehouses?: boolean | null };
 
 export const roleOf = (who: Who): string | undefined => (typeof who === "string" ? who : (who?.role ?? undefined));
 export const isOwner = (who: Who) => roleOf(who) === "OWNER";
@@ -110,6 +112,16 @@ export function hasPermission(who: Who, key: PermissionKey): boolean {
   return !!who.permissions?.includes(key);
 }
 export const hasAnyPermission = (who: Who, keys: readonly PermissionKey[]) => keys.some((k) => hasPermission(who, k));
+
+/**
+ * Opening Inventory Cost Setup (the one rule for its page, actions, route gate, button and sidebar entry). OWNER / ADMIN always.
+ * A USER needs ALL of: cost.view, cost.baseline.manage, and every warehouse assigned (the baseline is company-wide).
+ * `coversAllWarehouses` is resolved from the database on every request (lib/access-server.ts); absent means no.
+ */
+export function canManageCostBaseline(who: Who): boolean {
+  if (isOwnerOrAdmin(who)) return true;
+  return typeof who !== "string" && !!who?.coversAllWarehouses && hasPermission(who, "cost.view") && hasPermission(who, "cost.baseline.manage");
+}
 
 /** The warehouses a user is limited to: null = unrestricted (OWNER / ADMIN), otherwise the assigned ids (possibly none). */
 export type WarehouseScope = readonly string[] | null;
@@ -144,7 +156,7 @@ const rule = (prefixes: string[], any: PermissionKey[], all?: PermissionKey[]): 
 /** Reachable by every signed-in user (their own profile, preferences, password, the safe dashboard shell and uploaded images). */
 const ALWAYS = ["/dashboard", "/profile", "/change-password", "/preferences", "/uploads"];
 /** Business-administration areas: OWNER and ADMIN only, never a USER regardless of any role. */
-const ADMIN_AREAS = ["/users", "/roles", "/settings", "/profit-loss/setup"];
+const ADMIN_AREAS = ["/users", "/roles", "/settings"];
 /** OWNER-only (platform) areas: the reserved prefixes of the future Control Panel (deployment / database
  *  connection, licensing, factory reset, backup destinations, releases, secrets). The reserved prefixes have no pages yet; keeping them
  *  closed here means a future page can never become reachable by an ADMIN by accident. */
@@ -196,6 +208,10 @@ export function canOpenRoute(who: Who, pathname: string): boolean {
   if (r === "ADMIN") return true;
   if (r !== "USER") return false;
   if (ALWAYS.some((a) => under(a)(p))) return true;
+  // The Report Hub page itself (exact path, NOT the reports below it): it lists only what the user may open and reads no data.
+  if (p === "/reports") return true;
+  // Decided here, before the RULES: the wider /profit-loss rule must not open it, and reports.financial.view is not what grants it.
+  if (under("/profit-loss/setup")(p)) return canManageCostBaseline(who);
   // Translation Management is its own permission (translations.manage): ADMIN has it, a USER only through an assigned role.
   if (under("/settings/languages")(p)) return hasPermission(who, "translations.manage");
   if (ADMIN_AREAS.some((o) => under(o)(p))) return false;

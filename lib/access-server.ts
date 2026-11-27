@@ -10,6 +10,8 @@ export type ResolvedAccess = {
   /** USER: the assigned warehouses (possibly none). OWNER / ADMIN: null = unrestricted. */
   warehouseIds: string[] | null;
   accessRole: { id: string; name: string } | null;
+  /** True when no warehouse is outside the assignment (always true for OWNER / ADMIN). Company-wide actions need it. */
+  coversAllWarehouses: boolean;
 };
 
 export async function loadAccess(userId: string): Promise<ResolvedAccess> {
@@ -21,13 +23,15 @@ export async function loadAccess(userId: string): Promise<ResolvedAccess> {
       warehouseScopes: { select: { warehouseId: true } },
     },
   });
-  if (!u) return { permissions: [], warehouseIds: [], accessRole: null };
-  if (u.role !== "USER") return { permissions: [], warehouseIds: null, accessRole: null };
+  if (!u) return { permissions: [], warehouseIds: [], accessRole: null, coversAllWarehouses: false };
+  if (u.role !== "USER") return { permissions: [], warehouseIds: null, accessRole: null, coversAllWarehouses: true };
   // An INACTIVE role grants nothing: the user is blocked from operational routes on their next request.
   const active = u.accessRole?.active ? u.accessRole : null;
+  const warehouseIds = u.warehouseScopes.map((w) => w.warehouseId);
   return {
     permissions: active ? effectivePermissions(onlyKnownKeys(active.permissions.map((p) => p.permissionKey))) : [],
-    warehouseIds: u.warehouseScopes.map((w) => w.warehouseId),
+    warehouseIds,
+    coversAllWarehouses: (await db.warehouse.count({ where: { id: { notIn: warehouseIds } } })) === 0,
     accessRole: u.accessRole ? { id: u.accessRole.id, name: u.accessRole.name } : null,
   };
 }

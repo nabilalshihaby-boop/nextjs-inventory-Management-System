@@ -33,6 +33,7 @@ import { arAccess } from "@/lib/i18n/dictionaries/ar-access";
 import { arAuditLog } from "@/lib/i18n/dictionaries/ar-auditlog";
 import { arUnits } from "@/lib/i18n/dictionaries/ar-units";
 import { arBarcode } from "@/lib/i18n/dictionaries/ar-barcode";
+import { arReportHub } from "@/lib/i18n/dictionaries/ar-reporthub";
 export const ar: Dictionary = {
   common: {
     save: "حفظ",
@@ -118,9 +119,6 @@ export const ar: Dictionary = {
     cu: "العملات",
     la: "اللغات",
     au: "سجل التدقيق",
-    te: "القوالب",
-    t1: "قوالب البريد الإلكتروني",
-    t2: "قوالب الرسائل القصيرة",
     se: "الإعدادات",
     profile: "الملف الشخصي",
     changePassword: "تغيير كلمة المرور",
@@ -674,6 +672,7 @@ export const ar: Dictionary = {
   stockGuard: arStockGuard,
   units: arUnits,
   barcode: arBarcode,
+  reportHub: arReportHub,
   langAdmin: {
     title: "اللغات",
     sections: { nav: "لوحة التحكم والتنقل", auth: "تسجيل الدخول والحساب", settings: "الإعدادات والتفضيلات", pos: "نقطة البيع والصندوق", shared: "الواجهة المشتركة والتقارير", sales: "المبيعات", purchases: "المشتريات", finance: "المالية", products: "المنتجات والمخزون", people: "العملاء والموردون", users: "المستخدمون والأدوار", reports: "التقارير" },
