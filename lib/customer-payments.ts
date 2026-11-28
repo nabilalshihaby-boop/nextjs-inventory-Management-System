@@ -70,7 +70,7 @@ export type PayableSale = {
   returned: string;
   due: string;
 };
-export type ReceivingAccount = { id: string; name: string; balance: string; currencyId: string; currencyCode: string };
+export type ReceivingAccount = { id: string; name: string; /** null when the viewer lacks finance.view */ balance: string | null; currencyId: string; currencyCode: string };
 export type PaymentCurrency = { id: string; code: string; symbol: string; right: boolean };
 export type CustomerPaymentRow = {
   id: string;

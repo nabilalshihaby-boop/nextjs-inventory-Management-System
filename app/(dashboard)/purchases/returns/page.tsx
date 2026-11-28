@@ -5,7 +5,7 @@ import { connection } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
-import { canManagePurchaseReturns } from "@/lib/roles";
+import { canManagePurchaseReturns, canViewPurchaseReturns } from "@/lib/roles";
 import { getDefaultCurrency, getSystemSettings } from "@/lib/settings";
 import type { PurchaseReturnRow } from "@/lib/purchase-returns";
 import { getDict, getLocale } from "@/lib/i18n/server";
@@ -23,7 +23,7 @@ export default async function PurchaseReturnsPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManagePurchaseReturns(session.user)) redirect("/dashboard");
+  if (!canViewPurchaseReturns(session.user)) redirect("/dashboard");
 
   const locale = await getLocale();
   const [returns, settings, currency] = await Promise.all([
@@ -47,5 +47,5 @@ export default async function PurchaseReturnsPage() {
     inDefaultCurrency: !!currency && r.currencyId === currency.id,
     createdOn: formatDateTime(r.createdAt, settings?.dateFormat, locale),
   }));
-  return <PurchaseReturnsTable rows={rows} />;
+  return <PurchaseReturnsTable canManage={canManagePurchaseReturns(session.user)} rows={rows} />;
 }

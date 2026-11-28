@@ -75,6 +75,7 @@ export const arFinance: Dictionary["finance"] = {
     busy: "الحساب مشغول. حاول مرة أخرى.",
     accountGone: "الحساب لم يعد موجودًا. حدّث الصفحة وحاول مرة أخرى.",
     insufficient: "الرصيد غير كافٍ (المتاح {balance})",
+    insufficientFunds: "لا يتوفر في الحساب المحدد رصيد كافٍ لإتمام هذه العملية.",
     insufficientNamed: "الرصيد غير كافٍ في {account} (المتاح {balance})",
     chronology: "هذا التاريخ سيجعل رصيد الحساب سالبًا: سينخفض {account} إلى {balance} بتاريخ {date}.",
     openRegister: "هذا الحساب لديه جلسة صندوق مفتوحة ({reference}). أغلق الصندوق أولًا.",

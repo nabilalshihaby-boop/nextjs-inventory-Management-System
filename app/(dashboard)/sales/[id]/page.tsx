@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { getCountryOptions } from "@/lib/countries";
 import { formatDateOnly, formatDateTime } from "@/lib/format";
 import { formatMoney, formatQuantity } from "@/lib/money";
-import { canManageSales } from "@/lib/roles";
+import { canManageCustomerPayments, canManageQuotations, canManageSaleReturns, canManageSales, canViewSaleReturns, canViewSales } from "@/lib/roles";
 import { getSystemSettings } from "@/lib/settings";
 import { paymentStatus } from "@/lib/purchases";
 import { saleDue } from "@/lib/sale-returns";
@@ -29,7 +29,7 @@ export default async function SaleDetailsPage({ params }: PageProps<"/sales/[id]
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageSales(session.user)) redirect("/dashboard");
+  if (!canViewSales(session.user)) redirect("/dashboard");
 
   const { id } = await params;
   const { locale, dict: T } = await getLocaleInfo();
@@ -57,6 +57,13 @@ export default async function SaleDetailsPage({ params }: PageProps<"/sales/[id]
 
   return (
     <SaleDetails
+      access={{
+        manage: canManageSales(session.user),
+        createReturn: canManageSaleReturns(session.user),
+        payments: canManageCustomerPayments(session.user),
+        viewReturns: canViewSaleReturns(session.user),
+        quotations: canManageQuotations(session.user),
+      }}
       sale={{
         id: s.id,
         reference: s.reference,

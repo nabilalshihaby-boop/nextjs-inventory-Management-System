@@ -19,7 +19,7 @@ import type { PurchaseReturnRow } from "@/lib/purchase-returns";
 // Deferred (disabled, "coming soon"): Filter, Download PDF, Edit, Delete.
 type Currency = { code: string; symbol: string; right: boolean };
 
-export default function PurchaseReturnsTable({ rows }: { rows: PurchaseReturnRow[] }) {
+export default function PurchaseReturnsTable({ rows, canManage }: { rows: PurchaseReturnRow[]; canManage: boolean }) {
   const T = useT();
   const R = T.purchaseReturns;
   const L = R.list;
@@ -48,10 +48,12 @@ export default function PurchaseReturnsTable({ rows }: { rows: PurchaseReturnRow
         <div style={{ width: 240 }}>
           <input type="date" className="sp-input " aria-label={L.dateAria} title={L.dateTitle} value={date} onChange={(e) => { setDate(e.target.value); setPage(1); }} />
         </div>
-        <Link href="/purchases/returns/create" className="sp-btn sp-btn--primary">
+        {canManage && (
+          <Link href="/purchases/returns/create" className="sp-btn sp-btn--primary">
           <Icon name="plus" size={18} />
           {L.create}
         </Link>
+        )}
       </div>
 
       <div className="sp-table-card">
@@ -105,9 +107,7 @@ export default function PurchaseReturnsTable({ rows }: { rows: PurchaseReturnRow
                       items={[
                         { label: L.view, icon: "eye", href: `/purchases/returns/${encodeURIComponent(r.id)}` },
                         { label: L.pdf, icon: "file-down", disabled: SOON.pdf },
-                        { label: L.edit, icon: "pencil", disabled: SOON.edit },
-                        "-",
-                        { label: L.delete, icon: "trash-2", danger: true, disabled: SOON.del },
+                        ...(canManage ? [{ label: L.edit, icon: "pencil" as const, disabled: SOON.edit }, "-" as const, { label: L.delete, icon: "trash-2" as const, danger: true, disabled: SOON.del }] : []),
                       ]}
                     />
                   </td>
@@ -118,7 +118,7 @@ export default function PurchaseReturnsTable({ rows }: { rows: PurchaseReturnRow
                   <td colSpan={10} style={{ textAlign: "center", color: "var(--text-2)" }} data-testid="empty">
                     {rows.length === 0 ? (
                       <span>
-                        <b style={{ color: "var(--text-1)" }}>{L.emptyTitle}</b> — {L.emptyHint}
+                        <b style={{ color: "var(--text-1)" }}>{L.emptyTitle}</b>{canManage && <> — {L.emptyHint}</>}
                       </span>
                     ) : (
                       L.noMatch

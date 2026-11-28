@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { auth } from "@/auth";
-import { canManageProducts } from "@/lib/roles";
+import { canPrintBarcodes } from "@/lib/roles";
 import { getDict } from "@/lib/i18n/server";
 import { getSelectionProducts } from "@/lib/barcode-labels";
 import { parseLabelRequest } from "@/lib/barcode-labels-core";
@@ -14,13 +14,13 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export const instant = false;
 
-// Print Barcode — selection (OWNER/ADMIN only). The role is checked BEFORE any product or barcode is read; anyone else is
+// Print Barcode — selection (barcode.print plus product viewing). The permission is checked BEFORE any product or barcode is read; anyone else is
 // redirected. This page never prints: "View Labels" opens the separate preview route. Read-only.
 export default async function PrintBarcodePage({ searchParams }: PageProps<"/print-barcode">) {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageProducts(session.user)) redirect("/dashboard");
+  if (!canPrintBarcodes(session.user)) redirect("/dashboard");
 
   const products = await getSelectionProducts();
   // Coming back from the preview restores the previous choice (ids that no longer exist are simply dropped).

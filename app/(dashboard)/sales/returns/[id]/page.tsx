@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { getCountryOptions } from "@/lib/countries";
 import { formatDateOnly, formatDateTime } from "@/lib/format";
 import { formatMoney, formatQuantity } from "@/lib/money";
-import { canManageSaleReturns } from "@/lib/roles";
+import { canViewSaleReturns, canViewSales } from "@/lib/roles";
 import { getSystemSettings } from "@/lib/settings";
 import Icon, { type IconName } from "@/components/layout/Icon";
 import { getDict, getLocaleInfo } from "@/lib/i18n/server";
@@ -34,7 +34,8 @@ export default async function SaleReturnDetailsPage({ params }: PageProps<"/sale
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageSaleReturns(session.user)) redirect("/dashboard");
+  if (!canViewSaleReturns(session.user)) redirect("/dashboard");
+  const viewSale = canViewSales(session.user);
 
   const { id } = await params;
   const { locale, dict: T } = await getLocaleInfo();
@@ -69,10 +70,12 @@ export default async function SaleReturnDetailsPage({ params }: PageProps<"/sale
             <Icon name="arrow-left" size={18} />
             {D.back}
           </Link>
-          <Link href={`/sales/${encodeURIComponent(r.sale.id)}`} className="sp-btn sp-btn--secondary">
+          {viewSale && (
+            <Link href={`/sales/${encodeURIComponent(r.sale.id)}`} className="sp-btn sp-btn--secondary">
             <Icon name="eye" size={18} />
             {fmt(D.viewSale, { ref: r.sale.reference })}
           </Link>
+          )}
         </div>
       </div>
 
@@ -107,9 +110,13 @@ export default async function SaleReturnDetailsPage({ params }: PageProps<"/sale
               </span>
               <span>
                 {D.sale} :{" "}
-                <Link href={`/sales/${encodeURIComponent(r.sale.id)}`} style={{ fontWeight: 600 }}>
-                  {r.sale.reference}
-                </Link>
+                {viewSale ? (
+                  <Link href={`/sales/${encodeURIComponent(r.sale.id)}`} style={{ fontWeight: 600 }}>
+                    {r.sale.reference}
+                  </Link>
+                ) : (
+                  <b style={{ fontWeight: 600 }} dir="ltr">{r.sale.reference}</b>
+                )}
               </span>
               <span>
                 {D.status} :{" "}

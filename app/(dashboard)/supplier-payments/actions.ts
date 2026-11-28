@@ -7,7 +7,7 @@ import { Prisma } from "@/app/generated/prisma/client";
 import { db } from "@/lib/db";
 import { LedgerError, appendLedgerRow, assertChronology, assertSufficient, dateOnly, ledgerTxOptions, lockAccounts } from "@/lib/cash-bank-ledger";
 import { formatMoney } from "@/lib/money";
-import { canManageSupplierPayments } from "@/lib/roles";
+import { canManageSupplierPayments, canViewFinance } from "@/lib/roles";
 import { getSystemSettings } from "@/lib/settings";
 import { SUPPLIER_PAYMENT_PURPOSE, formatSupplierPaymentReference, makeSupplierPaymentSchema, type SupplierPaymentField } from "@/lib/supplier-payments";
 import { getDict } from "@/lib/i18n/server";
@@ -44,12 +44,12 @@ const fail = (key: string, vars: Vars = {}, field?: SupplierPaymentField): never
   throw new PaymentError(key, vars, field);
 };
 
-async function authorize(): Promise<{ userId: string; t: Dictionary } | { error: SupplierPaymentResult }> {
+async function authorize(): Promise<{ userId: string; reveal: boolean; t: Dictionary } | { error: SupplierPaymentResult }> {
   const s = await auth();
   const t = await getDict();
   if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
   if (!canManageSupplierPayments(s.user)) return { error: { ok: false, message: t.supplierPay.err.noPermission } };
-  return { userId: s.user.id, t };
+  return { userId: s.user.id, reveal: canViewFinance(s.user), t };
 }
 
 export async function recordSupplierPayment(input: unknown): Promise<SupplierPaymentResult> {
@@ -99,8 +99,8 @@ export async function recordSupplierPayment(input: unknown): Promise<SupplierPay
         const acc = (await lockAccounts(tx, [d.cashBankAccountId])).get(d.cashBankAccountId) ?? fail("supplierPay.err.accountInvalid", {}, "cashBankAccountId");
         if (acc.status !== "ACTIVE") fail("supplierPay.err.accountInactive", { name: acc.name }, "cashBankAccountId");
         if (acc.currencyId !== lines[0].p.currencyId) fail("supplierPay.err.accountCurrency", { name: acc.name }, "cashBankAccountId");
-        await assertSufficient(tx, acc, total, "amount");
-        await assertChronology(tx, acc, dateOnly(d.paymentDate), total.negated(), "paymentDate");
+        await assertSufficient(tx, acc, total, { reveal: a.reveal });
+        await assertChronology(tx, acc, dateOnly(d.paymentDate), total.negated(), { reveal: a.reveal, field: "paymentDate" });
 
         // Immutable payment + allocations; purchase Paid updated in the same transaction.
         const p0 = await tx.supplierPayment.create({

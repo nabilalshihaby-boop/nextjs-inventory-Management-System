@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { getCountryOptions } from "@/lib/countries";
 import { formatDateOnly, formatDateTime } from "@/lib/format";
 import { formatMoney, formatQuantity } from "@/lib/money";
-import { canManagePurchaseReturns } from "@/lib/roles";
+import { canViewPurchaseReturns, canViewPurchases } from "@/lib/roles";
 import { getSystemSettings } from "@/lib/settings";
 import Icon, { type IconName } from "@/components/layout/Icon";
 import { getDict, getLocaleInfo } from "@/lib/i18n/server";
@@ -34,7 +34,8 @@ export default async function PurchaseReturnDetailsPage({ params }: PageProps<"/
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManagePurchaseReturns(session.user)) redirect("/dashboard");
+  if (!canViewPurchaseReturns(session.user)) redirect("/dashboard");
+  const viewPurchase = canViewPurchases(session.user);
 
   const { id } = await params;
   const { locale, dict: T } = await getLocaleInfo();
@@ -69,10 +70,12 @@ export default async function PurchaseReturnDetailsPage({ params }: PageProps<"/
             <Icon name="arrow-left" size={18} />
             {D.back}
           </Link>
-          <Link href={`/purchases/${encodeURIComponent(r.purchase.id)}`} className="sp-btn sp-btn--secondary">
+          {viewPurchase && (
+            <Link href={`/purchases/${encodeURIComponent(r.purchase.id)}`} className="sp-btn sp-btn--secondary">
             <Icon name="eye" size={18} />
             {fmt(D.viewPurchase, { ref: r.purchase.reference })}
           </Link>
+          )}
         </div>
       </div>
 
@@ -107,9 +110,13 @@ export default async function PurchaseReturnDetailsPage({ params }: PageProps<"/
               </span>
               <span>
                 {D.purchase} :{" "}
-                <Link href={`/purchases/${encodeURIComponent(r.purchase.id)}`} style={{ fontWeight: 600 }}>
-                  {r.purchase.reference}
-                </Link>
+                {viewPurchase ? (
+                  <Link href={`/purchases/${encodeURIComponent(r.purchase.id)}`} style={{ fontWeight: 600 }}>
+                    {r.purchase.reference}
+                  </Link>
+                ) : (
+                  <b style={{ fontWeight: 600 }} dir="ltr">{r.purchase.reference}</b>
+                )}
               </span>
               <span>
                 {D.status} :{" "}

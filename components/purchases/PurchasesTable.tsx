@@ -19,7 +19,7 @@ import { fmt } from "@/lib/i18n/config";
 
 type Currency = { code: string; symbol: string; right: boolean };
 
-export default function PurchasesTable({ rows, currency }: { rows: PurchaseRow[]; currency: Currency | null }) {
+export default function PurchasesTable({ rows, currency, canManage }: { rows: PurchaseRow[]; currency: Currency | null; canManage: boolean }) {
   const T = useT();
   const P = T.purchases;
   const L = P.list;
@@ -54,10 +54,12 @@ export default function PurchasesTable({ rows, currency }: { rows: PurchaseRow[]
         <div style={{ width: 240 }}>
           <input type="date" className="sp-input " aria-label={L.dateAria} title={L.dateTitle} value={date} onChange={(e) => { setDate(e.target.value); setPage(1); }} />
         </div>
-        <Link href="/purchases/create" className="sp-btn sp-btn--primary">
+        {canManage && (
+          <Link href="/purchases/create" className="sp-btn sp-btn--primary">
           <Icon name="plus" size={18} />
           {L.create}
         </Link>
+        )}
       </div>
 
       <div className="sp-table-card">
@@ -109,9 +111,7 @@ export default function PurchasesTable({ rows, currency }: { rows: PurchaseRow[]
                       items={[
                         { label: L.view, icon: "eye", href: `/purchases/${encodeURIComponent(r.id)}` },
                         { label: L.pdf, icon: "file-down", disabled: SOON.pdf },
-                        { label: L.edit, icon: "pencil", disabled: SOON.edit },
-                        "-",
-                        { label: L.delete, icon: "trash-2", danger: true, disabled: SOON.del },
+                        ...(canManage ? [{ label: L.edit, icon: "pencil" as const, disabled: SOON.edit }, "-" as const, { label: L.delete, icon: "trash-2" as const, danger: true, disabled: SOON.del }] : []),
                       ]}
                     />
                   </td>
@@ -122,7 +122,7 @@ export default function PurchasesTable({ rows, currency }: { rows: PurchaseRow[]
                   <td colSpan={10} style={{ textAlign: "center", color: "var(--text-2)" }} data-testid="empty">
                     {rows.length === 0 ? (
                       <span>
-                        <b style={{ color: "var(--text-1)" }}>{L.emptyTitle}</b> — {L.emptyHint}
+                        <b style={{ color: "var(--text-1)" }}>{L.emptyTitle}</b>{canManage && <> — {L.emptyHint}</>}
                       </span>
                     ) : (
                       L.noMatch

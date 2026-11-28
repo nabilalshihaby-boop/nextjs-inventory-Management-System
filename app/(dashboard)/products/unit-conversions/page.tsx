@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { canManageProducts } from "@/lib/roles";
+import { canManageProducts, canViewProducts } from "@/lib/roles";
 import { getDict } from "@/lib/i18n/server";
 import { trimFactor } from "@/lib/unit-math";
 import ProductUnitConversionsTable, { type ProductUnitConversionRow } from "@/components/products/ProductUnitConversionsTable";
@@ -22,6 +22,8 @@ export default async function ProductUnitConversionsPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
+  // Lists product names, SKUs and their units: product viewing is required, and checked before anything is read.
+  if (!canViewProducts(session.user)) redirect("/dashboard");
 
   const products = await db.product.findMany({
     orderBy: { name: "asc" },

@@ -19,23 +19,23 @@ export type ExpenseFormData = {
  * computed balance; only active accounts in the default currency are selectable. Display only —
  * the server re-checks everything (under the account lock) when saving.
  */
-export async function getExpenseFormData(T: Dictionary): Promise<ExpenseFormData> {
+export async function getExpenseFormData(T: Dictionary, showBalances: boolean): Promise<ExpenseFormData> {
   const [warehouses, categories, accounts, currency] = await Promise.all([
     db.warehouse.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.expenseCategory.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.cashBankAccount.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, status: true, currencyId: true, currency: { select: { symbol: true, code: true } } } }),
     getDefaultCurrency(),
   ]);
-  const balances = await computeBalances(db, accounts.map((a) => a.id));
+  const balances = showBalances ? await computeBalances(db, accounts.map((a) => a.id)) : null; // without finance.view nothing is computed or sent
   return {
     warehouses: warehouses.map((w) => ({ value: w.id, label: w.name })),
     categories: categories.map((c) => ({ value: c.id, label: c.name })),
     accounts: accounts.map((a) => {
-      const balance = balances.get(a.id)?.toFixed(2) ?? "0.00";
+      const balance = balances ? (balances.get(a.id)?.toFixed(2) ?? "0.00") : null;
       return {
         value: a.id,
                 name: a.name,
-        label: fmt(T.expenses.form.accountOption, { name: a.name, balance: formatMoney(balance, { code: a.currency.code, symbol: a.currency.symbol, right: !!currency?.right }) }),
+        label: balance === null ? a.name : fmt(T.expenses.form.accountOption, { name: a.name, balance: formatMoney(balance, { code: a.currency.code, symbol: a.currency.symbol, right: !!currency?.right }) }),
         balance,
         active: a.status === "ACTIVE",
         inDefaultCurrency: !!currency && a.currencyId === currency.id,

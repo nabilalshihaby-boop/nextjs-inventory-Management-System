@@ -57,10 +57,19 @@ export async function balanceOf(tx: Tx, accountId: string): Promise<Prisma.Decim
   return (await computeBalances(tx, [accountId])).get(accountId) ?? new Prisma.Decimal(0);
 }
 
+/**
+ * `reveal`: may this caller be told balances (finance.view)? Every caller has to answer. Without it, a shortfall and a backdating refusal
+ * give the SAME message with no number, account name or date, so neither the wording nor the difference between them tells anything more
+ * than "this request can't be covered". The checks themselves are identical for everyone.
+ */
+type Disclosure = { reveal: boolean; field?: string };
+const refuseWithoutFigures = (field: string) => ledgerFail("finance.err.insufficientFunds", {}, field);
+
 /** Money out must be covered by the current balance. */
-export async function assertSufficient(tx: Tx, acc: LockedAccount, amount: Prisma.Decimal | string, field = "amount", label?: string) {
+export async function assertSufficient(tx: Tx, acc: LockedAccount, amount: Prisma.Decimal | string, { reveal, field = "amount", label }: Disclosure & { label?: string }) {
   const balance = await balanceOf(tx, acc.id);
   if (balance.lt(amount)) {
+    if (!reveal) refuseWithoutFigures(field);
     const bal = await moneyText(balance, acc.currency.symbol);
     ledgerReject(label ? `Insufficient balance in ${acc.name} (${bal} available)` : `Insufficient balance (${bal} available)`, field, label ? { key: "finance.err.insufficientNamed", vars: { account: acc.name, balance: bal } } : { key: "finance.err.insufficient", vars: { balance: bal } });
   }
@@ -70,9 +79,10 @@ export async function assertSufficient(tx: Tx, acc: LockedAccount, amount: Prism
  * Backdating guard: reject if, with a row of `delta` inserted at `date`, the account's
  * chronological running balance would go negative at any point.
  */
-export async function assertChronology(tx: Tx, acc: LockedAccount, date: Date, delta: Prisma.Decimal, field = "transactionDate") {
+export async function assertChronology(tx: Tx, acc: LockedAccount, date: Date, delta: Prisma.Decimal, { reveal, field = "transactionDate" }: Disclosure) {
   const hit = await findNegativeRunningBalance(tx, acc.id, { date, delta });
   if (!hit) return;
+  if (!reveal) refuseWithoutFigures(field);
   const on = formatDateOnly(hit.date, (await getSystemSettings())?.dateFormat);
   const bal = await moneyText(hit.balance, acc.currency.symbol);
   ledgerReject(`This date would make the account balance negative: ${acc.name} would drop to ${bal} on ${on}.`, field, { key: "finance.err.chronology", vars: { account: acc.name, balance: bal, date: on } });

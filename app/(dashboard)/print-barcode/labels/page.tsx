@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { auth } from "@/auth";
-import { canManageProducts } from "@/lib/roles";
+import { canPrintBarcodes } from "@/lib/roles";
 import { getDict } from "@/lib/i18n/server";
 import { fmt } from "@/lib/i18n/config";
 import { loadLabels } from "@/lib/barcode-labels";
@@ -16,14 +16,14 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export const instant = false;
 
-// Barcode label preview, and the ONLY place that prints (Print Barcode button, same pattern as the reports). OWNER/ADMIN
-// only: anyone else is redirected before any product, unit, barcode or price is read. Read-only: nothing is written. The
+// Barcode label preview, and the ONLY place that prints (Print Barcode button, same pattern as the reports). Needs
+// barcode.print plus product viewing: anyone else is redirected before any product, unit, barcode or price is read. Read-only: nothing is written. The
 // request (unit-row ids and counts) is re-validated and every label is re-read from the database; limits are enforced here.
 export default async function BarcodeLabelsPage({ searchParams }: PageProps<"/print-barcode/labels">) {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManageProducts(session.user)) redirect("/dashboard");
+  if (!canPrintBarcodes(session.user)) redirect("/dashboard");
 
   const T = await getDict();
   const L = T.barcode.labels;

@@ -10,7 +10,7 @@ import { LedgerError, appendLedgerRow, assertChronology, assertSufficient, dateO
 import { getDict } from "@/lib/i18n/server";
 import { tr } from "@/lib/i18n/messages";
 import type { Dictionary } from "@/lib/i18n";
-import { canManageExpenses } from "@/lib/roles";
+import { canManageExpenses, canViewFinance } from "@/lib/roles";
 import { getDefaultCurrency } from "@/lib/settings";
 import { EXPENSE_PURPOSE, EXPENSE_REVERSAL_PURPOSE, makeExpenseSchema, formatExpenseReference, type ExpenseField, type ExpenseInput } from "@/lib/expenses";
 
@@ -32,12 +32,12 @@ import { EXPENSE_PURPOSE, EXPENSE_REVERSAL_PURPOSE, makeExpenseSchema, formatExp
 export type ExpenseResult = { ok: true; message: string; reference?: string } | { ok: false; message: string; fieldErrors?: Partial<Record<ExpenseField, string>> };
 
 const idSchema = z.string().trim().min(1).max(64);
-async function authorize(): Promise<{ userId: string; t: Dictionary } | { error: ExpenseResult }> {
+async function authorize(): Promise<{ userId: string; reveal: boolean; t: Dictionary } | { error: ExpenseResult }> {
   const s = await auth();
   const t = await getDict();
   if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
   if (!canManageExpenses(s.user)) return { error: { ok: false, message: t.expenses.err.noPermission } };
-  return { userId: s.user.id, t };
+  return { userId: s.user.id, reveal: canViewFinance(s.user), t };
 }
 
 function parse(input: unknown, t: Dictionary): { ok: true; data: ExpenseInput } | { ok: false; error: ExpenseResult } {
@@ -91,9 +91,9 @@ function payingAccount(acc: LockedAccount | undefined, currencyId: string): Lock
 const method = (acc: LockedAccount) => (acc.type === "CASH" ? "Cash" : "Bank Transfer");
 
 /** Validate and append the expense WITHDRAWAL (current balance + chronological balance). */
-async function withdraw(tx: Tx, acc: LockedAccount, d: ExpenseInput, expenseId: string, reference: string, userId: string) {
-  await assertSufficient(tx, acc, d.amount, "amount");
-  await assertChronology(tx, acc, dateOnly(d.expenseDate), new Prisma.Decimal(d.amount).negated(), "expenseDate");
+async function withdraw(tx: Tx, acc: LockedAccount, d: ExpenseInput, expenseId: string, reference: string, userId: string, reveal: boolean) {
+  await assertSufficient(tx, acc, d.amount, { reveal });
+  await assertChronology(tx, acc, dateOnly(d.expenseDate), new Prisma.Decimal(d.amount).negated(), { reveal, field: "expenseDate" });
   return appendLedgerRow(tx, "WITHDRAWAL", {
     transactionDate: dateOnly(d.expenseDate),
     accountId: acc.id,
@@ -118,9 +118,9 @@ async function lockExpense(tx: Tx, id: string) {
 }
 
 /** Reversal DEPOSIT of the original amount into the original account, dated on the original date. */
-async function reverse(tx: Tx, orig: Awaited<ReturnType<typeof lockExpense>>, acc: LockedAccount, why: "updated" | "deleted", userId: string) {
+async function reverse(tx: Tx, orig: Awaited<ReturnType<typeof lockExpense>>, acc: LockedAccount, why: "updated" | "deleted", userId: string, reveal: boolean) {
   if (acc.status !== "ACTIVE") ledgerFail("expenses.err.reverseInactive", { name: acc.name }, "cashBankAccountId");
-  await assertChronology(tx, acc, orig.expenseDate, new Prisma.Decimal(orig.amount)); // money in: always passes
+  await assertChronology(tx, acc, orig.expenseDate, new Prisma.Decimal(orig.amount), { reveal }); // money in: always passes
   return appendLedgerRow(tx, "DEPOSIT", {
     transactionDate: orig.expenseDate,
     accountId: acc.id,
@@ -164,7 +164,7 @@ export async function createExpense(input: unknown): Promise<ExpenseResult> {
       select: { id: true, number: true },
     });
     const reference = formatExpenseReference(e0.number);
-    const w = await withdraw(tx, acc, d, e0.id, reference, a.userId);
+    const w = await withdraw(tx, acc, d, e0.id, reference, a.userId, a.reveal);
     await tx.expense.update({ where: { id: e0.id }, data: { reference, activeTransactionId: w.id } });
     return tr(t, "expenses.ok.created", { ref: reference, tx: w.reference, account: acc.name });
   });
@@ -202,9 +202,9 @@ export async function updateExpense(id: unknown, input: unknown): Promise<Expens
     const origAcc = locked.get(orig.cashBankAccountId) ?? ledgerFail("expenses.err.originalGone");
     const newAcc = payingAccount(locked.get(d.cashBankAccountId), currency.id);
     // 1. reverse the original effect (append-only)
-    const rev = await reverse(tx, orig, origAcc, "updated", a.userId);
+    const rev = await reverse(tx, orig, origAcc, "updated", a.userId, a.reveal);
     // 2 + 3. validate the new values against the corrected ledger and append the new withdrawal
-    const w = await withdraw(tx, newAcc, d, orig.id, orig.reference, a.userId);
+    const w = await withdraw(tx, newAcc, d, orig.id, orig.reference, a.userId, a.reveal);
     // 4. update the expense and its active ledger link
     await tx.expense.update({ where: { id: orig.id }, data: { ...descriptive, expenseDate: dateOnly(d.expenseDate), amount: d.amount, cashBankAccountId: newAcc.id, activeTransactionId: w.id } });
     return tr(t, "expenses.ok.updatedReversal", { ref: orig.reference, rev: rev.reference, tx: w.reference });
@@ -223,7 +223,7 @@ export async function deleteExpense(id: unknown): Promise<ExpenseResult> {
   const r = await run(t, async (tx) => {
     const orig = await lockExpense(tx, eid.data);
     const acc = (await lockAccounts(tx, [orig.cashBankAccountId])).get(orig.cashBankAccountId) ?? ledgerFail("expenses.err.originalGone");
-    const rev = await reverse(tx, orig, acc, "deleted", a.userId);
+    const rev = await reverse(tx, orig, acc, "deleted", a.userId, a.reveal);
     await tx.expense.update({ where: { id: orig.id }, data: { deletedAt: new Date(), activeTransactionId: null } });
     return tr(t, "expenses.ok.deleted", { ref: orig.reference, rev: rev.reference });
   });

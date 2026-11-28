@@ -137,6 +137,11 @@ html[dir="rtl"] .sp-side-toggle svg{transform:scaleX(-1)}
 .bp-sidebar .sp-nav-item[aria-current="page"]{background:rgb(0 0 0/.22);color:#fff}
 .bp-sidebar .sp-nav-item[aria-current="page"]::before{background:#fff}
 .bp-sidebar .sp-nav-item:focus-visible{outline:2px solid #fff;outline-offset:-2px;box-shadow:none}
+/* Long group and page names wrap instead of being clipped (narrow drawer, Arabic). */
+.bp-sidebar .sp-nav-item{height:auto;min-height:44px;padding-top:6px;padding-bottom:6px;line-height:1.35;white-space:normal}
+.bp-sidebar .sp-nav-sub .sp-nav-item{height:auto;min-height:38px}
+.bp-sidebar .sp-nav-label{min-width:0}
+.bp-sidebar .sp-nav-item .sp-icon{flex:none}
 .bp-main{display:flex;flex-direction:column;min-width:0;min-height:100vh}
 .bp-topbar{position:sticky;top:0;z-index:20;height:var(--topbar-h);display:flex;align-items:center;gap:16px;padding:0 32px;background:var(--bg-surface);border-bottom:1px solid var(--border)}
 .bp-topbar .sp-crumb{font:700 18px/1 var(--font-display);letter-spacing:-.01em;margin-right:8px}

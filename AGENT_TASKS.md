@@ -64,31 +64,53 @@ still outstanding (see the next milestone).
   collections are not included in expected cash.
 - [x] Immutable actor-name snapshots for register sessions and cash movements.
 
+## Completed — Report Hub and Opening Inventory Cost access
+
+- [x] Navigation cleanup: unbuilt Email Templates and SMS Templates removed;
+  disabled `Forecasting & Insights` / `التوقعات والتحليلات` entry added.
+- [x] Report Hub at `/reports`: Financial, Inventory, and Customer & Supplier
+  reports, filtered by each page's own permission. POS receipt and Register
+  Shift Report need an id, so they stay reachable from their own flows only.
+- [x] Opening Inventory Cost access: OWNER and ADMIN, or a USER with
+  `cost.view`, `cost.baseline.manage`, and every warehouse assigned. Enforced
+  on the page and both server actions.
+
+## Completed — Navigation Information Architecture
+
+Verified on throwaway databases. A signed-in check on the real system is still
+outstanding.
+
+- [x] Sidebar grouped into Sales & Customers, Catalog & Inventory, Purchases &
+  Suppliers, Finance & Accounting, Reports & Insights, and System
+  Administration, below Dashboard. Each page appears once.
+- [x] Individual reports are reached through the Report Hub, not the sidebar.
+- [x] A USER sees an entry only when the page itself would open for them.
+- [x] Clicking a group icon in the collapsed sidebar expands it.
+
 ## Next immediate milestone
 
 1. Signed-in real-user acceptance check on the real system:
-   - POS customer search and addition;
-   - Register Shift Report, including printing.
-2. Then Navigation Cleanup and the Report Hub at `/reports` (items 2 and 3
-   below).
+   - the regrouped sidebar in English and Arabic, desktop and mobile;
+   - POS customer search and addition, and the Register Shift Report with
+     printing, if not already confirmed.
+2. Then dynamic product-import templates (item 4 below).
+
+## Future module — Inventory Cost Correction (not implemented)
+
+A standalone financial module, separate from Opening Inventory Cost Setup. Do
+not fold it into other work.
+
+- Forward-only accounting: never rewrite posted history or past report periods.
+- A reason is mandatory for every correction.
+- Its own permission, enforced on the server.
+- An immutable audit trail of who changed what, when, and why.
 
 ## Approved delivery order
 
 1. Signed-in acceptance check of POS customer search/addition and the Shift
    Report with printing. Push only after the owner approves.
-2. Navigation cleanup:
-   - remove/hide unbuilt Email Templates and SMS Templates;
-   - keep working reports visible;
-   - add a clearly disabled `Forecasting & Insights` / `التوقعات والتحليلات`
-     entry below Reports until it is implemented.
-3. Build the Report Hub at `/reports` before Forecasting & Insights:
-   - `/reports` must never return 404;
-   - group only implemented reports into Financial, Inventory, Sales & POS,
-     and Customer & Supplier sections;
-   - hide unavailable reports rather than linking to placeholders;
-   - respect report permissions and warehouse scope both in the UI and routes;
-   - include a disabled, clearly labelled Forecasting & Insights area until
-     those reports are delivered.
+2. Navigation cleanup — completed (see above).
+3. Report Hub at `/reports` — completed (see above).
 4. Dynamic product-import templates:
    - standalone-product template;
    - template generated from the selected Product Variant Group with its
@@ -177,9 +199,22 @@ decorative charts.
   verify signed-in flows without manufacturing sessions.
 - Never use `db push`, `reset`, destructive SQL, seed resets, or password
   resets on real data unless the owner explicitly authorizes the exact action.
-- Run focused tests during implementation. Before commit, run a proportionate
-  full regression, type-check, lint, production build, migration/schema checks,
-  and real-browser checks for affected signed-in workflows.
+- During active development, run focused tests for the changed module and its
+  affected dependencies, plus type-check, lint, build, and migration/schema
+  checks where relevant. Do not routinely run the whole regression suite after
+  each intermediate feature or commit.
+- The owner-approved plan is to complete all remaining roadmap modules using
+  focused verification, then run one full regression on the complete release
+  candidate before final production release. Do not run the whole suite between
+  ordinary intermediate phases unless the owner explicitly requests it or a
+  release decision is being made.
+- High-risk changes (authorization, finance, inventory, POS, or schema) still
+  require targeted integration, tampering, and data-integrity tests before any
+  commit or real-database deployment; a focused pass is not permission to
+  deploy an unverified migration.
+- Before any commit, verify the staged scope and run the proportionate focused
+  checks. Before a release milestone, additionally run the full regression and
+  affected signed-in browser checks.
 - Investigate test failures; do not merely weaken assertions to pass.
 
 ## Final architecture and maintenance pack

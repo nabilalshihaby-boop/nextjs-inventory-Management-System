@@ -10,8 +10,7 @@ import { siteConfig } from "@/config/site";
 import { useT } from "@/components/i18n/I18nProvider";
 
 // `brand` and `logo` come from System Settings (company name/logo), with Bluepiller as fallback.
-// `role` (from the server session) decides which role-restricted items appear: Users/Settings for
-// the OWNER, Finance for OWNER/ADMIN. UX only — routes are protected server-side.
+// `user` (from the server session) decides which entries appear. UX only — routes are protected server-side.
 export default function Sidebar({ brand = siteConfig.name, logo = null, user }: { brand?: string; logo?: string | null; user?: { role?: string; permissions?: readonly string[]; coversAllWarehouses?: boolean } }) {
   const items = visibleNav(user);
   const [logoFailed, setLogoFailed] = useState(false);
@@ -64,10 +63,10 @@ function NavItemsForRoute({ items }: { items: NavItem[] }) {
 }
 
 function NavItems({ pathname, items }: { pathname: string | null; items: NavItem[] }) {
-  const { collapsed, closeDrawer } = useShell();
+  const { collapsed, toggleSidebar, closeDrawer } = useShell();
   const t = useT();
   const names = t.nav as Record<string, string>;
-  const name = (x: { id: string; label: string }) => names[x.id] ?? x.label; // translated by id; the English label is only a fallback
+  const name = (x: { id: string; label: string; navKey?: string }) => names[x.navKey ?? x.id] ?? x.label; // translated by key; the English label is only a fallback
   const activeId = findActive(pathname)?.id;
   const owner = findOwnerGroup(activeId);
 
@@ -83,19 +82,6 @@ function NavItems({ pathname, items }: { pathname: string | null; items: NavItem
   return (
     <>
       {items.map((it) => {
-        if (!it.children && it.disabled) {
-          // Not built yet: focusable so its "Coming soon" label can be read, but not a link (no navigation, no prefetch).
-          // The wording is the Report Hub's, so both places always read (and translate) the same.
-          const title = t.reportHub.forecasting;
-          const hint = `${title} — ${t.common.comingSoon}`;
-          return (
-            <span key={it.id} className="sp-nav-item" role="link" aria-disabled="true" tabIndex={0} title={hint} aria-label={hint} data-testid="nav-forecasting">
-              <Icon name={it.icon} size={20} />
-              <span className="sp-nav-label">{title}</span>
-            </span>
-          );
-        }
-
         if (!it.children) {
           const active = it.id === activeId;
           return (
@@ -123,7 +109,13 @@ function NavItems({ pathname, items }: { pathname: string | null; items: NavItem
               title={collapsed ? name(it) : undefined}
               aria-expanded={expanded}
               style={active ? { background: "rgb(0 0 0 / .22)" } : undefined}
-              onClick={() => setOpen(expanded ? null : it.id)}
+              onClick={() => {
+                // The collapsed rail has no room for a submenu: widen the sidebar and open the group.
+                if (collapsed) {
+                  toggleSidebar();
+                  setOpen(it.id);
+                } else setOpen(expanded ? null : it.id);
+              }}
             >
               <Icon name={it.icon} size={20} />
               <span className="sp-nav-label">{name(it)}</span>
@@ -133,18 +125,19 @@ function NavItems({ pathname, items }: { pathname: string | null; items: NavItem
               <div className="sp-nav-sub">
                 {it.children.map((c) =>
                   c.disabled ? (
-                    // Not built yet: shown in place, but not a link (no navigation, no prefetch, no 404).
+                    // Not built yet (only Forecasting): focusable so "Coming soon" can be read, but not a link (no navigation, no prefetch).
+                    // The wording is the Report Hub's, so both places always read (and translate) the same.
                     <span
                       key={c.id}
                       className="sp-nav-item"
                       role="link"
                       aria-disabled="true"
                       tabIndex={0}
-                      title={c.disabled}
-                      aria-label={c.disabled}
-                      style={{ opacity: 0.5, cursor: "not-allowed" }}
+                      title={`${t.reportHub.forecasting} — ${t.common.comingSoon}`}
+                      aria-label={`${t.reportHub.forecasting} — ${t.common.comingSoon}`}
+                      data-testid="nav-forecasting"
                     >
-                      {name(c)}
+                      {t.reportHub.forecasting}
                     </span>
                   ) : (
                     <Link

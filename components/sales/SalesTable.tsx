@@ -26,7 +26,7 @@ import { SALE_STATUSES, SALE_STATUS_TONE, type SaleCurrency, type SaleRow, type 
 // a Completed sale with something returnable and unpaid. Edit/Delete apply to Pending sales only.
 // Deferred (disabled with a reason): Download PDF.
 
-export default function SalesTable({ rows, customers, currency }: { rows: SaleRow[]; customers: { id: string; name: string }[]; currency: SaleCurrency | null }) {
+export default function SalesTable({ rows, customers, currency, canManage, canReturn, canPayments }: { rows: SaleRow[]; customers: { id: string; name: string }[]; currency: SaleCurrency | null; canManage: boolean; canReturn: boolean; canPayments: boolean }) {
   const router = useRouter();
   const T = useT();
   const S = T.sales;
@@ -96,10 +96,12 @@ export default function SalesTable({ rows, customers, currency }: { rows: SaleRo
         <div style={{ width: 240 }}>
           <input type="date" className="sp-input " aria-label={L.dateAria} title={L.dateTitle} value={date} onChange={(e) => reset(() => setDate(e.target.value))} />
         </div>
-        <Link href="/sales/create" className="sp-btn sp-btn--primary">
+        {canManage && (
+          <Link href="/sales/create" className="sp-btn sp-btn--primary">
           <Icon name="plus" size={18} />
           {L.create}
         </Link>
+        )}
       </div>
 
       {showFilters && (
@@ -201,11 +203,16 @@ export default function SalesTable({ rows, customers, currency }: { rows: SaleRo
                         items={[
                           { label: L.viewSale, icon: "eye", href: `/sales/${encodeURIComponent(r.id)}` },
                           { label: L.downloadPdf, icon: "file-down", disabled: S.pdfSoon },
-                          r.paid !== "0.00" ? { label: L.showPayments, icon: "dollar-sign", href: `/customer-payments?q=${encodeURIComponent(r.reference)}` } : { label: L.showPayments, icon: "dollar-sign", disabled: S.block.noPayments },
-                          r.returnBlocked ? { label: L.createReturn, icon: "undo-2", disabled: tr(T, r.returnBlocked) } : { label: L.createReturn, icon: "undo-2", href: `/sales/returns/create?sale=${encodeURIComponent(r.id)}` },
-                          editable ? { label: L.editSale, icon: "pencil", href: `/sales/${encodeURIComponent(r.id)}/edit` } : { label: L.editSale, icon: "pencil", disabled: S.block.noEdit },
-                          "-",
-                          editable ? { label: L.deleteSale, icon: "trash-2", danger: true, onClick: () => setDel(r) } : { label: L.deleteSale, icon: "trash-2", danger: true, disabled: S.block.noDelete },
+                          // each action appears only with the permission its page and Server Action require
+                          ...(canPayments ? [r.paid !== "0.00" ? { label: L.showPayments, icon: "dollar-sign" as const, href: `/customer-payments?q=${encodeURIComponent(r.reference)}` } : { label: L.showPayments, icon: "dollar-sign" as const, disabled: S.block.noPayments }] : []),
+                          ...(canReturn ? [r.returnBlocked ? { label: L.createReturn, icon: "undo-2" as const, disabled: tr(T, r.returnBlocked) } : { label: L.createReturn, icon: "undo-2" as const, href: `/sales/returns/create?sale=${encodeURIComponent(r.id)}` }] : []),
+                          ...(canManage
+                            ? [
+                                editable ? { label: L.editSale, icon: "pencil" as const, href: `/sales/${encodeURIComponent(r.id)}/edit` } : { label: L.editSale, icon: "pencil" as const, disabled: S.block.noEdit },
+                                "-" as const,
+                                editable ? { label: L.deleteSale, icon: "trash-2" as const, danger: true, onClick: () => setDel(r) } : { label: L.deleteSale, icon: "trash-2" as const, danger: true, disabled: S.block.noDelete },
+                              ]
+                            : []),
                         ]}
                       />
                     </td>
@@ -217,7 +224,7 @@ export default function SalesTable({ rows, customers, currency }: { rows: SaleRo
                   <td colSpan={10} style={{ textAlign: "center", color: "var(--text-2)" }} data-testid="empty">
                     {rows.length === 0 ? (
                       <span>
-                        <b style={{ color: "var(--text-1)" }}>{L.emptyTitle}</b> — {L.emptyHint}
+                        <b style={{ color: "var(--text-1)" }}>{L.emptyTitle}</b>{canManage && <> — {L.emptyHint}</>}
                       </span>
                     ) : (
                       <span>

@@ -241,7 +241,7 @@ export default function CustomerPaymentForm({
                   </option>
                   {usable.map((a) => (
                     <option key={a.id} value={a.id}>
-                      {a.name} · {money(a.balance, cur(a.currencyId))}
+                      {a.balance === null ? a.name : `${a.name} · ${money(a.balance, cur(a.currencyId))}`}
                     </option>
                   ))}
                 </select>,

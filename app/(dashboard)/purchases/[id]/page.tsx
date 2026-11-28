@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { getCountryOptions } from "@/lib/countries";
 import { formatDateOnly, formatDateTime } from "@/lib/format";
 import { formatMoney, formatQuantity } from "@/lib/money";
-import { canManagePurchases } from "@/lib/roles";
+import { canManagePurchaseReturns, canManagePurchases, canManageSupplierPayments, canViewPurchaseReturns, canViewPurchases } from "@/lib/roles";
 import { getSystemSettings } from "@/lib/settings";
 import { fromUnits, toUnits } from "@/lib/transfers";
 import { paymentStatus, purchaseDue } from "@/lib/purchases";
@@ -27,7 +27,7 @@ export default async function PurchaseDetailsPage({ params }: PageProps<"/purcha
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManagePurchases(session.user)) redirect("/dashboard");
+  if (!canViewPurchases(session.user)) redirect("/dashboard");
 
   const { id } = await params;
   const { locale, dict: T } = await getLocaleInfo();
@@ -67,6 +67,12 @@ export default async function PurchaseDetailsPage({ params }: PageProps<"/purcha
 
   return (
     <PurchaseDetails
+      access={{
+        manage: canManagePurchases(session.user),
+        createReturn: canManagePurchaseReturns(session.user),
+        payments: canManageSupplierPayments(session.user),
+        viewReturns: canViewPurchaseReturns(session.user),
+      }}
       purchase={{
         id: p.id,
         reference: p.reference,

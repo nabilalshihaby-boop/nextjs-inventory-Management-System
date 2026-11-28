@@ -5,7 +5,7 @@ import { connection } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
-import { canManagePurchases } from "@/lib/roles";
+import { canManagePurchases, canViewPurchases } from "@/lib/roles";
 import { getDefaultCurrency, getSystemSettings } from "@/lib/settings";
 import { paymentStatus, purchaseDue, type PurchaseRow } from "@/lib/purchases";
 import { returnedTotals } from "@/lib/purchase-return-data";
@@ -24,7 +24,7 @@ export default async function PurchasesPage() {
   await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/");
-  if (!canManagePurchases(session.user)) redirect("/dashboard");
+  if (!canViewPurchases(session.user)) redirect("/dashboard");
 
   const locale = await getLocale();
   const [purchases, settings, currency] = await Promise.all([
@@ -56,5 +56,5 @@ export default async function PurchasesPage() {
       inDefaultCurrency: !!currency && p.currencyId === currency.id,
     };
   });
-  return <PurchasesTable rows={rows} currency={currency ? { code: currency.code, symbol: currency.symbol, right: currency.right } : null} />;
+  return <PurchasesTable canManage={canManagePurchases(session.user)} rows={rows} currency={currency ? { code: currency.code, symbol: currency.symbol, right: currency.right } : null} />;
 }

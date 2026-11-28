@@ -67,7 +67,7 @@ export default function ExpenseForm({
   const money = (v: string) => formatMoney(v, currency);
   const selected = accounts.find((a) => a.value === f.cashBankAccountId);
   // When editing and keeping the same account, the original payment is reversed first.
-  const available = selected ? (editing && initial && selected.value === initial.cashBankAccountId && MONEY_RE.test(initial.amount) ? fromUnits(toUnits(selected.balance, 2) + toUnits(initial.amount, 2), 2) : selected.balance) : null;
+  const available = selected && selected.balance !== null ? (editing && initial && selected.value === initial.cashBankAccountId && MONEY_RE.test(initial.amount) ? fromUnits(toUnits(selected.balance, 2) + toUnits(initial.amount, 2), 2) : selected.balance) : null;
 
   function save() {
     if (blocked) return;

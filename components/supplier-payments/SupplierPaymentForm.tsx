@@ -119,7 +119,7 @@ export default function SupplierPaymentForm({
     if (Object.keys(le).length) n.allocations = Object.values(le)[0];
     if (pickedCurrencies.length > 1) n.allocations = F.sameCurrency;
     if (!accountId || !account) n.cashBankAccountId = F.selectAccount;
-    else if (total > toUnits(account.balance, 2)) n.cashBankAccountId = fmt(F.insufficientBalance, { balance: money(account.balance) });
+    else if (account.balance !== null && total > toUnits(account.balance, 2)) n.cashBankAccountId = fmt(F.insufficientBalance, { balance: money(account.balance) });
     if (picked.length && !Object.keys(le).length && total <= BigInt(0)) n.amount = F.amountPositive;
     setE(n);
     setLineErr(le);
@@ -242,7 +242,7 @@ export default function SupplierPaymentForm({
                   </option>
                   {usable.map((a) => (
                     <option key={a.id} value={a.id}>
-                      {a.name} · {money(a.balance, cur(a.currencyId))}
+                      {a.balance === null ? a.name : `${a.name} · ${money(a.balance, cur(a.currencyId))}`}
                     </option>
                   ))}
                 </select>,

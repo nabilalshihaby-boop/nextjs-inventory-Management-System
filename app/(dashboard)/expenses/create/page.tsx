@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { auth } from "@/auth";
-import { canManageExpenses, canManageSystemSettings } from "@/lib/roles";
+import { canManageExpenses, canManageSystemSettings, canViewFinance } from "@/lib/roles";
 import { getExpenseFormData } from "@/lib/expense-data";
 import { todayLocal } from "@/lib/cash-bank";
 import { getDict } from "@/lib/i18n/server";
@@ -21,5 +21,5 @@ export default async function CreateExpensePage() {
   if (!session?.user?.id) redirect("/");
   if (!canManageExpenses(session.user)) redirect("/dashboard");
 
-  return <ExpenseForm {...await getExpenseFormData(await getDict())} today={todayLocal()} canOpenSettings={canManageSystemSettings(session.user)} />;
+  return <ExpenseForm {...await getExpenseFormData(await getDict(), canViewFinance(session.user))} today={todayLocal()} canOpenSettings={canManageSystemSettings(session.user)} />;
 }

@@ -10,7 +10,7 @@ import { getDict } from "@/lib/i18n/server";
 import { tr } from "@/lib/i18n/messages";
 import type { Dictionary } from "@/lib/i18n";
 import { openRegisterBlock } from "@/lib/register-guard";
-import { canManageCashBankAccounts, canRecordCashBankTransactions } from "@/lib/roles";
+import { canManageCashBankAccounts, canRecordCashBankTransactions, canViewFinance } from "@/lib/roles";
 import { getDefaultCurrency } from "@/lib/settings";
 import {
     makeCashBankSchemas,
@@ -67,7 +67,7 @@ async function accountManager(): Promise<FinanceResult<AccountField> | null> {
     const u = await session();
   const t = await getDict();
   if (!u) return { ok: false, message: t.common.sessionExpired };
-  if (!canManageCashBankAccounts(u)) return { ok: false, message: t.finance.err.noPermissionAccounts };
+  if (!canViewFinance(u) || !canManageCashBankAccounts(u)) return { ok: false, message: t.finance.err.noPermissionAccounts };
   return null;
 }
 
@@ -168,7 +168,7 @@ async function recorder(): Promise<{ userId: string; t: Dictionary } | { error: 
   const u = await session();
   const t = await getDict();
   if (!u) return { error: { ok: false, message: t.common.sessionExpired } };
-  if (!canRecordCashBankTransactions(u)) return { error: { ok: false, message: t.finance.err.noPermissionTx } };
+  if (!canViewFinance(u) || !canRecordCashBankTransactions(u)) return { error: { ok: false, message: t.finance.err.noPermissionTx } };
   return { userId: u.id, t };
 }
 
@@ -198,7 +198,7 @@ export async function createDeposit(input: unknown): Promise<FinanceResult<TxFie
   return run(S.t, async (tx) => {
     const acc = (await lockAccounts(tx, [d.accountId])).get(d.accountId) ?? ledgerFail("finance.err.invalidAccount", {}, "accountId");
     if (acc.status !== "ACTIVE") ledgerFail("finance.err.inactiveReceive", { name: acc.name }, "accountId");
-    await assertChronology(tx, acc, dateOnly(d.transactionDate), new Prisma.Decimal(d.amount)); // money in: always passes
+    await assertChronology(tx, acc, dateOnly(d.transactionDate), new Prisma.Decimal(d.amount), { reveal: true }); // money in: always passes
     return (await appendLedgerRow(tx, "DEPOSIT", { transactionDate: dateOnly(d.transactionDate), accountId: acc.id, amount: d.amount, paymentMethod: d.paymentMethod, purpose: d.purpose, notes: d.notes || null, createdById: a.userId })).reference;
   }, (ref) => tr(S.t, "finance.ok.deposit", { ref }));
 }
@@ -213,8 +213,8 @@ export async function createWithdrawal(input: unknown): Promise<FinanceResult<Tx
   return run(S.t, async (tx) => {
     const acc = (await lockAccounts(tx, [d.accountId])).get(d.accountId) ?? ledgerFail("finance.err.invalidAccount", {}, "accountId");
     if (acc.status !== "ACTIVE") ledgerFail("finance.err.inactiveReceive", { name: acc.name }, "accountId");
-    await assertSufficient(tx, acc, d.amount); // under the row lock
-    await assertChronology(tx, acc, dateOnly(d.transactionDate), new Prisma.Decimal(d.amount).negated());
+    await assertSufficient(tx, acc, d.amount, { reveal: true }); // under the row lock (finance.view is required to get here)
+    await assertChronology(tx, acc, dateOnly(d.transactionDate), new Prisma.Decimal(d.amount).negated(), { reveal: true });
     return (await appendLedgerRow(tx, "WITHDRAWAL", { transactionDate: dateOnly(d.transactionDate), accountId: acc.id, amount: d.amount, paymentMethod: d.paymentMethod, purpose: d.purpose, notes: d.notes || null, createdById: a.userId })).reference;
   }, (ref) => tr(S.t, "finance.ok.withdrawal", { ref }));
 }
@@ -233,10 +233,10 @@ export async function createTransfer(input: unknown): Promise<FinanceResult<TxFi
     if (from.status !== "ACTIVE") ledgerFail("finance.err.inactiveUse", { name: from.name }, "fromAccountId");
     if (to.status !== "ACTIVE") ledgerFail("finance.err.inactiveReceive", { name: to.name }, "toAccountId");
     if (from.currencyId !== to.currencyId) ledgerFail("finance.err.sameCurrency", {}, "toAccountId");
-    await assertSufficient(tx, from, d.amount, "amount", from.name);
+    await assertSufficient(tx, from, d.amount, { reveal: true, label: from.name });
     // Both ledgers, chronologically: the source loses the amount at that date, the destination gains it.
-    await assertChronology(tx, from, dateOnly(d.transactionDate), new Prisma.Decimal(d.amount).negated());
-    await assertChronology(tx, to, dateOnly(d.transactionDate), new Prisma.Decimal(d.amount));
+    await assertChronology(tx, from, dateOnly(d.transactionDate), new Prisma.Decimal(d.amount).negated(), { reveal: true });
+    await assertChronology(tx, to, dateOnly(d.transactionDate), new Prisma.Decimal(d.amount), { reveal: true });
     // One row = debit + credit together: the transfer can only ever apply exactly once.
     return (await appendLedgerRow(tx, "TRANSFER", { transactionDate: dateOnly(d.transactionDate), accountId: from.id, destinationAccountId: to.id, amount: d.amount, notes: d.notes || null, createdById: a.userId })).reference;
   }, (ref) => tr(S.t, "finance.ok.transfer", { ref }));

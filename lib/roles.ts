@@ -67,8 +67,16 @@ export const canRecordCashBankTransactions = needs("finance.transactions.record"
 export const canViewCost = needs("cost.view");
 /** CSV / file exports (warehouse export). */
 export const canExport = needs("export.use");
-export const canPrintBarcodes = needs("barcode.print");
+/** Barcode labels: barcode.print on top of being able to view products. Read-only; it grants no product or catalog editing. */
+export const canPrintBarcodes = (who: Who) => hasPermission(who, "barcode.print") && canViewProducts(who);
 export const canViewProducts = (who: Who) => hasPermission(who, "products.view") || hasPermission(who, "products.manage");
+
+// READ access to sales and purchase documents (lists and details). It never implies a mutation: every create / edit / complete /
+// receive / return / payment control and Server Action keeps its own manage permission. Purchases are cost data, so cost.view too.
+export const canViewSales = (who: Who) => hasPermission(who, "sales.view") || hasPermission(who, "sales.manage");
+export const canViewSaleReturns = (who: Who) => hasPermission(who, "sales.view") || hasPermission(who, "sales.returns.manage");
+export const canViewPurchases = (who: Who) => hasPermission(who, "cost.view") && (hasPermission(who, "purchases.view") || hasPermission(who, "purchases.manage"));
+export const canViewPurchaseReturns = (who: Who) => hasPermission(who, "cost.view") && (hasPermission(who, "purchases.view") || hasPermission(who, "purchases.returns.manage"));
 
 /** Users: OWNER and ADMIN manage ADMIN / USER accounts (the OWNER account itself is never touched, see users/actions.ts). */
 export const canManageUsers = adminOnly;

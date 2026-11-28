@@ -51,7 +51,9 @@ const L = ({ i, d = "auto", children }: { i: IconName; d?: "ltr" | "auto"; child
   </span>
 );
 
-export default function PurchaseDetails({ purchase: p, supplier, company }: { purchase: Details; supplier: Party; company: Party }) {
+type Access = { manage: boolean; createReturn: boolean; payments: boolean; viewReturns: boolean };
+
+export default function PurchaseDetails({ purchase: p, supplier, company, access }: { purchase: Details; supplier: Party; company: Party; access: Access }) {
   const router = useRouter();
   const T = useT();
   const D = T.purchases.details;
@@ -84,19 +86,19 @@ export default function PurchaseDetails({ purchase: p, supplier, company }: { pu
             <Icon name="arrow-left" size={18} />
             {D.back}
           </Link>
-          {receivable && (
+          {receivable && access.manage && (
             <button type="button" className="sp-btn sp-btn--primary" onClick={() => setConfirm(true)}>
               <Icon name="package-plus" size={18} />
               {D.markReceived}
             </button>
           )}
-          {p.canReturn && (
+          {p.canReturn && access.createReturn && (
             <Link href={`/purchases/returns/create?purchase=${encodeURIComponent(p.id)}`} className="sp-btn sp-btn--secondary">
               <Icon name="arrow-left-right" size={18} />
               {D.returnItems}
             </Link>
           )}
-          {p.canPay && (
+          {p.canPay && access.payments && (
             <Link href={`/supplier-payments/record?purchase=${encodeURIComponent(p.id)}`} className="sp-btn sp-btn--secondary">
               <Icon name="wallet" size={18} />
               {D.recordPayment}
@@ -237,9 +239,13 @@ export default function PurchaseDetails({ purchase: p, supplier, company }: { pu
                   {p.returns.map((r) => (
                     <tr key={r.id}>
                       <td>
-                        <Link href={`/purchases/returns/${encodeURIComponent(r.id)}`} className="sp-code">
-                          {r.reference}
-                        </Link>
+                        {access.viewReturns ? (
+                          <Link href={`/purchases/returns/${encodeURIComponent(r.id)}`} className="sp-code">
+                            {r.reference}
+                          </Link>
+                        ) : (
+                          <span className="sp-code">{r.reference}</span>
+                        )}
                       </td>
                       <td>{r.date}</td>
                       <td className="num">{r.total}</td>

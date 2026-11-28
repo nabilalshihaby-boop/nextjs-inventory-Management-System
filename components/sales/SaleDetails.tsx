@@ -57,7 +57,9 @@ const L = ({ i, d = "auto", children }: { i: IconName; d?: "ltr" | "auto"; child
   </span>
 );
 
-export default function SaleDetails({ sale: s, customer, company }: { sale: Details; customer: Party; company: Party }) {
+type Access = { manage: boolean; createReturn: boolean; payments: boolean; viewReturns: boolean; quotations: boolean };
+
+export default function SaleDetails({ sale: s, customer, company, access }: { sale: Details; customer: Party; company: Party; access: Access }) {
   const router = useRouter();
   const T = useT();
   const S = T.sales;
@@ -115,19 +117,19 @@ export default function SaleDetails({ sale: s, customer, company }: { sale: Deta
             <Icon name="arrow-left" size={18} />
             {D.back}
           </Link>
-          {open && (
+          {open && access.manage && (
             <Link href={`/sales/${encodeURIComponent(s.id)}/edit`} className="sp-btn sp-btn--secondary">
               <Icon name="pencil" size={18} />
               {D.edit}
             </Link>
           )}
-          {open && (
+          {open && access.manage && (
             <button type="button" className="sp-btn sp-btn--primary" onClick={() => setConfirm(true)} disabled={pending}>
               <Icon name="circle-check" size={18} />
               {D.markCompleted}
             </button>
           )}
-          {s.paymentBlocked ? (
+          {!access.payments ? null : s.paymentBlocked ? (
             soon(D.recordPayment, "wallet", tr(T, s.paymentBlocked))
           ) : (
             <Link href={`/customer-payments/record?sale=${encodeURIComponent(s.id)}`} className="sp-btn sp-btn--primary">
@@ -135,7 +137,7 @@ export default function SaleDetails({ sale: s, customer, company }: { sale: Deta
               {D.recordPayment}
             </Link>
           )}
-          {s.payments.length ? (
+          {!access.payments ? null : s.payments.length ? (
             <Link href={`/customer-payments?q=${encodeURIComponent(s.reference)}`} className="sp-btn sp-btn--secondary">
               <Icon name="dollar-sign" size={18} />
               {D.showPayments}
@@ -143,7 +145,7 @@ export default function SaleDetails({ sale: s, customer, company }: { sale: Deta
           ) : (
             soon(D.showPayments, "dollar-sign", S.block.noPayments)
           )}
-          {s.returnBlocked ? (
+          {!access.createReturn ? null : s.returnBlocked ? (
             soon(D.createReturn, "undo-2", tr(T, s.returnBlocked))
           ) : (
             <Link href={`/sales/returns/create?sale=${encodeURIComponent(s.id)}`} className="sp-btn sp-btn--secondary">
@@ -152,7 +154,7 @@ export default function SaleDetails({ sale: s, customer, company }: { sale: Deta
             </Link>
           )}
           {soon(D.downloadPdf, "file-down", S.pdfSoon)}
-          {open && (
+          {open && access.manage && (
             <button type="button" className="sp-btn sp-btn--secondary" style={{ color: "var(--danger-500)" }} onClick={() => setDel(true)} disabled={pending}>
               <Icon name="trash-2" size={18} />
               {D.delete}
@@ -221,9 +223,13 @@ export default function SaleDetails({ sale: s, customer, company }: { sale: Deta
               {s.quotation && (
                 <span>
                   {D.quotation} :{" "}
-                  <Link href={`/quotations/${encodeURIComponent(s.quotation.id)}`} className="sp-code">
-                    {s.quotation.reference}
-                  </Link>
+                  {access.quotations ? (
+                    <Link href={`/quotations/${encodeURIComponent(s.quotation.id)}`} className="sp-code">
+                      {s.quotation.reference}
+                    </Link>
+                  ) : (
+                    <span className="sp-code">{s.quotation.reference}</span>
+                  )}
                 </span>
               )}
             </div>
@@ -301,9 +307,13 @@ export default function SaleDetails({ sale: s, customer, company }: { sale: Deta
                   {s.returns.map((r) => (
                     <tr key={r.id}>
                       <td>
-                        <Link href={`/sales/returns/${encodeURIComponent(r.id)}`} className="sp-code">
-                          {r.reference}
-                        </Link>
+                        {access.viewReturns ? (
+                          <Link href={`/sales/returns/${encodeURIComponent(r.id)}`} className="sp-code">
+                            {r.reference}
+                          </Link>
+                        ) : (
+                          <span className="sp-code">{r.reference}</span>
+                        )}
                       </td>
                       <td>{r.date}</td>
                       <td className="num">{r.total}</td>

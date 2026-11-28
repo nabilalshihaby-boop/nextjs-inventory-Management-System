@@ -180,8 +180,11 @@ const RULES: Rule[] = [
   rule(["/supplier-payments"], ["suppliers.payments.manage"]),
   rule(["/suppliers/statement", "/reports/supplier-statement"], ["suppliers.statement.view"]),
   rule(["/suppliers"], ["suppliers.view", "suppliers.manage"]),
-  rule(["/print-barcode"], ["barcode.print"]),
-  rule(["/products", "/base-units"], ["products.view", "products.manage", "catalog.manage"]),
+  rule(["/print-barcode"], ["products.view", "products.manage"], ["barcode.print"]),
+  // Catalog reference pages first. Everything else under /products shows product names and SKUs (the list, records and Product Unit
+  // Conversions) and needs a product permission: catalog.manage alone is not one.
+  rule(["/products/categories", "/products/brands", "/products/units", "/base-units"], ["products.view", "products.manage", "catalog.manage"]),
+  rule(["/products"], ["products.view", "products.manage"]),
   rule(["/warehouse"], ["warehouses.view", "warehouses.manage"]),
   rule(["/transfers"], ["transfers.view", "transfers.manage"]),
   rule(["/adjustments"], ["inventory.adjust"]),
@@ -189,7 +192,8 @@ const RULES: Rule[] = [
   // Profit & Loss exposes COGS, gross and net profit: it needs cost.view on top of the financial-reports permission.
   rule(["/profit-loss", "/reports/profit-loss"], ["reports.financial.view"], ["cost.view"]),
   rule(["/cash-flow", "/receivables-payables-aging", "/reports/cash-flow", "/reports/receivables-payables-aging"], ["reports.financial.view"]),
-  rule(["/finance"], ["finance.view", "finance.transactions.record", "finance.accounts.manage"]),
+  // Cash & Bank needs finance.view. Recording / account management alone opens nothing here (their refusals can quote balances).
+  rule(["/finance"], ["finance.view"]),
   rule(["/expenses/categories"], ["expenses.categories.manage"]),
   rule(["/expenses"], ["expenses.manage"]),
   rule(["/currencies"], ["finance.view"]),

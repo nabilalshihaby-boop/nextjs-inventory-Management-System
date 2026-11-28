@@ -19,7 +19,7 @@ import { fmt } from "@/lib/i18n/config";
 // credit"). Deferred (disabled, explained): Download PDF, Edit, Delete.
 type Currency = { code: string; symbol: string; right: boolean };
 
-export default function SaleReturnsTable({ rows, customers, currency }: { rows: SaleReturnRow[]; customers: { id: string; name: string }[]; currency: Currency | null }) {
+export default function SaleReturnsTable({ rows, customers, currency, canManage }: { rows: SaleReturnRow[]; customers: { id: string; name: string }[]; currency: Currency | null; canManage: boolean }) {
   const T = useT();
   const R = T.salesReturns;
   const L = R.list;
@@ -71,10 +71,12 @@ export default function SaleReturnsTable({ rows, customers, currency }: { rows: 
         <div style={{ width: 240 }}>
           <input type="date" className="sp-input " aria-label={L.dateAria} title={L.dateTitle} value={date} onChange={(e) => reset(() => setDate(e.target.value))} />
         </div>
-        <Link href="/sales/returns/create" className="sp-btn sp-btn--primary">
+        {canManage && (
+          <Link href="/sales/returns/create" className="sp-btn sp-btn--primary">
           <Icon name="plus" size={18} />
           {L.create}
         </Link>
+        )}
       </div>
 
       {showFilters && (
@@ -153,9 +155,7 @@ export default function SaleReturnsTable({ rows, customers, currency }: { rows: 
                       items={[
                         { label: L.view, icon: "eye", href: `/sales/returns/${encodeURIComponent(r.id)}` },
                         { label: L.pdf, icon: "file-down", disabled: T.sales.pdfSoon },
-                        { label: L.edit, icon: "pencil", disabled: R.immutable },
-                        "-",
-                        { label: L.delete, icon: "trash-2", danger: true, disabled: R.immutable },
+                        ...(canManage ? [{ label: L.edit, icon: "pencil" as const, disabled: R.immutable }, "-" as const, { label: L.delete, icon: "trash-2" as const, danger: true, disabled: R.immutable }] : []),
                       ]}
                     />
                   </td>
@@ -166,7 +166,7 @@ export default function SaleReturnsTable({ rows, customers, currency }: { rows: 
                   <td colSpan={9} style={{ textAlign: "center", color: "var(--text-2)" }} data-testid="empty">
                     {rows.length === 0 ? (
                       <span>
-                        <b style={{ color: "var(--text-1)" }}>{L.emptyTitle}</b> — {L.emptyHint}
+                        <b style={{ color: "var(--text-1)" }}>{L.emptyTitle}</b>{canManage && <> — {L.emptyHint}</>}
                       </span>
                     ) : (
                       <span>

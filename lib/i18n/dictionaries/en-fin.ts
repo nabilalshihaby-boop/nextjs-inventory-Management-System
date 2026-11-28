@@ -74,6 +74,7 @@ export const enFinance = {
     busy: "The account was busy. Please try again.",
     accountGone: "The account no longer exists. Refresh and try again.",
     insufficient: "Insufficient balance ({balance} available)",
+    insufficientFunds: "The selected account does not have enough funds for this transaction.",
     insufficientNamed: "Insufficient balance in {account} ({balance} available)",
     chronology: "This date would make the account balance negative: {account} would drop to {balance} on {date}.",
     openRegister: "This account has an open register session ({reference}). Close the register first.",

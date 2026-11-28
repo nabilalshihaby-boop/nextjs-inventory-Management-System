@@ -12,7 +12,7 @@ import { getRegisterOverview } from "@/lib/register-data";
 import { getDict } from "@/lib/i18n/server";
 import { tr } from "@/lib/i18n/messages";
 import type { Dictionary } from "@/lib/i18n";
-import { canManagePosRegister, canUsePos } from "@/lib/roles";
+import { canManagePosRegister, canUsePos, canViewFinance } from "@/lib/roles";
 import { actorName } from "@/lib/actor-name";
 import { getDefaultCurrency } from "@/lib/settings";
 
@@ -37,14 +37,14 @@ const isKnown = (e: unknown, ...codes: string[]) => e instanceof Prisma.PrismaCl
 const reject = (key: string, vars: Record<string, string | number> = {}, field?: string): never => ledgerFail(key, vars, field);
 const msgOf = (t: Dictionary, e: LedgerError) => (e.i18n ? tr(t, e.i18n.key, e.i18n.vars) : e.message);
 
-async function authorize(manage = false): Promise<{ userId: string; t: Dictionary } | { error: { ok: false; message: string } }> {
+async function authorize(manage = false): Promise<{ userId: string; reveal: boolean; t: Dictionary } | { error: { ok: false; message: string } }> {
   const s = await auth();
   const t = await getDict();
   if (!s?.user?.id) return { error: { ok: false, message: t.common.sessionExpired } };
   if (!canUsePos(s.user)) return { error: { ok: false, message: t.pos.noPermission } };
   // Opening / closing a register and Cash In / Cash Out are register management: they need their own permission.
   if (manage && !canManagePosRegister(s.user)) return { error: { ok: false, message: t.pos.noPermission } };
-  return { userId: s.user.id, t };
+  return { userId: s.user.id, reveal: canViewFinance(s.user), t };
 }
 
 function invalid(error: { issues: { path: PropertyKey[]; code: string; message: string }[] }, t: Dictionary) {
@@ -217,9 +217,9 @@ export async function recordRegisterMovement(input: unknown): Promise<RegisterRe
         const to = d.type === "CASH_IN" ? reg : counter;
         const today = dateOnly(todayLocal());
         // Existing transfer rules: the source cannot be overdrawn now or at any later point of its ledger.
-        await assertSufficient(tx, from, d.amount, "amount", from.name);
-        await assertChronology(tx, from, today, new Prisma.Decimal(d.amount).negated(), "amount");
-        await assertChronology(tx, to, today, new Prisma.Decimal(d.amount), "amount");
+        await assertSufficient(tx, from, d.amount, { reveal: a.reveal, label: from.name });
+        await assertChronology(tx, from, today, new Prisma.Decimal(d.amount).negated(), { reveal: a.reveal, field: "amount" });
+        await assertChronology(tx, to, today, new Prisma.Decimal(d.amount), { reveal: a.reveal, field: "amount" });
         const note = `${MOVEMENT_LABEL[d.type]} · ${s.reference} · ${d.notes}`; // stored ledger note (English, never translated)
         const transfer = await appendLedgerRow(tx, "TRANSFER", { transactionDate: today, accountId: from.id, destinationAccountId: to.id, amount: d.amount, notes: note, createdById: a.userId });
         const mv = await tx.cashRegisterMovement.create({

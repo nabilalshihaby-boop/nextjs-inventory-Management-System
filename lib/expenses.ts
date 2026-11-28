@@ -35,7 +35,7 @@ export type ExpenseField = keyof ExpenseInput;
 export type ExpenseFormValues = Record<ExpenseField, string>;
 
 export type ExpenseOption = { value: string; label: string };
-export type PaidFromOption = { value: string; name: string; label: string; balance: string; active: boolean; inDefaultCurrency: boolean };
+export type PaidFromOption = { value: string; name: string; label: string; /** null when the viewer lacks finance.view */ balance: string | null; active: boolean; inDefaultCurrency: boolean };
 
 export type ExpenseRow = {
   id: string;

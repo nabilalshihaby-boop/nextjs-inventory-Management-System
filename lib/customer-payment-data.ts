@@ -19,7 +19,7 @@ export type CustomerPaymentFormData = {
  * Real customers, every COMPLETED sale with Due > 0 — Due = Grand Total − Paid − completed sales
  * returns — and ACTIVE cash/bank accounts (with their computed balance, for reference).
  */
-export async function getCustomerPaymentFormData(): Promise<CustomerPaymentFormData> {
+export async function getCustomerPaymentFormData(showBalances: boolean): Promise<CustomerPaymentFormData> {
   const settings = await getSystemSettings();
   const right = !!settings?.currencyIconRight;
   const [customers, sales, accounts] = await Promise.all([
@@ -34,7 +34,7 @@ export async function getCustomerPaymentFormData(): Promise<CustomerPaymentFormD
   const returned = new Map(
     (await db.saleReturn.groupBy({ by: ["saleId"], _sum: { grandTotal: true } })).map((r) => [r.saleId, r._sum.grandTotal ?? new Prisma.Decimal(0)]),
   );
-  const balances = await computeBalances(db, accounts.map((a) => a.id));
+  const balances = showBalances ? await computeBalances(db, accounts.map((a) => a.id)) : null; // without finance.view nothing is computed or sent
   const currencies = new Map<string, PaymentCurrency>();
   for (const c of [...sales.map((s) => s.currency), ...accounts.map((a) => a.currency)]) currencies.set(c.id, { id: c.id, code: c.code, symbol: c.symbol, right });
 
@@ -60,7 +60,7 @@ export async function getCustomerPaymentFormData(): Promise<CustomerPaymentFormD
   return {
     customers,
     payables,
-    accounts: accounts.map((a) => ({ id: a.id, name: a.name, balance: (balances.get(a.id) ?? new Prisma.Decimal(0)).toFixed(2), currencyId: a.currencyId, currencyCode: a.currency.code })),
+    accounts: accounts.map((a) => ({ id: a.id, name: a.name, balance: balances ? (balances.get(a.id) ?? new Prisma.Decimal(0)).toFixed(2) : null, currencyId: a.currencyId, currencyCode: a.currency.code })),
     currencies: [...currencies.values()],
   };
 }

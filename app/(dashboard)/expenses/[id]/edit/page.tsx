@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { canManageExpenses, canManageSystemSettings } from "@/lib/roles";
+import { canManageExpenses, canManageSystemSettings, canViewFinance } from "@/lib/roles";
 import { getExpenseFormData } from "@/lib/expense-data";
 import { todayLocal } from "@/lib/cash-bank";
 import { getDict } from "@/lib/i18n/server";
@@ -31,7 +31,7 @@ export default async function UpdateExpensePage({ params }: PageProps<"/expenses
 
   return (
     <ExpenseForm
-      {...await getExpenseFormData(await getDict())}
+      {...await getExpenseFormData(await getDict(), canViewFinance(session.user))}
       today={todayLocal()} canOpenSettings={canManageSystemSettings(session.user)}
       expenseId={e.id}
       reference={e.reference}

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { auth } from "@/auth";
 import { todayLocal } from "@/lib/cash-bank";
-import { canManageCustomerPayments } from "@/lib/roles";
+import { canManageCustomerPayments, canViewFinance } from "@/lib/roles";
 import { getCustomerPaymentFormData } from "@/lib/customer-payment-data";
 import { getDict } from "@/lib/i18n/server";
 import CustomerPaymentForm from "@/components/customer-payments/CustomerPaymentForm";
@@ -24,7 +24,7 @@ export default async function RecordCustomerPaymentPage({ searchParams }: PagePr
   if (!canManageCustomerPayments(session.user)) redirect("/dashboard");
 
   const sp = await searchParams;
-  const data = await getCustomerPaymentFormData();
+  const data = await getCustomerPaymentFormData(canViewFinance(session.user));
   const wanted = typeof sp.sale === "string" ? data.payables.find((p) => p.id === sp.sale) : undefined;
   const customer = wanted?.customerId ?? (typeof sp.customer === "string" && data.customers.some((s) => s.id === sp.customer) ? sp.customer : "");
   return <CustomerPaymentForm {...data} today={todayLocal()} initialCustomer={customer} initialSale={wanted?.id ?? ""} />;

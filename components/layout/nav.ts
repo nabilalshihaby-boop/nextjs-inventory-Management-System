@@ -1,8 +1,9 @@
 // Sidebar navigation — mirrors design/nav.js (SP_NAV + SP_ROUTES), with Next.js routes.
 
 import type { IconName } from "./Icon";
-import { canOpenRoute, hasAnyPermission, roleOf, type PermissionKey } from "@/lib/access";
+import { canOpenRoute, hasAnyPermission, roleOf, type PermissionKey, type Who } from "@/lib/access";
 import { HUB_PERMISSIONS } from "@/lib/report-hub";
+import { canPrintBarcodes, canUsePos, canViewFinance, canViewPurchaseReturns, canViewPurchases, canViewSaleReturns, canViewSales } from "@/lib/roles";
 
 export type NavLeaf = {
   id: string;
@@ -21,6 +22,15 @@ export type NavLeaf = {
    * neither a permission nor is the Dashboard. UX only — the proxy and every page / action enforce access on the server.
    */
   perm?: readonly PermissionKey[];
+  /**
+   * The page's own guard (lib/roles), where it is stricter than the route gate behind `perm`: a USER must pass it too, so the
+   * sidebar never offers a page that would only send the user back to the dashboard.
+   */
+  can?: (who: Who) => boolean;
+  /** Dictionary key (dict.nav) of the sidebar label when it differs from the page title, which is keyed by `id`. */
+  navKey?: string;
+  /** Further route prefixes that belong to this entry (pages without an entry of their own), for the active highlight. */
+  covers?: readonly string[];
 };
 export type NavRole = "OWNER" | "ADMIN" | "USER";
 export type NavItem =
@@ -28,96 +38,89 @@ export type NavItem =
   | { id: string; label: string; icon: IconName; children: NavLeaf[]; href?: undefined; title?: undefined; roles?: readonly NavRole[] };
 
 const STAFF_ADMIN = ["OWNER", "ADMIN"] as const; // Users, Roles & Permissions, Settings
-const STAFF = ["OWNER", "ADMIN"] as const; // Finance
+const STAFF = ["OWNER", "ADMIN"] as const;
 
+// Grouped by business domain; every page appears once. Individual reports are not listed here: they live in the Report Hub.
 export const NAV: NavItem[] = [
   { id: "dash", label: "Dashboard", icon: "layout-dashboard", href: "/dashboard" },
   {
-    id: "products",
-    label: "Products",
+    id: "gSales",
+    label: "Sales & Customers",
+    icon: "shopping-cart",
+    children: [
+      { id: "pos", label: "POS", href: "/pos", perm: ["pos.use"], can: canUsePos },
+      { id: "s1", label: "Sales", href: "/sales", perm: ["sales.view", "sales.manage"], can: canViewSales },
+      { id: "s2", label: "Sales Returns", href: "/sales/returns", perm: ["sales.view", "sales.returns.manage"], can: canViewSaleReturns },
+      { id: "quo", label: "Quotations", href: "/quotations", roles: STAFF, perm: ["quotations.manage"] },
+      { id: "pe2", label: "Customers", href: "/customers", perm: ["customers.view", "customers.manage"] },
+      { id: "pe5", label: "Customer Payments", href: "/customer-payments", roles: STAFF, perm: ["customers.payments.manage"] },
+    ],
+  },
+  {
+    id: "gCatalog",
+    label: "Catalog & Inventory",
     icon: "package",
     children: [
       { id: "p1", label: "Products", href: "/products", perm: ["products.view", "products.manage"] },
-      { id: "p2", label: "Product Categories", href: "/products/categories", perm: ["products.view", "catalog.manage"] },
-      { id: "p3", label: "Brands", href: "/products/brands", perm: ["products.view", "catalog.manage"] },
-      { id: "p5", label: "Base Units", href: "/base-units", perm: ["products.view", "catalog.manage"] }, // the master list of reusable units (was split across "Units" + "Base Units")
-      { id: "p8", label: "Product Unit Conversions", href: "/products/unit-conversions", perm: ["products.view", "catalog.manage"] }, // per-product pack factors overview
+      { id: "p2", label: "Product Categories", href: "/products/categories", perm: ["products.view", "products.manage", "catalog.manage"] },
+      { id: "p3", label: "Brands", href: "/products/brands", perm: ["products.view", "products.manage", "catalog.manage"] },
       { id: "p7", label: "Product Variants", href: "/products/families", perm: ["products.manage"] }, // grouping of variants: product managers only
-      { id: "p6", label: "Print Barcode", href: "/print-barcode", roles: STAFF, perm: ["barcode.print"] }, // barcode labels: OWNER/ADMIN
+      { id: "p5", label: "Base Units", href: "/base-units", perm: ["products.view", "products.manage", "catalog.manage"] }, // the master list of reusable units
+      { id: "p8", label: "Product Unit Conversions", href: "/products/unit-conversions", perm: ["products.view", "products.manage"] }, // per-product pack factors overview
+      { id: "p6", label: "Print Barcode", href: "/print-barcode", roles: STAFF, perm: ["barcode.print"], can: canPrintBarcodes },
+      { id: "wh", navKey: "whList", label: "Warehouses", href: "/warehouse", perm: ["warehouses.view", "warehouses.manage"] },
+      { id: "tr", label: "Transfers", href: "/transfers", perm: ["transfers.view", "transfers.manage"] },
+      { id: "adj", label: "Adjustments", href: "/adjustments", perm: ["inventory.adjust"] },
     ],
   },
-  { id: "adj", label: "Adjustments", icon: "sliders-horizontal", href: "/adjustments", perm: ["inventory.adjust"] },
-  { id: "quo", label: "Quotations", icon: "file-text", href: "/quotations", roles: STAFF, perm: ["quotations.manage"] }, // customer offers: hidden from USER
   {
-    id: "pur",
-    label: "Purchases",
+    id: "gPurchasing",
+    label: "Purchases & Suppliers",
     icon: "receipt",
-    roles: STAFF, // costs and supplier totals: hidden from USER
     children: [
-      { id: "pu1", label: "Purchases", href: "/purchases", perm: ["purchases.view", "purchases.manage"] },
-      { id: "pu2", label: "Purchases Returns", href: "/purchases/returns", perm: ["purchases.view", "purchases.returns.manage"] },
-    ],
-  },
-  {
-    id: "sales",
-    label: "Sales",
-    icon: "shopping-cart",
-    roles: STAFF, // prices, customer invoices and stock deductions: hidden from USER
-    children: [
-      { id: "s1", label: "Sales", href: "/sales", perm: ["sales.view", "sales.manage"] },
-      { id: "s2", label: "Sales Returns", href: "/sales/returns", perm: ["sales.view", "sales.returns.manage"] },
-    ],
-  },
-  { id: "tr", label: "Transfers", icon: "arrow-left-right", href: "/transfers", perm: ["transfers.view", "transfers.manage"] },
-  {
-    id: "fin",
-    label: "Finance",
-    icon: "landmark",
-    roles: STAFF,
-    children: [
-      { id: "f1", label: "Cash & Bank Accounts", href: "/finance/accounts", perm: ["finance.view", "finance.accounts.manage"] },
-      { id: "f2", label: "Cash & Bank Transactions", href: "/finance/transactions", perm: ["finance.view", "finance.transactions.record"] },
+      { id: "pu1", label: "Purchases", href: "/purchases", perm: ["purchases.view", "purchases.manage"], can: canViewPurchases },
+      { id: "pu2", navKey: "puReturns", label: "Purchase Returns", href: "/purchases/returns", perm: ["purchases.view", "purchases.returns.manage"], can: canViewPurchaseReturns },
+      { id: "pe1", label: "Suppliers", href: "/suppliers", perm: ["suppliers.view", "suppliers.manage"] },
       { id: "pe4", label: "Supplier Payments", href: "/supplier-payments", roles: STAFF, perm: ["suppliers.payments.manage"] },
-      { id: "pe5", label: "Customer Payments", href: "/customer-payments", roles: STAFF, perm: ["customers.payments.manage"] },
+    ],
+  },
+  {
+    id: "gFinance",
+    label: "Finance & Accounting",
+    icon: "landmark",
+    children: [
+      { id: "f1", label: "Cash & Bank Accounts", href: "/finance/accounts", perm: ["finance.view"], can: canViewFinance },
+      { id: "f2", label: "Cash & Bank Transactions", href: "/finance/transactions", perm: ["finance.view"], can: canViewFinance },
       { id: "e1", label: "Expenses", href: "/expenses", perm: ["expenses.manage"] },
       { id: "e2", label: "Expense Categories", href: "/expenses/categories", perm: ["expenses.categories.manage"] },
-      { id: "f3", label: "Profit & Loss", href: "/profit-loss", perm: ["reports.financial.view"] },
+      { id: "cu", label: "Currencies", href: "/currencies", perm: ["finance.view"] },
       // id = the existing nav.costSetup title. A USER sees it only under the full rule (canOpenRoute -> canManageCostBaseline).
       { id: "costSetup", label: "Opening Inventory Cost Setup", href: "/profit-loss/setup", perm: ["cost.baseline.manage"] },
-      { id: "f4", label: "Cash Flow", href: "/cash-flow", perm: ["reports.financial.view"] },
-      { id: "f5", label: "Receivables & Payables Aging", href: "/receivables-payables-aging", perm: ["reports.financial.view"] },
     ],
   },
   {
-    id: "pe",
-    label: "Peoples",
-    icon: "users",
+    id: "gReports",
+    label: "Reports & Insights",
+    icon: "chart-column",
     children: [
-      { id: "pe1", label: "Suppliers", href: "/suppliers", perm: ["suppliers.view", "suppliers.manage"] },
-      { id: "pe2", label: "Customers", href: "/customers", perm: ["customers.view", "customers.manage"] },
+      // Report Hub: a USER sees it only with a report permission. Report pages have no entry of their own, so they highlight this one.
+      { id: "re", navKey: "reHub", label: "Report Hub", href: "/reports", perm: HUB_PERMISSIONS, covers: ["/profit-loss", "/cash-flow", "/receivables-payables-aging", "/inventory-reports"] },
+      // Not built yet: always disabled and never a link, shown to whoever sees Reports. `href` is only used for that visibility rule.
+      { id: "fc", label: "Forecasting & Insights", href: "/reports", perm: HUB_PERMISSIONS, disabled: "Coming soon" },
+    ],
+  },
+  {
+    id: "gAdmin",
+    label: "System Administration",
+    icon: "settings",
+    children: [
       { id: "pe3", label: "Users", href: "/users", roles: STAFF_ADMIN },
+      { id: "ro", navKey: "rolesNav", label: "Roles & Permissions", href: "/roles", title: "Roles", roles: STAFF_ADMIN },
+      { id: "au", label: "Audit Log", href: "/audit-log", roles: STAFF_ADMIN, perm: ["audit.view"] },
+      { id: "la", label: "Languages", href: "/settings/languages", roles: STAFF_ADMIN, perm: ["translations.manage"] },
+      { id: "se", label: "Settings", href: "/settings", roles: STAFF_ADMIN },
     ],
   },
-  { id: "ro", label: "Roles/Permissions", icon: "shield-check", href: "/roles", title: "Roles", roles: STAFF_ADMIN },
-  { id: "wh", label: "Warehouse", icon: "warehouse", href: "/warehouse", perm: ["warehouses.view", "warehouses.manage"] },
-  {
-    id: "inv",
-    label: "Inventory Reports",
-    icon: "boxes",
-    roles: STAFF, // read-only stock reports: hidden from USER (the pages are protected server-side)
-    children: [
-      { id: "ir1", label: "Stock Balance by Warehouse", href: "/inventory-reports/stock-balance", perm: ["reports.inventory.view"] },
-      { id: "ir2", label: "Product Movement", href: "/inventory-reports/product-movement", perm: ["reports.inventory.view"] },
-      { id: "ir3", label: "Low Stock Items", href: "/inventory-reports/low-stock", perm: ["reports.inventory.view"] },
-    ],
-  },
-  { id: "re", label: "Reports", icon: "chart-column", href: "/reports", perm: HUB_PERMISSIONS }, // Report Hub: a USER sees it only with a report permission
-  // Not built yet: always disabled and never a link, shown to whoever sees Reports. `href` is only used for that visibility rule.
-  { id: "fc", label: "Forecasting & Insights", icon: "clock", href: "/reports", perm: HUB_PERMISSIONS, disabled: "Coming soon" },
-  { id: "cu", label: "Currencies", icon: "circle-dollar-sign", href: "/currencies", perm: ["finance.view"] },
-  { id: "la", label: "Languages", icon: "languages", href: "/settings/languages", roles: STAFF_ADMIN, perm: ["translations.manage"] },
-  { id: "au", label: "Audit Log", icon: "history", href: "/audit-log", roles: STAFF_ADMIN, perm: ["audit.view"] },
-  { id: "se", label: "Settings", icon: "settings", href: "/settings", roles: STAFF_ADMIN },
 ];
 
 export type NavUser = { role?: string | null; permissions?: readonly string[] | null; coversAllWarehouses?: boolean | null };
@@ -133,8 +136,8 @@ export function visibleNav(user: NavUser | string | undefined): NavItem[] {
     return NAV.filter((it) => allowed(it.roles)).map((it) => (it.children ? { ...it, children: it.children.filter((c) => allowed(c.roles)) } : it));
   }
   const who = typeof user === "string" ? { role } : user;
-  // no permission listed = never shown to a USER; the route gate is applied too (e.g. Profit & Loss also needs cost.view)
-  const show = (l: { perm?: readonly PermissionKey[]; href: string }) => !!l.perm && hasAnyPermission(who, l.perm) && canOpenRoute(who, l.href);
+  // no permission listed = never shown to a USER; the route gate and the page's own guard are applied too
+  const show = (l: Pick<NavLeaf, "perm" | "href" | "can">) => !!l.perm && hasAnyPermission(who, l.perm) && canOpenRoute(who, l.href) && (!l.can || l.can(who));
   return NAV.flatMap((it): NavItem[] => {
     if (!it.children) return it.id === "dash" || show(it) ? [it] : [];
     const kids = it.children.filter(show);
@@ -155,7 +158,13 @@ const matches = (pathname: string, href: string) =>
 export function findActive(pathname: string | null): NavLeaf | undefined {
   if (!pathname) return undefined;
   let best: NavLeaf | undefined;
-  for (const l of LEAVES) if (matches(pathname, l.href) && (!best || l.href.length > best.href.length)) best = l;
+  let length = 0;
+  for (const l of LEAVES)
+    for (const prefix of [l.href, ...(l.covers ?? [])])
+      if (matches(pathname, prefix) && prefix.length > length) {
+        best = l;
+        length = prefix.length;
+      }
   return best;
 }
 
@@ -174,6 +183,12 @@ const EXTRA_TITLES: { href: string; title: string }[] = [
   { href: "/reports/product-movement", title: "Product Movement Report" },
   { href: "/reports/low-stock", title: "Low Stock Report" },
   { href: "/profit-loss/setup", title: "Opening Inventory Cost Setup" },
+  { href: "/profit-loss", title: "Profit & Loss" },
+  { href: "/cash-flow", title: "Cash Flow" },
+  { href: "/receivables-payables-aging", title: "Receivables & Payables Aging" },
+  { href: "/inventory-reports/stock-balance", title: "Stock Balance by Warehouse" },
+  { href: "/inventory-reports/product-movement", title: "Product Movement" },
+  { href: "/inventory-reports/low-stock", title: "Low Stock Items" },
   { href: "/reports/profit-loss", title: "Profit & Loss Report" },
   { href: "/reports/cash-flow", title: "Cash Flow Report" },
   { href: "/reports/receivables-payables-aging", title: "Aging Report" },
@@ -207,6 +222,12 @@ const EXTRA_KEYS: Record<string, string> = {
   "/reports/product-movement": "productMovementReport",
   "/reports/low-stock": "lowStockReport",
   "/profit-loss/setup": "costSetup",
+  "/profit-loss": "f3",
+  "/cash-flow": "f4",
+  "/receivables-payables-aging": "f5",
+  "/inventory-reports/stock-balance": "ir1",
+  "/inventory-reports/product-movement": "ir2",
+  "/inventory-reports/low-stock": "ir3",
   "/reports/profit-loss": "profitLossReport",
   "/reports/cash-flow": "cashFlowReport",
   "/reports/receivables-payables-aging": "agingReport",
