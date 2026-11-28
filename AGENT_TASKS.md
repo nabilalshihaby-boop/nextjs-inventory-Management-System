@@ -37,7 +37,7 @@ work is approved, implemented, tested, committed, and deployed.
   Conversions, safe product lifecycle, Audit Log, P&L, Cash Flow, Aging, and
   role/warehouse scope are implemented.
 - Applied database migrations currently run through
-  `20261213000000_register_actor_names`.
+  `20261214000000_product_handles_hs_code`.
 - Never use the production `nextinventory` database for QA. Use a fresh
   throwaway `nextinventory_qa_*` database and remove it after testing.
 - Do not stage `.env`, `.github/`, `.vscode/`, `public/images/`,
@@ -87,13 +87,45 @@ outstanding.
 - [x] A USER sees an entry only when the page itself would open for them.
 - [x] Clicking a group icon in the collapsed sidebar expands it.
 
+## Completed — Dynamic Product Import Templates
+
+Verified on throwaway databases with focused suites, deployed to the real
+system, and approved by the owner after signed-in manual acceptance checks.
+
+- [x] Products > Import: three templates (standalone, Model + Color + Size,
+  existing Variant Group with its own option columns), read-only preview with
+  row errors, all-or-nothing confirmation revalidated on the server.
+- [x] Persistent handles in one namespace for standalone products and Variant
+  Groups (`product_handles`, unique in the database), editable on the product
+  and group forms.
+- [x] HS Code on products, with a Variant Group default; the effective code is
+  the product's own, else the group's, else none.
+- [x] Arabic interface names the handle `معرّف الرابط`; the CSV column header
+  stays `Handle`.
+- [x] Audit event `PRODUCT_IMPORTED` (mode and counts only).
+- [x] The earlier one-size CSV layout is still accepted for standalone
+  products only, and the preview shows how its columns are read.
+
+Real-database deployment (procedure in `docs/product-handles-deployment.md`):
+
+- [x] Migration `20261214000000_product_handles_hs_code` applied to the real
+  database, after a verified backup.
+- [x] Existing Variant Group handles preserved exactly.
+- [x] Existing standalone products backfilled with unique handles.
+- [x] No HS Code was invented automatically.
+
+Known limits: pack units and images are not imported; generated handles are
+ASCII (an Arabic-only name gets `product`, `product-2`, ...); existing products
+and groups get no HS Code automatically.
+
 ## Next immediate milestone
 
-1. Signed-in real-user acceptance check on the real system:
+1. Next planned module: Shopify CSV Import (item 5 below). Shopify/n8n Sync
+   (item 6) follows later.
+2. Still outstanding, signed-in real-user checks on the real system:
    - the regrouped sidebar in English and Arabic, desktop and mobile;
    - POS customer search and addition, and the Register Shift Report with
      printing, if not already confirmed.
-2. Then dynamic product-import templates (item 4 below).
 
 ## Future module — Inventory Cost Correction (not implemented)
 
@@ -111,13 +143,8 @@ not fold it into other work.
    Report with printing. Push only after the owner approves.
 2. Navigation cleanup — completed (see above).
 3. Report Hub at `/reports` — completed (see above).
-4. Dynamic product-import templates:
-   - standalone-product template;
-   - template generated from the selected Product Variant Group with its
-     required option columns;
-   - preview, precise row errors, server validation, and all-or-nothing
-     confirmation.
-5. Shopify CSV import:
+4. Dynamic product-import templates — completed and deployed (see above).
+5. Shopify CSV import (next planned module):
    - Handle maps to the Variant Group and SKU maps to the sellable product;
    - no legacy name-based grouping;
    - preview, duplicate/conflict policy, and no direct production writes in

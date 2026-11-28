@@ -25,6 +25,7 @@ export const AUDIT_EVENT_TYPES = [
   "PRODUCT_ACTIVATED",
   "PRODUCT_BULK_REMOVED",
   "PRODUCT_BULK_STATUS",
+  "PRODUCT_IMPORTED",
   "CUSTOMER_CREATED",
 ] as const;
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];

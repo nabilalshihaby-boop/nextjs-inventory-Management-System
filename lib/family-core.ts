@@ -54,10 +54,10 @@ export function variantColumns(values: readonly string[]): VariantValues & { var
 }
 
 /** What a family selector option carries to the product form. */
-export type FamilyOption = { id: string; name: string; dimensions: string[] };
+export type FamilyOption = { id: string; name: string; dimensions: string[]; handle: string; hsCode: string | null };
 
 /** A family as listed on the Families page. */
-export type FamilyRow = { id: string; name: string; handle: string; dimensions: string[]; products: number };
+export type FamilyRow = { id: string; name: string; handle: string; hsCode: string | null; dimensions: string[]; products: number };
 
 // ---------------------------------------------------------------------------------------------
 // Family handle (Shopify-compatible group identity; see ProductFamily.handle in the schema)
@@ -75,7 +75,7 @@ export const HANDLE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const handleKeyOf = (h: string) => h.trim().toLowerCase();
 
 /** Deterministic handle candidate from a display name: accents removed, lowercase ASCII, hyphen separated; the fallback when empty. */
-export function slugifyHandle(name: string): string {
+export function slugifyHandle(name: string, fallback: string = HANDLE_FALLBACK): string {
   const s = name
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -84,7 +84,31 @@ export function slugifyHandle(name: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, HANDLE_GENERATED_MAX)
     .replace(/-+$/, "");
-  return s || HANDLE_FALLBACK;
+  return s || fallback;
+}
+
+/** Used for a standalone product whose name has nothing transliterable. */
+export const PRODUCT_HANDLE_FALLBACK = "product";
+
+/** A handle typed by a user or read from a file: trimmed, NFC, lowercase. Validate the result with `handleProblem`. */
+export const normalizeHandle = (v: string) => v.normalize("NFC").trim().toLowerCase();
+
+// ---------------------------------------------------------------------------------------------
+// HS Code (supplied by the business; never generated)
+// ---------------------------------------------------------------------------------------------
+
+export const HS_MIN = 4;
+export const HS_MAX = 10;
+/** The code that applies to a product: its own, else its group's default, else none. */
+export const effectiveHsCode = (own: string | null | undefined, groupDefault: string | null | undefined): string | null => own || groupDefault || null;
+
+/** Arabic-Indic and extended Arabic-Indic digits to ASCII (NFKC handles full-width digits). */
+const asciiDigits = (v: string) => v.replace(/[\u0660-\u0669]/g, (c) => String(c.charCodeAt(0) - 0x660)).replace(/[\u06f0-\u06f9]/g, (c) => String(c.charCodeAt(0) - 0x6f0));
+/** Blank = none. Otherwise separators people type (spaces, dots, hyphens) are removed and 4-10 digits must remain. */
+export function normalizeHsCode(raw: string): { ok: true; value: string | null } | { ok: false } {
+  if (!raw.trim()) return { ok: true, value: null };
+  const v = asciiDigits(raw.normalize("NFKC")).replace(/[\s.\-]/g, "");
+  return new RegExp(`^[0-9]{${HS_MIN},${HS_MAX}}$`).test(v) ? { ok: true, value: v } : { ok: false };
 }
 
 /** First free handle for `base`: base, base-2, base-3, ... (`taken` holds lowercase handles already in use). */

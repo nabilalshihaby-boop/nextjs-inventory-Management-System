@@ -8,9 +8,10 @@ import { canManageProducts } from "@/lib/roles";
 import { fmt } from "@/lib/i18n/config";
 import { getDict } from "@/lib/i18n/server";
 import type { Dictionary } from "@/lib/i18n";
-import { DIMENSION_NAME_MAX, FAMILY_NAME_MAX, HANDLE_MAX, MAX_DIMENSIONS, cleanText, compareKey, dimensionsOf, handleKeyOf, handleProblem, hasControlChars } from "@/lib/family-core";
+import { DIMENSION_NAME_MAX, FAMILY_NAME_MAX, HANDLE_MAX, HS_MAX, HS_MIN, MAX_DIMENSIONS, normalizeHsCode, cleanText, compareKey, dimensionsOf, handleKeyOf, handleProblem, hasControlChars } from "@/lib/family-core";
 import { FamilyHandleTaken, FamilyNameTaken, createFamilyRecord, familyUniqueTarget, lockFamily } from "@/lib/product-families";
 import { withDeadlockRetry } from "@/lib/product-identifiers";
+import { registerFamilyHandle, releaseFamilyHandle } from "@/lib/product-handles";
 
 // Product Families (create / edit / delete). `products.manage` (OWNER, ADMIN, or a USER whose role grants it) is re-checked in EVERY
 // mutation; nothing comes from the client but the plain fields below. Any other field, a repeated field or a non-string value refuses
@@ -18,10 +19,10 @@ import { withDeadlockRetry } from "@/lib/product-identifiers";
 // meaning to its members' values) — the display name stays editable. Both rules are decided inside a transaction that locks the family
 // row, which is the same row a product write locks, so they hold against concurrent product saves.
 
-export type FamilyField = "name" | "dimensions" | "handle";
+export type FamilyField = "name" | "dimensions" | "handle" | "hsCode";
 export type FamilyResult = { ok: true; message: string } | { ok: false; message: string; fieldErrors?: Partial<Record<FamilyField, string>> };
 
-const ALLOWED = new Set(["name", "handle", "dimension1", "dimension2", "dimension3"]);
+const ALLOWED = new Set(["name", "handle", "hsCode", "dimension1", "dimension2", "dimension3"]);
 const idOk = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= 64 && !hasControlChars(v);
 const fail = (message: string, fieldErrors?: Partial<Record<FamilyField, string>>): FamilyResult => ({ ok: false, message, fieldErrors });
 
@@ -33,7 +34,7 @@ async function authorize(t: Dictionary): Promise<{ error: FamilyResult } | { ok:
 }
 
 /** handle: undefined = the request did not send one (create: generate; update: keep the stored one). */
-type Parsed = { name: string; dims: string[]; handle?: string };
+type Parsed = { name: string; dims: string[]; handle?: string; hsCode?: string | null };
 
 /** Strictly reads and validates the family fields; no database access. */
 function parse(fd: unknown, t: Dictionary): { ok: true; data: Parsed } | { ok: false; result: FamilyResult } {
@@ -75,6 +76,17 @@ function parse(fd: unknown, t: Dictionary): { ok: true; data: Parsed } | { ok: f
   }
   if (dims.length > MAX_DIMENSIONS) return { ok: false, result: fail(fmt(V.dimTooMany, { max: MAX_DIMENSIONS })) };
   if (new Set(dims.map(compareKey)).size !== dims.length) return { ok: false, result: fail(V.dimDuplicate, { dimensions: V.dimDuplicate }) };
+  // Default HS Code: optional key (not sent = keep); blank = none; otherwise 4-10 digits after normalization.
+  let hsCode: string | null | undefined;
+  if (fd.has("hsCode")) {
+    const raw = read("hsCode");
+    const hs = raw === null ? { ok: false as const } : normalizeHsCode(raw);
+    if (!hs.ok) {
+      const m = fmt(t.importExport.err.hsCode, { min: HS_MIN, max: HS_MAX });
+      return { ok: false, result: fail(m, { hsCode: m }) };
+    }
+    hsCode = hs.value;
+  }
   // Handle: optional key; when sent it must be a non-blank, strictly valid handle (typed input is trimmed and lowercased).
   let handle: string | undefined;
   if (rawHandle !== undefined) {
@@ -85,7 +97,7 @@ function parse(fd: unknown, t: Dictionary): { ok: true; data: Parsed } | { ok: f
       return { ok: false, result: fail(m, { handle: m }) };
     }
   }
-  return { ok: true, data: { name, dims, handle } };
+  return { ok: true, data: { name, dims, handle, hsCode } };
 }
 
 const isUnique = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
@@ -106,7 +118,7 @@ export async function createFamily(formData: FormData): Promise<FamilyResult> {
   const p = parse(formData, t);
   if (!p.ok) return p.result;
   try {
-    await createFamilyRecord({ name: p.data.name, dims: p.data.dims, handle: p.data.handle });
+    await createFamilyRecord({ name: p.data.name, dims: p.data.dims, handle: p.data.handle, hsCode: p.data.hsCode });
   } catch (e) {
     if (e instanceof FamilyNameTaken) return fail(t.families.err.duplicateName, { name: t.families.err.duplicateName });
     if (e instanceof FamilyHandleTaken) return dupHandle(t);
@@ -133,7 +145,9 @@ export async function updateFamily(id: unknown, formData: FormData): Promise<Fam
         if (members > 0 && !same) throw new Refusal(fail(fmt(t.families.err.dimsLocked, { n: members }), { dimensions: fmt(t.families.err.dimsLocked, { n: members }) }));
         // The handle changes ONLY when the request explicitly carries a different one; renaming never touches it.
         const handleData = p.data.handle !== undefined && handleKeyOf(p.data.handle) !== handleKeyOf(fam.handle) ? { handle: p.data.handle, handleKey: handleKeyOf(p.data.handle) } : {};
-        await tx.productFamily.update({ where: { id }, data: { ...(members > 0 ? { name: p.data.name } : columns(p.data)), ...handleData } });
+        await tx.productFamily.update({ where: { id }, data: { ...(members > 0 ? { name: p.data.name } : columns(p.data)), ...handleData, ...(p.data.hsCode !== undefined ? { hsCode: p.data.hsCode } : {}) } });
+        // The shared namespace follows: a handle held by a standalone product (or another family) refuses the whole change.
+        if ("handle" in handleData) await registerFamilyHandle(tx, id, handleData.handle!);
       }),
     );
   } catch (e) {
@@ -160,6 +174,7 @@ export async function deleteFamily(id: unknown): Promise<FamilyResult> {
         if (!fam) throw new Refusal(fail(t.families.err.notFound));
         const members = await tx.product.count({ where: { familyId: id } });
         if (members > 0) throw new Refusal(fail(fmt(t.families.err.inUse, { n: members })));
+        await releaseFamilyHandle(tx, id);
         await tx.productFamily.delete({ where: { id } });
       }),
     );

@@ -85,6 +85,7 @@ function summaryOf(t: Dictionary, type: string, target: string | null, details: 
     deactivated: num("deactivated"),
     changed: num("changed"),
     unchanged: num("unchanged"),
+    products: num("products"),
   });
 }
 
@@ -98,12 +99,14 @@ function detailValue(t: Dictionary, d: SafeDetail): string {
       return d.value === "ar" ? D.ar : D.en;
     case "source":
       return D.sourcePos;
+    case "importMode":
+      return D.importModes[d.value];
     case "bool":
       return d.value ? D.yes : D.no;
     case "reasons":
       return d.value.map((k) => (t.auditLog.reasons as Record<string, string>)[k] ?? k).join(" · ");
     case "number":
-      if (d.id === "requested" || d.id === "deleted" || d.id === "deactivated" || d.id === "unchanged" || d.id === "changed") return String(d.value);
+      if (d.id === "requested" || d.id === "deleted" || d.id === "deactivated" || d.id === "unchanged" || d.id === "changed" || d.id === "products" || d.id === "variantGroups" || d.id === "withStock") return String(d.value);
       return d.id === "previousLength" || d.id === "newLength" ? fmt(D.chars, { n: d.value }) : d.id === "permissionCount" ? fmt(D.permissionsCount, { n: d.value }) : fmt(D.warehousesCount, { n: d.value });
     case "permissions":
       return d.value.map((k) => (t.access.perm as Record<string, string>)[k.replace(/\./g, "_")] ?? k).join(" · ");

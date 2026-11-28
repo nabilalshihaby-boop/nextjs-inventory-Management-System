@@ -1,6 +1,7 @@
 import type { Prisma } from "@/app/generated/prisma/client";
 import type { ProductFields, UnitInput } from "@/lib/products";
 import { syncProductIdentifiers } from "@/lib/product-identifiers";
+import { claimProductHandle } from "@/lib/product-handles";
 
 // The ONE place that writes a new product with its opening stock. Used by the Create Product
 // action and by the CSV import so both produce identical records (server-only; call inside a transaction).
@@ -49,9 +50,11 @@ export async function createProductRecord(
   baseBarcode?: string | null,
   /** Family + variant columns (lib/product-families.ts familyColumns, computed in this same transaction); omitted = standalone. */
   familyData?: { familyId: string | null; variantValue1: string | null; variantValue2: string | null; variantValue3: string | null; variantKey: string | null },
+  /** `handle` is used for a standalone product only (null = generate from the name); `hsCode` is already normalized. */
+  identity: { handle?: string | null; hsCode?: string | null } = {},
 ): Promise<{ id: string }> {
   const p = await tx.product.create({
-    data: { ...productFieldData(f), ...(familyData ?? {}), images: { create: imagePaths.map((path, position) => ({ path, position })) } },
+    data: { ...productFieldData(f), ...(familyData ?? {}), hsCode: identity.hsCode ?? null, images: { create: imagePaths.map((path, position) => ({ path, position })) } },
     select: { id: true },
   });
   // Every product has exactly one BASE unit (factor 1, = productUnitId) plus its optional pack units. Stock is kept in base units.
@@ -66,6 +69,8 @@ export async function createProductRecord(
   });
   // The SKU and every stored barcode enter the global identifier registry in this same transaction (unique: the final concurrency guard).
   await syncProductIdentifiers(tx, p.id);
+  // A standalone product owns a handle; a family member's handle is its family's.
+  if (!familyData?.familyId) await claimProductHandle(tx, p.id, identity.handle ?? null, f.name);
   if (stock) {
     // Entries are immutable source records: created here, never updated or deleted.
     await tx.productStockEntry.create({

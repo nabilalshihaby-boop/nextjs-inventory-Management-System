@@ -7,7 +7,6 @@ import Icon from "@/components/layout/Icon";
 import { useT } from "@/components/i18n/I18nProvider";
 import Pagination, { paginate } from "@/components/ui/Pagination";
 import RowMenu from "@/components/ui/RowMenu";
-import ProductImportModal from "@/components/products/ProductImportModal";
 import ProductRemovalDialog, { type RemovalKind } from "@/components/products/ProductRemovalDialog";
 import { fmt } from "@/lib/i18n/config";
 import type { ProductRow } from "@/lib/products";
@@ -23,7 +22,6 @@ export default function ProductsTable({ rows, canManage, canRemove }: { rows: Pr
   const T = useT();
   const L = T.products.list;
   const SOON = { filter: L.soonFilter, export: L.soonExport };
-  const [importing, setImporting] = useState(false);
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -99,10 +97,10 @@ export default function ProductsTable({ rows, canManage, canRemove }: { rows: Pr
               <Icon name="upload" size={18} />
               {L.export}
             </button>
-            <button type="button" className="sp-btn sp-btn--secondary" onClick={() => setImporting(true)} data-testid="products-import">
+            <Link href="/products/import" className="sp-btn sp-btn--secondary" data-testid="products-import">
               <Icon name="download" size={18} />
               {L.import}
-            </button>
+            </Link>
             <Link href="/products/create" className="sp-btn sp-btn--primary">
               <Icon name="plus" size={18} />
               {L.create}
@@ -259,7 +257,6 @@ export default function ProductsTable({ rows, canManage, canRemove }: { rows: Pr
           }}
         />
       </div>
-      {importing && canManage && <ProductImportModal onClose={() => setImporting(false)} />}
       {dialog && canManage && (
         <ProductRemovalDialog
           kind={dialog.kind}

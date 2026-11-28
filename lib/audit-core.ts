@@ -37,6 +37,7 @@ export const CATEGORY_OF: Record<AuditEventType, AuditCategory> = {
   PRODUCT_ACTIVATED: "products",
   PRODUCT_BULK_REMOVED: "products",
   PRODUCT_BULK_STATUS: "products",
+  PRODUCT_IMPORTED: "products",
   CUSTOMER_CREATED: "customers",
 };
 export const typesOfCategory = (c: AuditCategory): AuditEventType[] => AUDIT_EVENT_TYPES.filter((t) => CATEGORY_OF[t] === c);
@@ -207,7 +208,9 @@ export type SafeDetail =
   | { id: "name" | "previousName" | "roleName" | "previousRoleName" | "userName" | "clonedFromName" | "key" | "sku"; kind: "text"; value: string }
   | { id: "locale"; kind: "locale"; value: "ar" | "en" }
   | { id: "source"; kind: "source"; value: "POS" }
-  | { id: "active" | "hadOverride"; kind: "bool"; value: boolean }
+  | { id: "importMode"; kind: "importMode"; value: "standalone" | "model" | "group" }
+  | { id: "products" | "variantGroups" | "withStock"; kind: "number"; value: number }
+  | { id: "active" | "hadOverride" | "legacyFile"; kind: "bool"; value: boolean }
   | { id: "previousLength" | "newLength" | "permissionCount" | "warehousesBefore" | "warehousesAfter" | "requested" | "deleted" | "deactivated" | "unchanged" | "changed"; kind: "number"; value: number }
   | { id: "reasons"; kind: "reasons"; value: string[] }
   | { id: "added" | "removed" | "permissions"; kind: "permissions"; value: string[] }
@@ -258,6 +261,14 @@ export function safeDetails(eventType: string, metadata: unknown): SafeDetail[] 
   if (tpl.length) out.push({ id: "created", kind: "templates", value: tpl });
   const one = templateKeys([m.template]);
   if (one.length) out.push({ id: "template", kind: "templates", value: one });
+  if (eventType === "PRODUCT_IMPORTED") {
+    if (m.mode === "standalone" || m.mode === "model" || m.mode === "group") out.push({ id: "importMode", kind: "importMode", value: m.mode });
+    if (m.legacy === true) out.push({ id: "legacyFile", kind: "bool", value: true });
+    for (const [id, v] of [["products", m.created], ["variantGroups", m.groups], ["withStock", m.withStock]] as const) {
+      const n = int(v);
+      if (n !== null) out.push({ id, kind: "number", value: n });
+    }
+  }
   if (eventType === "USER_WAREHOUSE_SCOPE_CHANGED") {
     const b = count(m.before);
     const a = count(m.after);

@@ -77,6 +77,7 @@ export default async function EditProductPage({ params }: PageProps<"/products/[
       usedUnits={usedUnits}
       baseLocked={baseLocked}
       skuLocked={skuLocked}
+      identityInitial={{ handle: p.handle ?? "", hsCode: p.hsCode ?? "" }}
       familyInitial={{ familyId: p.familyId ?? "", values: [p.variantValue1 ?? "", p.variantValue2 ?? "", p.variantValue3 ?? ""] }}
       openingStock={
         entry

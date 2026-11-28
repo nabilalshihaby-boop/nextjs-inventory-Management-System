@@ -157,6 +157,7 @@ export const enAccess = {
       PRODUCT_ACTIVATED: "Product reactivated",
       PRODUCT_BULK_REMOVED: "Products removed in bulk",
       PRODUCT_BULK_STATUS: "Product status changed in bulk",
+      PRODUCT_IMPORTED: "Products imported from CSV",
       CUSTOMER_CREATED: "Customer created",
     },
     added: "Added: {list}",

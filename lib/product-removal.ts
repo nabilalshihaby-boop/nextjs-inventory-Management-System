@@ -72,6 +72,7 @@ const isFkError = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestEr
 /** Deletes one eligible product and ONLY its own configuration. Throws on a foreign-key refusal (caller rolls back to a savepoint). */
 async function deleteOwn(tx: Client, id: string) {
   await tx.productIdentifier.deleteMany({ where: { productId: id } }); // registry rows first (RESTRICT to the product and its conversions)
+  await tx.productHandle.deleteMany({ where: { productId: id } }); // frees the handle (same RESTRICT rule)
   await tx.productStock.deleteMany({ where: { productId: id, quantity: 0 } }); // only zero-quantity rows (non-zero = history, not eligible)
   await tx.product.delete({ where: { id } }); // cascades its unit conversions and image rows; RESTRICT keeps everything else safe
 }

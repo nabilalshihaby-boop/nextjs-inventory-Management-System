@@ -158,6 +158,7 @@ export const arAccess: Dictionary["access"] = {
       PRODUCT_ACTIVATED: "تمت إعادة تفعيل منتج",
       PRODUCT_BULK_REMOVED: "تمت إزالة منتجات بشكل جماعي",
       PRODUCT_BULK_STATUS: "تم تغيير حالة منتجات بشكل جماعي",
+      PRODUCT_IMPORTED: "استيراد منتجات من ملف CSV",
       CUSTOMER_CREATED: "تمت إضافة عميل",
     },
     added: "المضاف: {list}",

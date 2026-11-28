@@ -1,4 +1,5 @@
 import { Prisma } from "@/app/generated/prisma/client";
+import { registerFamilyHandle } from "@/lib/product-handles";
 import { db } from "@/lib/db";
 import { fmt } from "@/lib/i18n/config";
 import type { Dictionary } from "@/lib/i18n";
@@ -35,9 +36,9 @@ export function isVariantRace(e: unknown): boolean {
 }
 
 /** Locks the family row for the rest of the transaction and returns its current dimensions (null when it is gone). */
-export async function lockFamily(tx: Client, familyId: string): Promise<(FamilyDims & { id: string; name: string; handle: string }) | null> {
-  const rows = await tx.$queryRaw<{ id: string; name: string; handle: string; dimension1: string | null; dimension2: string | null; dimension3: string | null }[]>`
-    SELECT id, name, handle, dimension1, dimension2, dimension3 FROM product_families WHERE id = ${familyId} FOR UPDATE`;
+export async function lockFamily(tx: Client, familyId: string): Promise<(FamilyDims & { id: string; name: string; handle: string; hsCode: string | null }) | null> {
+  const rows = await tx.$queryRaw<{ id: string; name: string; handle: string; hsCode: string | null; dimension1: string | null; dimension2: string | null; dimension3: string | null }[]>`
+    SELECT id, name, handle, hsCode, dimension1, dimension2, dimension3 FROM product_families WHERE id = ${familyId} FOR UPDATE`;
   return rows[0] ?? null;
 }
 
@@ -122,17 +123,26 @@ export function familyUniqueTarget(e: unknown): "name" | "handle" | null {
   return null;
 }
 
+/** The family row and its entry in the shared handle namespace, together. */
+export async function insertFamily(tx: Client, input: { name: string; dims: string[]; handle: string; hsCode?: string | null }) {
+  const family = await tx.productFamily.create({
+    data: { name: input.name, dimension1: input.dims[0] ?? null, dimension2: input.dims[1] ?? null, dimension3: input.dims[2] ?? null, handle: input.handle, handleKey: handleKeyOf(input.handle), hsCode: input.hsCode ?? null },
+  });
+  await registerFamilyHandle(tx, family.id, input.handle);
+  return family;
+}
+
 /**
- * Creates a family. `handle` omitted = generate one from the name (deterministic slug, ASCII fallback, -2/-3 suffixes when taken; a
- * concurrent claim of the same candidate retries with the next free one). `handle` given = stored EXACTLY as supplied (the caller has
- * validated it; a future Shopify import passes the existing Shopify handle here) and a clash raises FamilyHandleTaken.
- * Existing families keep their handle forever: nothing here is ever called on rename.
+ * Creates a family. `handle` omitted = generate one from the name (deterministic slug, ASCII fallback, -2/-3 suffixes when taken by a family
+ * OR a standalone product; a concurrent claim of the same candidate retries with the next free one). `handle` given = stored EXACTLY as
+ * supplied (the caller has validated it; a future Shopify import passes the existing Shopify handle here) and a clash raises
+ * FamilyHandleTaken. Existing families keep their handle forever: nothing here is ever called on rename.
  */
-export async function createFamilyRecord(input: { name: string; dims: string[]; handle?: string }) {
-  const data = { name: input.name, dimension1: input.dims[0] ?? null, dimension2: input.dims[1] ?? null, dimension3: input.dims[2] ?? null };
+export async function createFamilyRecord(input: { name: string; dims: string[]; handle?: string; hsCode?: string | null }) {
+  const create = (handle: string) => db.$transaction((tx) => insertFamily(tx, { name: input.name, dims: input.dims, handle, hsCode: input.hsCode }));
   if (input.handle !== undefined) {
     try {
-      return await db.productFamily.create({ data: { ...data, handle: input.handle, handleKey: handleKeyOf(input.handle) } });
+      return await create(input.handle);
     } catch (e) {
       const t = familyUniqueTarget(e);
       if (t === "handle") throw new FamilyHandleTaken();
@@ -142,10 +152,10 @@ export async function createFamilyRecord(input: { name: string; dims: string[]; 
   }
   const base = slugifyHandle(input.name);
   for (let attempt = 0; attempt < 8; attempt++) {
-    const rows = await db.productFamily.findMany({ where: { handleKey: { startsWith: base } }, select: { handleKey: true } });
+    const rows = await db.productHandle.findMany({ where: { handleKey: { startsWith: base } }, select: { handleKey: true } });
     const handle = nextFreeHandle(base, new Set(rows.map((r) => r.handleKey)));
     try {
-      return await db.productFamily.create({ data: { ...data, handle, handleKey: handleKeyOf(handle) } });
+      return await create(handle);
     } catch (e) {
       const t = familyUniqueTarget(e);
       if (t === "name") throw new FamilyNameTaken();

@@ -25,9 +25,9 @@ export default async function FamiliesPage() {
 
   const families = await db.productFamily.findMany({
     orderBy: { name: "asc" },
-    select: { id: true, name: true, handle: true, dimension1: true, dimension2: true, dimension3: true, _count: { select: { products: true } } },
+    select: { id: true, name: true, handle: true, hsCode: true, dimension1: true, dimension2: true, dimension3: true, _count: { select: { products: true } } },
   });
-  const rows: FamilyRow[] = families.map((f) => ({ id: f.id, name: f.name, handle: f.handle, dimensions: dimensionsOf(f), products: f._count.products }));
+  const rows: FamilyRow[] = families.map((f) => ({ id: f.id, name: f.name, handle: f.handle, hsCode: f.hsCode, dimensions: dimensionsOf(f), products: f._count.products }));
 
   return <FamiliesTable rows={rows} actions={{ create: createFamily, update: updateFamily, remove: deleteFamily }} />;
 }

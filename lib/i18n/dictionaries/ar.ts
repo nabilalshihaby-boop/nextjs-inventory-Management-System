@@ -129,6 +129,7 @@ export const ar: Dictionary = {
     se: "الإعدادات",
     profile: "الملف الشخصي",
     changePassword: "تغيير كلمة المرور",
+    importProducts: "استيراد المنتجات",
     themeSettings: "إعدادات المظهر",
     preferences: "المظهر والذاكرة المؤقتة",
     supplierStatement: "كشف حساب المورد",

@@ -129,6 +129,7 @@ export const en = {
     /** Page titles of routes that have no sidebar entry. */
     profile: "Profile",
     changePassword: "Change Password",
+    importProducts: "Import Products",
     themeSettings: "Theme Settings",
     preferences: "Appearance & Cache",
     supplierStatement: "Supplier Statement",

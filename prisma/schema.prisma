@@ -291,6 +291,12 @@ model Product {
   /// Normalized combination of the values (trimmed, NFC, lowercase, joined by U+001F; lib/family-core.ts). Null when standalone.
   /// UNIQUE together with familyId: the database refuses two members of one family with the same combination, even for racing requests.
   variantKey          String?                 @db.VarChar(191)
+  /// Shopify-ready handle of a STANDALONE product (null for a family member, whose group handle is the family's, and for legacy products that
+  /// have not been given one yet). Uniqueness across products AND families is enforced by `product_handles` (lib/product-handles.ts).
+  handle              String?                 @db.VarChar(255)
+  /// Harmonized System code supplied by the business: 4-10 digits, never generated. For a group member this is an OVERRIDE of the group's
+  /// default; effective code = product.hsCode, else family.hsCode, else none.
+  hsCode              String?                 @db.VarChar(10)
   /// Product status. An inactive product keeps all its history (documents, stock, reports) but can't be used in new operational documents.
   /// Removing a product that has any history or stock deactivates it instead of deleting it (lib/product-removal.ts).
   active              Boolean                 @default(true)
@@ -309,6 +315,7 @@ model Product {
   saleItems           SaleItem[]
   saleReturnItems     SaleReturnItem[]
   costBaseline        InventoryCostBaseline?
+  handleRecord        ProductHandle?
 
   @@unique([familyId, variantKey], map: "products_family_variant_key")
   @@index([categoryId])
@@ -332,11 +339,29 @@ model ProductFamily {
   dimension1 String?   @db.VarChar(40)
   dimension2 String?   @db.VarChar(40)
   dimension3 String?   @db.VarChar(40)
+  /// Default HS Code of the group's variants (4-10 digits, as text so leading zeros stay). A variant's own `hsCode` overrides it.
+  hsCode     String?   @db.VarChar(10)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   products   Product[]
+  handleRecord ProductHandle?
 
   @@map("product_families")
+}
+
+/// The ONE namespace of handles, shared by standalone products and families. Exactly one owner per row (CHECK in the migration). The owners'
+/// own columns stay canonical; every writer keeps its row here in the same transaction, so the unique key is the final guard under races.
+model ProductHandle {
+  id        String         @id @default(cuid())
+  /// Trimmed + lowercased handle.
+  handleKey String         @unique @db.VarChar(255)
+  productId String?        @unique
+  product   Product?       @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  familyId  String?        @unique
+  family    ProductFamily? @relation(fields: [familyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdAt DateTime       @default(now())
+
+  @@map("product_handles")
 }
 
 enum IdentifierKind {

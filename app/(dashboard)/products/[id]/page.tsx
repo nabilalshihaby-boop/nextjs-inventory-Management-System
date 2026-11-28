@@ -6,7 +6,7 @@ import { auth } from "@/auth";
 import { warehouseIdFilter } from "@/lib/access-scope";
 import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
-import { describeVariant, dimensionsOf, valuesOf } from "@/lib/family-core";
+import { describeVariant, dimensionsOf, valuesOf, effectiveHsCode } from "@/lib/family-core";
 import { fmt } from "@/lib/i18n/config";
 import { getLocaleInfo } from "@/lib/i18n/server";
 import { formatMoney, formatQuantity } from "@/lib/money";
@@ -39,10 +39,12 @@ export default async function ProductDetailsPage({ params }: { params: Promise<{
       active: true,
       price: true,
       createdAt: true,
+      handle: true,
+      hsCode: true,
       brand: { select: { name: true } },
       category: { select: { name: true } },
       productUnit: { select: { name: true } },
-      family: { select: { name: true, dimension1: true, dimension2: true, dimension3: true } },
+      family: { select: { name: true, handle: true, hsCode: true, dimension1: true, dimension2: true, dimension3: true } },
       variantValue1: true,
       variantValue2: true,
       variantValue3: true,
@@ -67,6 +69,17 @@ export default async function ProductDetailsPage({ params }: { params: Promise<{
     [L.colCreated, formatDateTime(p.createdAt, settings?.dateFormat, locale)],
   ];
   if (p.family) rows.splice(1, 0, [p.family.name, describeVariant(dimensionsOf(p.family), valuesOf(p))]);
+  const handle = p.family ? p.family.handle : p.handle; // a family member is sold under its family's handle
+  if (handle) rows.push([T.importExport.identity.handle, <bdi key="h" dir="ltr" data-testid="product-handle">{handle}</bdi>]);
+  const hs = effectiveHsCode(p.hsCode, p.family?.hsCode);
+  if (hs)
+    rows.push([
+      T.importExport.identity.hsCode,
+      <span key="hs">
+        <bdi dir="ltr" data-testid="product-hscode">{hs}</bdi>
+        {p.family && !p.hsCode ? <span className="sp-hint" data-testid="product-hscode-source"> ({T.importExport.identity.fromGroup})</span> : null}
+      </span>,
+    ]);
 
   return (
     <div className="sp-card" style={{ padding: 24, display: "grid", gap: 16, maxWidth: 720 }} data-testid="product-details">

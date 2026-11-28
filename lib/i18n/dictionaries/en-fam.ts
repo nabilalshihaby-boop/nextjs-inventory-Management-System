@@ -21,6 +21,8 @@ export const enFamilies = {
   noMatch: "No variant groups match your search",
   nameLabel: "Variant group name",
   namePlaceholder: "e.g. Cotton T-Shirt",
+  hsLabel: "Default HS Code",
+  hsHint: "Optional, 4 to 10 digits. Variants use it unless they have their own.",
   handleLabel: "Handle",
   handlePlaceholder: "e.g. cotton-t-shirt",
   handleHint: "A stable, lowercase identifier for this variant group, used later to link it to Shopify. It does not change when you rename the group. Leave it as suggested unless you need a specific one.",

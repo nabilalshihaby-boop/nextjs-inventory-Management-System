@@ -10,6 +10,8 @@ import { canManageProducts } from "@/lib/roles";
 import { getDefaultCurrency } from "@/lib/settings";
 import { deleteImage, saveImage, validateImage, type ValidImage } from "@/lib/image-upload";
 import { createProductRecord, productFieldData } from "@/lib/product-create";
+import { isHandleRace, saveProductHandle, withHandleRetry } from "@/lib/product-handles";
+import { HANDLE_MAX, HS_MAX, HS_MIN, handleKeyOf, handleProblem, normalizeHandle, normalizeHsCode } from "@/lib/family-core";
 import { MAX_PRODUCT_IMAGES, checkUnitConfig, makeProductSchemas, makeUnitsSchema, type ProductField, type ProductFields, type UnitInput } from "@/lib/products";
 import { conversionUsed, productHasActivity } from "@/lib/product-units";
 import { trimFactor } from "@/lib/unit-math";
@@ -163,6 +165,52 @@ async function readImages(fd: FormData, errors: Errors, t: Dictionary): Promise<
   return out;
 }
 
+/**
+ * The optional Handle and HS Code of a product request. A field that was not sent stays undefined (keep what is stored). `inGroup` = the
+ * product will belong to a Variant Group: its handle is the group's, so a handle of its own is refused (never silently dropped), and its
+ * HS Code is an override of the group's default.
+ */
+async function parseIdentity(fd: FormData, errors: Errors, t: Dictionary, inGroup: boolean, productId: string | null): Promise<{ handle?: string; hsCode?: string | null }> {
+  const E = t.importExport.err;
+  const read = (k: "handle" | "hsCode"): string | undefined => {
+    if (!fd.has(k)) return undefined;
+    const all = fd.getAll(k);
+    if (all.length !== 1 || typeof all[0] !== "string") {
+      errors[k] ??= E.invalidRequest;
+      return undefined;
+    }
+    return all[0];
+  };
+  const out: { handle?: string; hsCode?: string | null } = {};
+  const rawHs = read("hsCode");
+  if (rawHs !== undefined) {
+    const hs = normalizeHsCode(rawHs);
+    if (hs.ok) out.hsCode = hs.value;
+    else errors.hsCode ??= fmt(E.hsCode, { min: HS_MIN, max: HS_MAX });
+  }
+  const rawHandle = read("handle");
+  if (rawHandle === undefined) return out;
+  const handle = normalizeHandle(rawHandle);
+  if (inGroup) {
+    if (handle) errors.handle ??= t.products.form.handleInherited;
+    return out;
+  }
+  if (handle) {
+    // The stored handle may be kept as it is, whatever its form; a NEW one must follow the rules and be free.
+    const own = productId ? (await db.product.findUnique({ where: { id: productId }, select: { handle: true } }))?.handle : null;
+    if (!own || handleKeyOf(own) !== handleKeyOf(handle)) {
+      const problem = handleProblem(handle);
+      if (problem) errors.handle ??= problem === "long" ? fmt(E.handleLong, { max: HANDLE_MAX }) : E.handleFormat;
+      else {
+        const taken = await db.productHandle.findUnique({ where: { handleKey: handleKeyOf(handle) }, select: { productId: true } });
+        if (taken && taken.productId !== productId) errors.handle ??= fmt(E.handleTaken, { v: handle });
+      }
+    }
+  }
+  out.handle = handle;
+  return out;
+}
+
 export async function createProduct(formData: FormData): Promise<ProductResult> {
   const t = await getDict();
   const E = t.products.err;
@@ -213,6 +261,7 @@ export async function createProduct(formData: FormData): Promise<ProductResult> 
     if (taken) errors.code ??= tr(t, taken.key, taken.vars);
   }
 
+  const identity = await parseIdentity(formData, errors, t, !!(fam.ok && fam.request?.familyId), null);
   const images = await readImages(formData, errors, t);
   if (images.length > MAX_PRODUCT_IMAGES) errors.images ??= fmt(E.maxImages, { max: MAX_PRODUCT_IMAGES });
   if (!f || !stock.success || Object.keys(errors).length) return fail(errors, t);
@@ -223,18 +272,19 @@ export async function createProduct(formData: FormData): Promise<ProductResult> 
     // A blank Base Unit barcode on a NEW product stays blank: a barcode is never derived from the SKU.
     const rowsNew = (units ?? []).map((u) => ({ ...u, barcode: barcodesNew.get(`u:${u.unitId}`) ?? "" }));
     const familyReq = fam.ok ? fam.request : undefined;
-    const product = await withDeadlockRetry(() =>
+    const product = await withHandleRetry(() => withDeadlockRetry(() =>
       db.$transaction(async (tx) => {
         const familyData = familyReq ? await familyColumns(tx, familyReq) : undefined; // locks the family row, re-checks its dimensions
-        return createProductRecord(tx, f, { ...stock.data, source: "PRODUCT_FORM" }, a.userId, paths, rowsNew, barcodesNew.has("base") ? barcodesNew.get("base") : undefined, familyData);
+        return createProductRecord(tx, f, { ...stock.data, source: "PRODUCT_FORM" }, a.userId, paths, rowsNew, barcodesNew.has("base") ? barcodesNew.get("base") : undefined, familyData, { handle: identity.handle || null, hsCode: identity.hsCode ?? null });
       }),
-    );
+    ));
     revalidatePath("/products");
     return { ok: true, message: t.products.ok.created, id: product.id };
   } catch (e) {
     for (const p of paths) await deleteImage(FOLDER, p);
     if (e instanceof IdentifierConflict) return fail({ [e.field]: tr(t, e.msg.key, e.msg.vars) } as Errors, t);
     if (e instanceof FamilyChanged) return fail({ familyId: t.families.product.changed }, t);
+    if (isHandleRace(e)) return fail({ handle: fmt(t.importExport.err.handleTaken, { v: identity.handle ?? "" }) }, t);
     if (isVariantRace(e)) return fail({ variantValue1: famDuplicate(fam, t) }, t);
     if (isIdentifierRace(e)) return fail({ code: E.identifierRace }, t);
     if (isBarcodeRace(e)) return fail({ baseBarcode: t.barcode.err.race }, t);
@@ -261,7 +311,7 @@ export async function updateProduct(id: unknown, formData: FormData): Promise<Pr
 
   const existing = await db.product.findUnique({
     where: { id: pid.data },
-    select: { id: true, code: true, productUnitId: true, saleUnitId: true, purchaseUnitId: true, images: { select: { id: true, path: true } }, unitConversions: { select: { id: true, unitId: true, factor: true, isBase: true, active: true, forSales: true, forPurchases: true } } },
+    select: { id: true, code: true, familyId: true, productUnitId: true, saleUnitId: true, purchaseUnitId: true, images: { select: { id: true, path: true } }, unitConversions: { select: { id: true, unitId: true, factor: true, isBase: true, active: true, forSales: true, forPurchases: true } } },
   });
   if (!existing) return { ok: false, message: E.notFound };
 
@@ -304,6 +354,8 @@ export async function updateProduct(id: unknown, formData: FormData): Promise<Pr
   const keepRequested = new Set(formData.getAll("keepImageIds").filter((v): v is string => typeof v === "string"));
   const keep = existing.images.filter((i) => keepRequested.has(i.id));
   const removed = existing.images.filter((i) => !keepRequested.has(i.id));
+  // Handle / HS Code: judged against the group the product will be in after this save.
+  const identity = await parseIdentity(formData, errors, t, fam.ok && fam.request ? !!fam.request.familyId : !!existing.familyId, existing.id);
   const images = await readImages(formData, errors, t);
   if (keep.length + images.length > MAX_PRODUCT_IMAGES) errors.images ??= fmt(E.maxImages, { max: MAX_PRODUCT_IMAGES });
   if (!f || Object.keys(errors).length) return fail(errors, t);
@@ -311,7 +363,7 @@ export async function updateProduct(id: unknown, formData: FormData): Promise<Pr
   const paths: string[] = [];
   try {
     for (const img of images) paths.push(await saveImage(FOLDER, img));
-    await withDeadlockRetry(() => db.$transaction(async (tx) => {
+    await withHandleRetry(() => withDeadlockRetry(() => db.$transaction(async (tx) => {
       // ---- unit safety (re-read inside the transaction) ----
       const V = t.units.val;
       const nameOf = async (id: string) => (await tx.productUnit.findUnique({ where: { id }, select: { name: true } }))?.name ?? "";
@@ -332,7 +384,8 @@ export async function updateProduct(id: unknown, formData: FormData): Promise<Pr
       // Registry rows hold foreign keys to the conversions: release them before conversions are deleted / rebuilt (synced again below).
       if (baseChanged || unitsProvided) await releaseIdentifierLinks(tx, existing.id);
       const familyData = fam.ok && fam.request ? await familyColumns(tx, fam.request) : {}; // locks the family row, re-checks its dimensions
-      await tx.product.update({ where: { id: existing.id }, data: { ...productFieldData(f), ...familyData } });
+      await tx.product.update({ where: { id: existing.id }, data: { ...productFieldData(f), ...familyData, ...(identity.hsCode !== undefined ? { hsCode: identity.hsCode } : {}) } });
+      await saveProductHandle(tx, existing.id, identity.handle); // joining a group releases the product's own handle; otherwise keep, change or create it
       if (baseChanged) {
         // Allowed only for a product nothing refers to: rebuild its conversions around the new base unit.
         await tx.productUnitConversion.deleteMany({ where: { productId: existing.id } });
@@ -359,12 +412,13 @@ export async function updateProduct(id: unknown, formData: FormData): Promise<Pr
       if (paths.length) {
         await tx.productImage.createMany({ data: paths.map((path, i) => ({ productId: existing.id, path, position: keep.length + i })) });
       }
-    }));
+    })));
   } catch (e) {
     for (const p of paths) await deleteImage(FOLDER, p);
     if (e instanceof UnitRuleError) return fail({ [e.field]: e.message } as Errors, t);
     if (e instanceof IdentifierConflict) return fail({ [e.field]: tr(t, e.msg.key, e.msg.vars) } as Errors, t);
     if (e instanceof FamilyChanged) return fail({ familyId: t.families.product.changed }, t);
+    if (isHandleRace(e)) return fail({ handle: fmt(t.importExport.err.handleTaken, { v: identity.handle ?? "" }) }, t);
     if (isVariantRace(e)) return fail({ variantValue1: famDuplicate(fam, t) }, t);
     if (isIdentifierRace(e)) return fail({ code: E.identifierRace }, t);
     if (isBarcodeRace(e)) return fail({ baseBarcode: t.barcode.err.race }, t);

@@ -10,7 +10,7 @@ import { isValidFactor } from "@/lib/unit-math";
 import { MAX_BARCODE_LENGTH, normalizeBarcode } from "@/lib/barcode";
 import { useT } from "@/components/i18n/I18nProvider";
 import { fmt } from "@/lib/i18n/config";
-import { VARIANT_VALUE_MAX, type FamilyOption } from "@/lib/family-core";
+import { HANDLE_MAX, VARIANT_VALUE_MAX, type FamilyOption } from "@/lib/family-core";
 import { createProduct, updateProduct, type ProductResult } from "@/app/(dashboard)/products/actions";
 import {
   BARCODE_OPTIONS,
@@ -53,6 +53,7 @@ export default function ProductForm({
   skuLocked = false,
   families = [],
   familyInitial = { familyId: "", values: ["", "", ""] },
+  identityInitial = { handle: "", hsCode: "" },
   inactiveUnits = [],
 }: {
   options: Options;
@@ -75,6 +76,8 @@ export default function ProductForm({
   families?: FamilyOption[];
   /** The product's stored family and variant values (edit). */
   familyInitial?: { familyId: string; values: string[] };
+  /** The product's own stored handle and HS Code (edit). */
+  identityInitial?: { handle: string; hsCode: string };
   /** Ids of deactivated Base Units that are still listed because this product already uses them (never offered for new setup). */
   inactiveUnits?: string[];
 }) {
@@ -98,6 +101,8 @@ export default function ProductForm({
   const [packs, setPacks] = useState<UnitInput[]>(unitRows);
   const [baseBarcode, setBaseBarcode] = useState(initialBase);
   const [familyId, setFamilyId] = useState(familyInitial.familyId);
+  const [handleValue, setHandleValue] = useState(identityInitial.handle);
+  const [hsValue, setHsValue] = useState(identityInitial.hsCode);
   const [variantValues, setVariantValues] = useState<string[]>(familyInitial.values);
   const [added, setAdded] = useState<{ file: File; url: string }[]>([]);
   const [pending, startTransition] = useTransition();
@@ -178,6 +183,9 @@ export default function ProductForm({
     // Family: always sent (an empty id = standalone). Values only for the dimensions the chosen family has.
     fd.set("familyId", familyId);
     familyDims.forEach((_, i) => fd.set(`variantValue${i + 1}`, (variantValues[i] ?? "").trim()));
+    // A group member has no handle of its own (the group's is used); blank on a standalone product means "make it from the name".
+    if (!familyId) fd.set("handle", handleValue.trim());
+    fd.set("hsCode", hsValue.trim());
     for (const k of kept) fd.append("keepImageIds", k.id);
     for (const a of added) fd.append("images", a.file);
     startTransition(async () => {
@@ -382,6 +390,35 @@ export default function ProductForm({
                       </>
                     )),
                   )}
+                {family ? (
+                  <div className="sp-field">
+                    <label className="sp-label" htmlFor="pd-handle">{F.handleLabel}</label>
+                    <input id="pd-handle" className="sp-input " dir="ltr" readOnly value={family.handle} aria-describedby="pd-handle-hint" data-testid="product-handle-inherited" />
+                    <span className="sp-hint" id="pd-handle-hint">
+                      {F.handleInheritedHint} <Link href="/products/families">{F.handleInheritedLink}</Link>
+                    </span>
+                    {err("handle")}
+                  </div>
+                ) : (
+                  wrap("handle", (
+                    <>
+                      {label("handle", F.handleLabel, false)}
+                      <input id="pd-handle" name="handle" className="sp-input " dir="ltr" autoComplete="off" spellCheck={false} maxLength={HANDLE_MAX} placeholder={F.handlePh} value={handleValue} onChange={(ev) => { setHandleValue(ev.target.value); setE({ ...e, handle: "" }); }} aria-invalid={!!e.handle || undefined} aria-describedby="pd-handle-hint" />
+                      <span className="sp-hint" id="pd-handle-hint">{F.handleHint}</span>
+                      {err("handle")}
+                    </>
+                  ))
+                )}
+                {wrap("hsCode", (
+                  <>
+                    {label("hsCode", family ? F.hsOverrideLabel : F.hsLabel, false)}
+                    <input id="pd-hsCode" name="hsCode" className="sp-input " dir="ltr" inputMode="numeric" autoComplete="off" maxLength={20} placeholder={family?.hsCode ?? ""} value={hsValue} onChange={(ev) => { setHsValue(ev.target.value); setE({ ...e, hsCode: "" }); }} aria-invalid={!!e.hsCode || undefined} aria-describedby="pd-hsCode-hint" />
+                    <span className="sp-hint" id="pd-hsCode-hint" data-testid="product-hs-hint">
+                      {!family ? F.hsHint : family.hsCode ? fmt(F.hsOverrideHint, { code: family.hsCode }) : F.hsNoDefaultHint}
+                    </span>
+                    {err("hsCode")}
+                  </>
+                ))}
                 {select("barcodeSymbology", F.barcode, F.barcodePh, BARCODE_OPTIONS)}
                 {input("cost", LB.cost, F.costPh, true, money, "decimal")}
                 {input("price", LB.price, F.pricePh, true, money, "decimal")}

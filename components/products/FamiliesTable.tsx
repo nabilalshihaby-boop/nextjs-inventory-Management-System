@@ -33,6 +33,7 @@ export default function FamiliesTable({ rows, actions }: { rows: FamilyRow[]; ac
   const [name, setName] = useState("");
   const [dims, setDims] = useState<string[]>([]);
   const [handleVal, setHandleVal] = useState("");
+  const [hsVal, setHsVal] = useState("");
   const [handleTouched, setHandleTouched] = useState(false); // false = the field only previews the suggestion from the name
   const [err, setErr] = useState<Partial<Record<FamilyField, string>>>({});
   const [del, setDel] = useState<FamilyRow | null>(null);
@@ -49,6 +50,7 @@ export default function FamiliesTable({ rows, actions }: { rows: FamilyRow[]; ac
     setName(row?.name ?? "");
     setDims(row?.dimensions ?? []);
     setHandleVal(row?.handle ?? "");
+    setHsVal(row?.hsCode ?? "");
     setHandleTouched(!!row);
     setErr({});
   };
@@ -74,6 +76,7 @@ export default function FamiliesTable({ rows, actions }: { rows: FamilyRow[]; ac
     const fd = new FormData();
     fd.set("name", name);
     dims.forEach((d, i) => fd.set(`dimension${i + 1}`, d));
+    fd.set("hsCode", hsVal.trim()); // blank = no default
     // The handle is sent only when the user typed one (or edits an existing family); otherwise the server generates it, adding a number if needed.
     if (handleTouched) fd.set("handle", handleVal);
     const row = current;
@@ -268,6 +271,15 @@ export default function FamiliesTable({ rows, actions }: { rows: FamilyRow[]; ac
                 {current ? L.handleHintExisting : handleTouched ? L.handleHint : `${L.handleHint} ${L.handleAuto}`}
               </span>
               {err.handle && <span className="sp-error">{err.handle}</span>}
+            </div>
+
+            <div className={"sp-field" + (err.hsCode ? " sp-field--error" : "")}>
+              <label className="sp-label" htmlFor="fam-hs">
+                {L.hsLabel}
+              </label>
+              <input id="fam-hs" className="sp-input " dir="ltr" inputMode="numeric" autoComplete="off" maxLength={20} value={hsVal} aria-invalid={!!err.hsCode || undefined} aria-describedby="fam-hs-hint" onChange={(e) => { setHsVal(e.target.value); setErr({ ...err, hsCode: "" }); }} />
+              <span className="t-caption" id="fam-hs-hint">{L.hsHint}</span>
+              {err.hsCode && <span className="sp-error">{err.hsCode}</span>}
             </div>
 
             <fieldset className={"sp-field" + (err.dimensions ? " sp-field--error" : "")} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }} aria-describedby="fam-dims-hint">
